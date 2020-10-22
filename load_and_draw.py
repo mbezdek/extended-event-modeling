@@ -38,7 +38,7 @@ def load_and_draw(input_video_path, input_segmentation, output_dir, output_video
         logger.error("Error opening video stream or file")
     height, width = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     fps = cap.get(cv2.CAP_PROP_FPS)
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
+    fourcc = cv2.VideoWriter_fourcc(*'VP90')
     output_video_name = os.path.join(output_dir, output_video_name)
     out = cv2.VideoWriter(output_video_name, fourcc=fourcc, fps=fps, frameSize=(width, height))
     # calculate segmentation points according to fps
@@ -54,9 +54,6 @@ def load_and_draw(input_video_path, input_segmentation, output_dir, output_video
         ret, frame = cap.read()
         if ret is True:
             frame_id += 1
-            # cv2.imshow('frame', frame)
-            # if cv2.waitKey(25) & 0xFF == ord('q'):
-            #     break
             # Add frame_id and condition (coarse or fine)
             cv2.putText(frame, f'Frame: {frame_id}', org=(50, 50), fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                         fontScale=1, color=(255, 0, 0))
@@ -68,6 +65,9 @@ def load_and_draw(input_video_path, input_segmentation, output_dir, output_video
                             fontScale=1, color=(0, 255, 0))
                 # cv2.imwrite(f'{frame_id}.jpg', frame)
             out.write(frame)
+            # cv2.imshow('frame', frame)
+            # if cv2.waitKey(25) & 0xFF == ord('q'):
+            #     break
             buffer[frame_id] = frame
         else:
             break
@@ -92,4 +92,4 @@ if __name__ == "__main__":
     logger.info('Output dir: output/')
     load_and_draw(input_video_path='data/small_videos/6.2.5_C1_trim.mp4',
                   input_segmentation='database.200731.1.csv', output_dir='output',
-                  output_video_name='output_video.avi', region_length=60)
+                  output_video_name='output_video.mp4', region_length=60)
