@@ -30,8 +30,9 @@ def draw_segmentations(input_video_path, input_segmentation, output_dir, output_
     # initialize video_read and video_write streams
     cv2_video_reader = CV2VideoReader(input_video_path=input_video_path)
     output_video_path = os.path.join(output_dir, output_video_name)
-    # sk_video_writer = skvideo.io.FFmpegWriter(output_video_path)
-    cv2_video_writer = CV2VideoWriter(output_video_path=output_video_path)
+    sk_video_writer = skvideo.io.FFmpegWriter(output_video_path)
+    logger.debug(f'Video writer: {type(sk_video_writer)}')
+    # cv2_video_writer = CV2VideoWriter(output_video_path=output_video_path)
     # calculate segmentation points according to fps
     # consider only one annotation
     condition = 'coarse'
@@ -56,9 +57,9 @@ def draw_segmentations(input_video_path, input_segmentation, output_dir, output_
         if frame_id in seg_points:
             # Add tag for the segmented frame
             my_frame.put_text(f'SEGMENTED', color=ColorBGR.green)
-        frame = np.concatenate((frame, canvas_img), axis=0)
-        cv2_video_writer.write_frame(frame)
-        # sk_video_writer.writeFrame(frame[:, :, ::-1])
+        my_frame.frame = np.concatenate((my_frame.frame, canvas_img), axis=0)
+        # cv2_video_writer.write_frame(my_frame.frame)
+        sk_video_writer.writeFrame(my_frame.frame[:, :, ::-1])
         # Real-time showing video
         # cv2.imshow('frame', frame)
         # if cv2.waitKey(25) & 0xFF == ord('q'):
@@ -67,6 +68,7 @@ def draw_segmentations(input_video_path, input_segmentation, output_dir, output_
     if ret is False:
         logger.info('End of reading stream, ret is False!')
 
+    sk_video_writer.close()
     logger.info('Done!')
 
 
