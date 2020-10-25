@@ -2,6 +2,10 @@ import numpy as np
 import cv2
 import os
 import logging
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+from matplotlib.figure import Figure
+import matplotlib.pyplot as plt
+import seaborn as sns
 from typing import List, Dict
 
 # Set-up logger
