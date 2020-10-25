@@ -119,3 +119,29 @@ class MyFrame:
 
     def get_height(self):
         return self.frame.shape[0]
+
+
+# This is a strategy function
+class Canvas:
+    def __init__(self, rows: int = 3, columns: int = 1):
+        # self.figure = Figure()
+        self.figure, self.axes = plt.subplots(rows, columns)
+        if rows * columns == 1:
+            self.axes = [self.axes]
+        self.canvas = FigureCanvasAgg(figure=self.figure)
+
+    def get_current_canvas(self, width=960, height=200, left=0.145, right=0.88):
+        self.canvas.draw()
+        img = cv2.cvtColor(np.asarray(self.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
+        canvas_resized = cv2.resize(
+            img[:, int(img.shape[1] * left): int(img.shape[1] * right), :], (width, height))
+        return canvas_resized
+
+    # This is a strategy function
+    def draw_on_canvas(self, seg_points) -> None:
+        # Do some plotting.
+        # sns.violinplot(data=seg_points, orient='h', ax=ax)
+        sns.swarmplot(data=seg_points, orient='h', ax=self.axes[0], alpha=.1)
+        sns.histplot(data=seg_points, bins=100, ax=self.axes[1])
+        # sns.stripplot(data=seg_points, orient='h', ax=ax1, alpha=.1)
+        self.axes[2].vlines(seg_points, ymin=0, ymax=1, alpha=0.05)

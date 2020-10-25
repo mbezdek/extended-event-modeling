@@ -1,9 +1,5 @@
 import numpy as np
 import pandas as pd
-from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.figure import Figure
-import matplotlib.pyplot as plt
-import seaborn as sns
 import cv2
 import os
 import logging
@@ -13,7 +9,7 @@ import skvideo
 ffmpeg_path = 'C:/Users/nguye/ffmpeg-4.3.1-2020-10-01-full_build/bin'
 skvideo.setFFmpegPath(ffmpeg_path)
 import skvideo.io
-from utils import CV2VideoReader, CV2VideoWriter, SegmentationVideo, Sample, MyFrame, ColorBGR
+from utils import CV2VideoReader, CV2VideoWriter, SegmentationVideo, Canvas, MyFrame, ColorBGR
 
 # Set-up logger
 logger = logging.getLogger(__name__)
@@ -24,32 +20,6 @@ c_handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s
 logger.addHandler(c_handler)
 
 
-class Canvas:
-    def __init__(self, rows: int = 3, columns: int = 1):
-        # self.figure = Figure()
-        self.figure, self.axes = plt.subplots(rows, columns)
-        if rows * columns == 1:
-            self.axes = [self.axes]
-        self.canvas = FigureCanvasAgg(figure=self.figure)
-
-    def get_current_canvas(self, width=960, height=200, left=0.145, right=0.88):
-        self.canvas.draw()
-        img = cv2.cvtColor(np.asarray(self.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
-        canvas_resized = cv2.resize(
-            img[:, int(img.shape[1] * left): int(img.shape[1] * right), :], (width, height))
-        return canvas_resized
-
-    # This is a strategy function
-    def draw_on_canvas(self, seg_points) -> None:
-        # Do some plotting.
-        # sns.violinplot(data=seg_points, orient='h', ax=ax)
-        sns.swarmplot(data=seg_points, orient='h', ax=self.axes[0], alpha=.1)
-        sns.histplot(data=seg_points, bins=100, ax=self.axes[1])
-        # sns.stripplot(data=seg_points, orient='h', ax=ax1, alpha=.1)
-        self.axes[2].vlines(seg_points, ymin=0, ymax=1, alpha=0.05)
-
-
-# This is a strategy function
 def draw_segmentations(input_video_path, input_segmentation, output_dir, output_video_name):
     # create directory for visualization
     if not os.path.exists(output_dir):
