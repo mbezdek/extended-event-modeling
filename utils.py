@@ -52,7 +52,7 @@ class CV2VideoReader:
             self.capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.fps = self.capture.get(cv2.CAP_PROP_FPS)
 
-    def get_cv2_video_reader(self) -> Dict:
+    def __repr__(self) -> Dict:
         return {'reader': self.capture,
                 'height': self.height,
                 'width': self.width,
@@ -61,6 +61,9 @@ class CV2VideoReader:
     def __del__(self):
         logger.debug('Destroying an instance of CV2VideoReader')
         self.capture.release()
+
+    def read_frame(self):
+        return self.capture.read()
 
 
 class CV2VideoWriter:
@@ -79,7 +82,7 @@ class CV2VideoWriter:
         self.height = height
         self.width = width
 
-    def get_cv2_video_writer(self) -> Dict:
+    def __repr__(self) -> Dict:
         return {'writer': self.writer,
                 'fps': self.fps,
                 'height': self.height,
@@ -88,3 +91,31 @@ class CV2VideoWriter:
     def __del__(self):
         logger.debug('Destroying an instance of CV2VideoWriter')
         self.writer.release()
+
+    def write_frame(self, frame):
+        self.writer.write(frame)
+
+
+class ColorBGR:
+    red = (0, 0, 255)
+    green = (0, 255, 0)
+    blue = (255, 0, 0)
+
+
+class MyFrame:
+    def __init__(self, frame: np.ndarray):
+        self.frame = frame
+        self.current_text_position = 0.0
+
+    def put_text(self, text: str, color=ColorBGR.red, font_scale=1.0):
+        self.current_text_position = self.current_text_position + 0.1
+        cv2.putText(self.frame, text,
+                    org=(50, int(self.current_text_position * self.get_height())),
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale=font_scale, color=color)
+
+    def get_width(self):
+        return self.frame.shape[1]
+
+    def get_height(self):
+        return self.frame.shape[0]
