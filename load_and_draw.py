@@ -4,6 +4,7 @@ import cv2
 import os
 import logging
 from shutil import rmtree
+from time import perf_counter
 import skvideo
 
 ffmpeg_path = 'C:/Users/nguye/ffmpeg-4.3.1-2020-10-01-full_build/bin'
@@ -30,9 +31,9 @@ def draw_segmentations(input_video_path, input_segmentation, output_dir, output_
     # initialize video_read and video_write streams
     cv2_video_reader = CV2VideoReader(input_video_path=input_video_path)
     output_video_path = os.path.join(output_dir, output_video_name)
-    sk_video_writer = skvideo.io.FFmpegWriter(output_video_path)
-    logger.debug(f'Video writer: {type(sk_video_writer)}')
-    # cv2_video_writer = CV2VideoWriter(output_video_path=output_video_path)
+    # sk_video_writer = skvideo.io.FFmpegWriter(output_video_path)
+    # logger.debug(f'Video writer: {type(sk_video_writer)}')
+    cv2_video_writer = CV2VideoWriter(output_video_path=output_video_path)
     # calculate segmentation points according to fps
     # consider only one annotation
     condition = 'coarse'
@@ -58,8 +59,8 @@ def draw_segmentations(input_video_path, input_segmentation, output_dir, output_
             # Add tag for the segmented frame
             my_frame.put_text(f'SEGMENTED', color=ColorBGR.green)
         my_frame.frame = np.concatenate((my_frame.frame, canvas_img), axis=0)
-        # cv2_video_writer.write_frame(my_frame.frame)
-        sk_video_writer.writeFrame(my_frame.frame[:, :, ::-1])
+        cv2_video_writer.write_frame(my_frame.frame)
+        # sk_video_writer.writeFrame(my_frame.frame[:, :, ::-1])
         # Real-time showing video
         # cv2.imshow('frame', frame)
         # if cv2.waitKey(25) & 0xFF == ord('q'):
@@ -68,7 +69,7 @@ def draw_segmentations(input_video_path, input_segmentation, output_dir, output_
     if ret is False:
         logger.info('End of reading stream, ret is False!')
 
-    sk_video_writer.close()
+    # sk_video_writer.close()
     logger.info('Done!')
 
 
@@ -88,6 +89,9 @@ if __name__ == "__main__":
     logger.info('Input video: data/small_videos/6.2.5_C1_trim.mp4')
     logger.info('Input segmentation: database.200731.1.csv')
     logger.info('Output dir: output/')
+    start = perf_counter()
     draw_segmentations(input_video_path='data/small_videos/6.2.5_C1_trim.mp4',
                        input_segmentation='database.200731.1.csv', output_dir='output',
-                       output_video_name='output_video.mp4')
+                       output_video_name='output_video_test.avi')
+    end = perf_counter()
+    logger.info(f'Running time: {end - start}')

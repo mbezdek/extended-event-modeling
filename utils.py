@@ -76,7 +76,7 @@ class CV2VideoWriter:
         if os.path.splitext(output_video_path)[1] == '.avi':
             self.fourcc = cv2.VideoWriter_fourcc(*'XVID')
         elif os.path.splitext(output_video_path)[1] == '.mp4':
-            self.fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            self.fourcc = cv2.VideoWriter_fourcc(*'X264')
         else:
             logger.error(f'Error opening video stream for writing \n'
                          f'Incorrect output format: {os.path.splitext(output_video_path)[1]}')
