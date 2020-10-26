@@ -11,7 +11,9 @@ Follow instructions to install conda: https://www.anaconda.com/products/individu
 ```jupyter labextension install @jupyter-widgets/jupyterlab-manager```
 
 ```jupyter nbextension enable --py widgetsnbextension```
-### Install ffmpeg
+### Install ffmpeg (optional)
+#### We need ffmpeg for scikit-video to work
+
 Download this release: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.7z
 
 Unzip file using: https://www.7-zip.org/
