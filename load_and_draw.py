@@ -92,6 +92,6 @@ if __name__ == "__main__":
     start = perf_counter()
     draw_segmentations(input_video_path='data/small_videos/6.2.5_C1_trim.mp4',
                        input_segmentation='database.200731.1.csv', output_dir='output',
-                       output_video_name='output_video_test.avi')
+                       output_video_name='output_video_test.mp4')
     end = perf_counter()
     logger.info(f'Running time: {end - start}')
