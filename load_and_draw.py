@@ -3,6 +3,8 @@ import pandas as pd
 import cv2
 import os
 import logging
+import configparser
+import argparse
 from shutil import rmtree
 from time import perf_counter
 import skvideo
@@ -86,12 +88,44 @@ def draw_images():
 
 
 if __name__ == "__main__":
-    logger.info('Input video: data/small_videos/6.2.5_C1_trim.mp4')
-    logger.info('Input segmentation: database.200731.1.csv')
-    logger.info('Output dir: output/')
+    arg_parser = argparse.ArgumentParser(add_help=False)
+    arg_parser.add_argument('-c', '--config_file')
+    args, remaining_argv = arg_parser.parse_known_args()
+    # Parse any conf_file specification
+    # We make this parser with add_help=False so that
+    # it doesn't parse -h and print help.
+    # Defaults arguments are taken from config file
+    defaults = {}
+    if args.config_file:
+        config_parser = configparser.ConfigParser()
+        config_parser.read('configs/config.ini')
+        for section in config_parser.sections():
+            defaults.update(dict(config_parser.items(section=section)))
+    # Parse the rest of arguments
+    # Don't suppress add_help here so it will handle -h
+    parser = argparse.ArgumentParser(
+        # Inherit options from config_parser
+        parents=[arg_parser]
+        )
+    parser.set_defaults(**defaults)
+    # These arguments can be overridden by command line
+    parser.add_argument("--input_video_path")
+    parser.add_argument("--input_segmentation")
+    parser.add_argument("--output_video_name")
+    parser.add_argument("--output_dir")
+    args = parser.parse_args(remaining_argv)
+
+    INPUT_VIDEO_PATH = args.input_video_path
+    INPUT_SEGMENTATION = args.input_segmentation
+    OUTPUT_DIR = args.output_dir
+    OUTPUT_VIDEO_NAME = args.output_video_name
+
+    logger.info(f'Input video: {INPUT_VIDEO_PATH}')
+    logger.info(f'Input segmentation: {INPUT_SEGMENTATION}')
+    logger.info(f'Output video: {OUTPUT_DIR}/{OUTPUT_VIDEO_NAME}')
     start = perf_counter()
-    draw_segmentations(input_video_path='data/small_videos/6.2.5_C1_trim.mp4',
-                       input_segmentation='database.200731.1.csv', output_dir='output',
-                       output_video_name='output_video_test.mp4')
+    draw_segmentations(input_video_path=INPUT_VIDEO_PATH,
+                       input_segmentation=INPUT_SEGMENTATION, output_dir=OUTPUT_DIR,
+                       output_video_name=OUTPUT_VIDEO_NAME)
     end = perf_counter()
     logger.info(f'Running time: {end - start}')

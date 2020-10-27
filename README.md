@@ -19,3 +19,7 @@ Download this release: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essenti
 Unzip file using: https://www.7-zip.org/
 
 Remember where you install ffmpeg, then adding that path to PATH, example: https://www.architectryan.com/2018/03/17/add-to-the-path-on-windows-10/
+
+## Running
+### Drawing segmentations
+```python load_and_draw.py -c configs/config.ini```
