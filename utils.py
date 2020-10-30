@@ -7,6 +7,11 @@ from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import List, Dict
+import torch
+from pysot.core.config import cfg
+from pysot.models.model_builder import ModelBuilder
+from pysot.tracker.siamrpn_tracker import SiamRPNTracker
+from pysot.tracker.tracker_builder import build_tracker
 
 # Set-up logger
 logger = logging.getLogger(__name__)
@@ -106,7 +111,7 @@ class ColorBGR:
     blue = (255, 0, 0)
 
 
-class MyFrame:
+class FrameWrapper:
     def __init__(self, frame: np.ndarray):
         self.frame = frame
         self.current_text_position = 0.0
@@ -149,3 +154,63 @@ class Canvas:
         sns.histplot(data=seg_points, bins=100, ax=self.axes[1])
         # sns.stripplot(data=seg_points, orient='h', ax=ax1, alpha=.1)
         self.axes[2].vlines(seg_points, ymin=0, ymax=1, alpha=0.05)
+
+
+class TrackerWrapper:
+    """
+    Objects of this class keep track of tracker_algo, current and previous frame,
+    """
+
+    def __init__(self, **kwargs):
+        tracker_type = kwargs['tracker_type']
+        if tracker_type == 'siam':
+            # init siamrpn tracker
+            cfg.merge_from_file(kwargs['config_file'])
+            cfg.CUDA = torch.cuda.is_available()
+            device = torch.device('cuda' if cfg.CUDA else 'cpu')
+            # device = 'cpu'
+            model = ModelBuilder()
+            model.load_state_dict(
+                torch.load('model.pth', map_location=lambda storage, loc: storage.cpu()))
+            model.eval().to(device)
+            siam_tracker = build_tracker(model)
+            siam_tracker.init(kwargs['frame'], kwargs['init_bbox'])
+        else:
+            logger.error(f'Unknown tracker type: {tracker_type}')
+        pass
+
+    def get_track_box(self):
+        pass
+
+    def predict(self, frame):
+        pass
+
+
+class Context:
+    """
+    Objects of this class keep track of active tracks and inactive tracks
+    """
+    def __init__(self):
+        self.tracks = dict()
+    pass
+
+
+class BoxWrapper:
+    """
+    Objects of this class keep track of bounding box, frame_id, conf_score
+    """
+
+    def __init__(self, xmin, xmax, ymin, ymax, frame_id, category='unknown', conf_score=1):
+        self.xmin = xmin
+        self.xmax = xmax
+        self.ymin = ymin
+        self.ymax = ymax
+        self.frame_id = frame_id
+        self.conf_score = conf_score
+        self.category = category
+
+    def get_xywh(self):
+        pass
+    
+    def get_xxyy(self):
+        return self.xmin, self.xmax, self.ymin, self.ymax

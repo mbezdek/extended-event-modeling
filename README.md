@@ -6,7 +6,9 @@ Follow instructions to install conda: https://www.anaconda.com/products/individu
 ### Install packages
 ```conda env create -f environment.yml```
 
-```conda activate sem-37```
+```conda activate sem-pysot-37```
+
+```python -m pip install --user git+https://github.com/nicktfranklin/SEM2```
 ### Install interactive extensions for Jupyter notebook/lab
 ```jupyter labextension install @jupyter-widgets/jupyterlab-manager```
 
@@ -19,6 +21,26 @@ Download this release: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essenti
 Unzip file using: https://www.7-zip.org/
 
 Remember where you install ffmpeg, then adding that path to PATH, example: https://www.architectryan.com/2018/03/17/add-to-the-path-on-windows-10/
+
+### Install pysot for tracking
+```git clone https://github.com/STVIR/pysot```
+
+```cd pysot```
+
+Follow the instruction in pysot. However, you can use current environment (sem) instead of creating a new environment (pysot). 
+
+You might need Microsoft Visual Studio 2017 to be able to run this:
+
+```python setup.py build_ext --inplace```
+
+After installing MVS 2017, open Cross Tools Command Prompt VS 2017 and run:
+
+```set DISTUTILS_USE_SDK=1```
+
+```python setup.py build_ext --inplace```
+
+If there is a runtime error: `RuntimeError (RuntimeError: CuDNN error: CUDNN_STATUS_SUCCESS)`,
+Try ```conda uninstall cuda90 && conda install cuda92 -c pytorch```
 
 ## Running
 ### Drawing segmentations
