@@ -8,7 +8,13 @@ Follow instructions to install conda: https://www.anaconda.com/products/individu
 
 ```conda activate sem-pysot-37```
 
-```python -m pip install --user git+https://github.com/nicktfranklin/SEM2```
+For GPU running
+
+```conda install -c anaconda tensorflow-gpu=2```
+
+```conda install -c pytorch cuda92```
+
+```python -m pip install git+https://github.com/nicktfranklin/SEM2```
 ### Install interactive extensions for Jupyter notebook/lab
 ```jupyter labextension install @jupyter-widgets/jupyterlab-manager```
 

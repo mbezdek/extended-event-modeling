@@ -4,9 +4,8 @@ channels:
   - conda-forge
   - pytorch
 dependencies:
-  - python=3.7.9
-  - tensorflow=2.1.0
-  - tensorflow-gpu=2.1.0
+  - python=3.7
+  - tensorflow=2
   - numpy
   - opencv=4.5.0
   - pandas
@@ -21,7 +20,6 @@ dependencies:
   - nodejs
   - pytorch=0.4.1
   - torchvision
-  - cuda92
   - pyyaml
   - yacs
   - tqdm
