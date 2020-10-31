@@ -60,6 +60,7 @@ class CV2VideoReader:
         self.height, self.width = int(self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(
             self.capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.fps = self.capture.get(cv2.CAP_PROP_FPS)
+        self.total_frames = self.capture.get(cv2.CAP_PROP_FRAME_COUNT)
 
     def __repr__(self) -> Dict:
         return {'reader': self.capture,
@@ -111,10 +112,32 @@ class ColorBGR:
     blue = (255, 0, 0)
 
 
+class BoxWrapper:
+    """
+    Objects of this class keep track of bounding box, frame_id, conf_score
+    """
+
+    def __init__(self, xmin, xmax, ymin, ymax, frame_id, category='unknown', conf_score=-1):
+        self.xmin = xmin
+        self.xmax = xmax
+        self.ymin = ymin
+        self.ymax = ymax
+        self.frame_id = frame_id
+        self.conf_score = conf_score
+        self.category = category
+
+    def get_xywh(self):
+        pass
+
+    def get_xxyy(self):
+        return self.xmin, self.xmax, self.ymin, self.ymax
+
+
 class FrameWrapper:
-    def __init__(self, frame: np.ndarray):
+    def __init__(self, frame: np.ndarray, frame_id=-1):
         self.frame = frame
         self.current_text_position = 0.0
+        self.frame_id = frame_id
 
     def put_text(self, text: str, color=ColorBGR.red, font_scale=1.0):
         self.current_text_position = self.current_text_position + 0.1
@@ -122,6 +145,22 @@ class FrameWrapper:
                     org=(50, int(self.current_text_position * self.get_height())),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=font_scale, color=color)
+
+    def put_bbox(self, bbox: BoxWrapper, color=ColorBGR.blue, font_scale=0.3):
+        # Be aware of type of color, cv2 is not good at throwing error messages
+        color = tuple(map(int, np.array(color) * bbox.conf_score))
+        cv2.rectangle(self.frame, pt1=(int(bbox.xmin), int(bbox.ymin)),
+                      pt2=(int(bbox.xmax), int(bbox.ymax)),
+                      color=color, thickness=1)
+        cv2.putText(self.frame, text=bbox.category, org=(int(bbox.xmin), int(bbox.ymin - 5)),
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale=font_scale,
+                    color=color)
+        cv2.putText(self.frame, text=str(f'{bbox.conf_score:.3f}'),
+                    org=(int(bbox.xmin), int(bbox.ymin+20)),
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+                    fontScale=font_scale,
+                    color=color)
 
     def get_width(self):
         return self.frame.shape[1]
@@ -165,20 +204,22 @@ class TrackerWrapper:
         tracker_type = kwargs['tracker_type']
         if tracker_type == 'siam':
             # init siamrpn tracker
-            logger.debug(f'Building siamrpn from {kwargs}')
+            logger.debug(f'Building siamrpn')
             cfg.merge_from_file(kwargs['model_config'])
-            cfg.CUDA = torch.cuda.is_available()
+            cfg.CUDA = torch.cuda.is_available() and cfg.CUDA
             device = torch.device('cuda' if cfg.CUDA else 'cpu')
-            # device = 'cpu'
             model = ModelBuilder()
             model.load_state_dict(
-                torch.load(kwargs['model_path'], map_location=lambda storage, loc: storage.cpu()))
+                torch.load(kwargs['model_path'],
+                           map_location=lambda storage, loc: storage.cpu()))
             model.eval().to(device)
             siam_tracker = build_tracker(model)
             siam_tracker.init(kwargs['frame'], kwargs['init_bbox'])
+
             self.tracker = siam_tracker
             self.current_frame = kwargs['frame']
             self.previous_frame = None
+            self.object_name = kwargs['object_name']
         else:
             logger.error(f'Unknown tracker type: {tracker_type}')
         pass
@@ -197,27 +238,8 @@ class Context:
     """
     Objects of this class keep track of active tracks and inactive tracks
     """
+
     def __init__(self):
         self.tracks = dict()
+
     pass
-
-
-class BoxWrapper:
-    """
-    Objects of this class keep track of bounding box, frame_id, conf_score
-    """
-
-    def __init__(self, xmin, xmax, ymin, ymax, frame_id, category='unknown', conf_score=1):
-        self.xmin = xmin
-        self.xmax = xmax
-        self.ymin = ymin
-        self.ymax = ymax
-        self.frame_id = frame_id
-        self.conf_score = conf_score
-        self.category = category
-
-    def get_xywh(self):
-        pass
-    
-    def get_xxyy(self):
-        return self.xmin, self.xmax, self.ymin, self.ymax
