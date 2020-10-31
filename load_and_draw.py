@@ -16,7 +16,7 @@ from utils import CV2VideoReader, CV2VideoWriter, SegmentationVideo, Canvas, Fra
 
 # Set-up logger
 logger = logging.getLogger(__name__)
-logger.setLevel(os.environ.get('LOGLVL', logging.INFO))
+logger.setLevel(os.environ.get('LOGLEVEL', logging.INFO))
 # must have a handler, otherwise logging will use lastresort
 c_handler = logging.StreamHandler()
 c_handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
