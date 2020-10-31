@@ -54,3 +54,5 @@ Remember where you install ffmpeg, then adding that path to PATH, example: https
 ```python load_and_draw.py -c configs/config.ini```
 ### Tracking
 ```python tracking/tracking.py -c configs/config_tracking.ini```
+### Segmenting
+```python segmenting/segmenting.py -c configs/config_segmenting.ini```

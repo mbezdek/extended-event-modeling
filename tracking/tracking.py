@@ -2,37 +2,18 @@ import cv2
 import numpy as np
 import torch
 # torch.backends.cudnn.enabled=False
-import math
-
 import sys
-from pysot.core.config import cfg
-from pysot.models.model_builder import ModelBuilder
-from pysot.tracker.siamrpn_tracker import SiamRPNTracker
-from pysot.tracker.tracker_builder import build_tracker
 import csv
 import pandas as pd
 import argparse
 import configparser
 from utils import TrackerWrapper, BoxWrapper, FrameWrapper, CV2VideoWriter, CV2VideoReader, \
-    Context, ColorBGR, Sample, logger
+    Context, ColorBGR, Sample, logger, parse_config
 
 if __name__ == '__main__':
     # Parse config file
-    arg_parser = argparse.ArgumentParser(add_help=False)
-    arg_parser.add_argument('-c', '--config_file')
-    args, remaining_argv = arg_parser.parse_known_args()
-    defaults = {}
-    if args.config_file:
-        config_parser = configparser.ConfigParser()
-        config_parser.read(args.config_file)
-        for section in config_parser.sections():
-            defaults.update(dict(config_parser.items(section=section)))
-    parser = argparse.ArgumentParser(parents=[arg_parser])
-    parser.set_defaults(**defaults)
-    # Can insert arguments that we want to override by command line
-    # parser.add_argument("--input_video_path")
-    args = parser.parse_args(remaining_argv)
-
+    args = parse_config()
+    logger.info(f'Config {args}')
     # Create video writer and reader
     cv2_video_reader = CV2VideoReader(input_video_path=args.input_video_path)
     cv2_video_writer = CV2VideoWriter(output_video_path=args.output_video_path,

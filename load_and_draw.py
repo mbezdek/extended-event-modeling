@@ -12,7 +12,8 @@ import skvideo
 ffmpeg_path = 'C:/Users/nguye/ffmpeg-4.3.1-2020-10-01-full_build/bin'
 skvideo.setFFmpegPath(ffmpeg_path)
 import skvideo.io
-from utils import CV2VideoReader, CV2VideoWriter, SegmentationVideo, Canvas, FrameWrapper, ColorBGR
+from utils import CV2VideoReader, CV2VideoWriter, SegmentationVideo, Canvas, FrameWrapper, \
+    ColorBGR, parse_config
 
 # Set-up logger
 logger = logging.getLogger(__name__)
@@ -88,33 +89,8 @@ def draw_images():
 
 
 if __name__ == "__main__":
-    arg_parser = argparse.ArgumentParser(add_help=False)
-    arg_parser.add_argument('-c', '--config_file')
-    args, remaining_argv = arg_parser.parse_known_args()
-    # Parse any conf_file specification
-    # We make this parser with add_help=False so that
-    # it doesn't parse -h and print help.
-    # Defaults arguments are taken from config file
-    defaults = {}
-    if args.config_file:
-        config_parser = configparser.ConfigParser()
-        config_parser.read('configs/config.ini')
-        for section in config_parser.sections():
-            defaults.update(dict(config_parser.items(section=section)))
-    # Parse the rest of arguments
-    # Don't suppress add_help here so it will handle -h
-    parser = argparse.ArgumentParser(
-        # Inherit options from config_parser
-        parents=[arg_parser]
-        )
-    parser.set_defaults(**defaults)
-    # These arguments can be overridden by command line
-    parser.add_argument("--input_video_path")
-    parser.add_argument("--input_segmentation")
-    parser.add_argument("--output_video_name")
-    parser.add_argument("--output_dir")
-    args = parser.parse_args(remaining_argv)
-
+    args = parse_config()
+    logger.info(f'Config {args}')
     INPUT_VIDEO_PATH = args.input_video_path
     INPUT_SEGMENTATION = args.input_segmentation
     OUTPUT_DIR = args.output_dir
