@@ -2,10 +2,12 @@
 
 
 ## Installation
+### Install anaconda
 Follow instructions to install conda: https://www.anaconda.com/products/individual
 ### Install packages
 ```conda env create -f environment.yml```\
 ```conda activate sem-pysot-37```
+
 
 ### Install pysot for tracking
 ```git clone https://github.com/STVIR/pysot``` \
@@ -27,18 +29,25 @@ Try remove instead of uninstall \
 
 For GPU running \
 ```conda install -c anaconda tensorflow-gpu=2``` \
-```conda install -c pytorch cuda92``` \
+```conda install -c pytorch cuda92``` 
+
+
+### Install SEM from github repository (be aware of changes)
+Using `python -m pip` to avoid confusing if the system has multiple Python versions. \
 ```python -m pip install git+https://github.com/nicktfranklin/SEM2```
+
 
 ### Install interactive extensions for Jupyter notebook/lab
 ```jupyter labextension install @jupyter-widgets/jupyterlab-manager``` \
 ```jupyter nbextension enable --py widgetsnbextension```
+
+
 ### Install ffmpeg (optional)
 #### We need ffmpeg for scikit-video to work
-
 Download this release: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.7z \
 Unzip file using: https://www.7-zip.org/ \
 Remember where you install ffmpeg, then adding that path to PATH, example: https://www.architectryan.com/2018/03/17/add-to-the-path-on-windows-10/
+
 
 ## Running
 ### Drawing segmentations
