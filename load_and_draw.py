@@ -12,7 +12,7 @@ import skvideo
 ffmpeg_path = 'C:/Users/nguye/ffmpeg-4.3.1-2020-10-01-full_build/bin'
 skvideo.setFFmpegPath(ffmpeg_path)
 import skvideo.io
-from utils import CV2VideoReader, CV2VideoWriter, SegmentationVideo, Canvas, MyFrame, ColorBGR
+from utils import CV2VideoReader, CV2VideoWriter, SegmentationVideo, Canvas, FrameWrapper, ColorBGR
 
 # Set-up logger
 logger = logging.getLogger(__name__)
@@ -53,7 +53,7 @@ def draw_segmentations(input_video_path, input_segmentation, output_dir, output_
     ret, frame = cv2_video_reader.read_frame()
     while ret is True:
         frame_id += 1
-        my_frame = MyFrame(frame)
+        my_frame = FrameWrapper(frame)
         # Add frame_id and condition (coarse or fine)
         my_frame.put_text(f'Frame: {frame_id}')
         my_frame.put_text(f'Condition: {condition}')

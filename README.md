@@ -46,8 +46,11 @@ After installing MVS 2017, open Cross Tools Command Prompt VS 2017 and run:
 ```python setup.py build_ext --inplace```
 
 If there is a runtime error: `RuntimeError (RuntimeError: CuDNN error: CUDNN_STATUS_SUCCESS)`,
-Try ```conda uninstall cuda90 && conda install cuda92 -c pytorch```
+Try remove instead of uninstall ```conda remove cudnn cudatoolkit pytorch torchvision && conda install cuda92 pytorch=0.4.1 -c pytorch```
+
 
 ## Running
 ### Drawing segmentations
 ```python load_and_draw.py -c configs/config.ini```
+### Tracking
+```python tracking/tracking.py -c configs/config_tracking.ini```

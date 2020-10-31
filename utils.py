@@ -165,22 +165,29 @@ class TrackerWrapper:
         tracker_type = kwargs['tracker_type']
         if tracker_type == 'siam':
             # init siamrpn tracker
-            cfg.merge_from_file(kwargs['config_file'])
+            logger.debug(f'Building siamrpn from {kwargs}')
+            cfg.merge_from_file(kwargs['model_config'])
             cfg.CUDA = torch.cuda.is_available()
             device = torch.device('cuda' if cfg.CUDA else 'cpu')
             # device = 'cpu'
             model = ModelBuilder()
             model.load_state_dict(
-                torch.load('model.pth', map_location=lambda storage, loc: storage.cpu()))
+                torch.load(kwargs['model_path'], map_location=lambda storage, loc: storage.cpu()))
             model.eval().to(device)
             siam_tracker = build_tracker(model)
             siam_tracker.init(kwargs['frame'], kwargs['init_bbox'])
+            self.tracker = siam_tracker
+            self.current_frame = kwargs['frame']
+            self.previous_frame = None
         else:
             logger.error(f'Unknown tracker type: {tracker_type}')
         pass
 
-    def get_track_box(self):
-        pass
+    def get_next_box(self, frame):
+        self.previous_frame = self.current_frame
+        self.current_frame = frame
+        outputs = self.tracker.track(frame)
+        return outputs
 
     def predict(self, frame):
         pass
