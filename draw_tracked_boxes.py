@@ -22,7 +22,7 @@ def draw_tracked_boxes(run,cam,inpath='../data',outpath='../data',back=True,fram
   back: boolean, whether to include boxes from reverse tracking in addition to forward tracking
   framestep: step size of video frames to write. 1 is all frames, 2 is every 2 frames, etc.
   '''
-  vidin=inpath+'/'+run+'_'+cam+'_trim.mp4'
+  vidin=inpath+'/small_videos/'+run+'_'+cam+'_trim.mp4'
   forwarddf=pd.read_csv(inpath+'/'+run+'_'+cam+'_tracked_f.csv')
   if back:
       # Convert backward frames to forward frames
@@ -104,7 +104,7 @@ def draw_tracked_boxes(run,cam,inpath='../data',outpath='../data',back=True,fram
     video_writer.release()
     
 if __name__ == "__main__":   
-    run='2.2.1'
+    run='6.2.5'
     cam='C1'
     inpath='../data'
     outpath='../data'
