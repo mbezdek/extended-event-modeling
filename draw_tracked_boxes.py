@@ -106,8 +106,8 @@ def draw_tracked_boxes(run,cam,inpath='../data',outpath='../data',back=True,fram
 if __name__ == "__main__":   
     run='6.2.5'
     cam='C1'
-    inpath='../data'
-    outpath='../data'
+    inpath='data'
+    outpath='data'
     back=False
     draw_tracked_boxes(run,cam,inpath,outpath,back,framestep=2) 
     
