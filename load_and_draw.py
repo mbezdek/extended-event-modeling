@@ -9,8 +9,8 @@ from shutil import rmtree
 from time import perf_counter
 import skvideo
 
-ffmpeg_path = 'C:/Users/nguye/ffmpeg-4.3.1-2020-10-01-full_build/bin'
-skvideo.setFFmpegPath(ffmpeg_path)
+# ffmpeg_path = 'C:/Users/nguye/ffmpeg-4.3.1-2020-10-01-full_build/bin'
+# skvideo.setFFmpegPath(ffmpeg_path)
 import skvideo.io
 from utils import CV2VideoReader, CV2VideoWriter, SegmentationVideo, Canvas, FrameWrapper, \
     ColorBGR, parse_config
