@@ -6,7 +6,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import seaborn as sns
-from typing import List, Dict
+from typing import List, Dict, Tuple
 import torch
 from pysot.core.config import cfg
 from pysot.models.model_builder import ModelBuilder
@@ -24,6 +24,10 @@ logger.addHandler(c_handler)
 
 
 def parse_config():
+    """
+    This function receive a config file *.ini and parse those parameters
+    :return: args
+    """
     arg_parser = argparse.ArgumentParser(add_help=False)
     arg_parser.add_argument('-c', '--config_file')
     args, remaining_argv = arg_parser.parse_known_args()
@@ -52,6 +56,9 @@ def parse_config():
 
 
 class Sample:
+    """
+    This class contains example python object to test syntax
+    """
     sample_dict = {'1': 1, '10': 10, '2': 2}
     sample_list = [1, 5, 7]
     sample_list_of_lists = [[1, 2], [3, 4], [5, 6]]
@@ -61,18 +68,34 @@ class Sample:
 
 
 class SegmentationVideo:
+    """
+    This class receives a data_frame and a video_path to extract segmentation results
+    for that video
+    """
+
     def __init__(self, data_frame, video_path):
         self.data_frame = data_frame[
             data_frame['movie1'] == os.path.splitext(os.path.basename(video_path))[0]]
 
     @staticmethod
     def string_to_segments(raw_string: str) -> np.ndarray:
+        """
+        This method turn a raw string to a list of timepoints
+        :param raw_string: a string in csv file
+        :return: list_of_segments: a list of timepoints
+        """
         raw_string = raw_string.split('\n')
         list_of_segments = [float(x.split(' ')[1]) for x in raw_string if 'BreakPoint' in x]
         list_of_segments = np.array(list_of_segments)
         return list_of_segments
 
     def get_segments(self, n_annotators=1, condition='coarse') -> List:
+        """
+        This method extract a list of segmentations, each according to an annotator
+        :param n_annotators: number of annotators to return
+        :param condition: coarse or fine grains
+        :return:
+        """
         seg = self.data_frame[self.data_frame['condition'] == condition]
         # parse annotations, from string to a list of breakpoints for each annotation
         seg_processed = seg['segment1'].apply(SegmentationVideo.string_to_segments)
@@ -81,7 +104,16 @@ class SegmentationVideo:
 
 
 class CV2VideoReader:
+    """
+    This class is a wrapper of opencv video-capturing stream. It stores some commonly used
+    variables and implements some commonly used method
+    """
+
     def __init__(self, input_video_path):
+        """
+        Initialize some commonly used variables, can be extended
+        :param input_video_path: path to input video to read
+        """
         logger.debug('Creating an instance of CV2VideoReader')
         self.capture = cv2.VideoCapture(input_video_path)
         if self.capture.isOpened() is False:
@@ -92,21 +124,44 @@ class CV2VideoReader:
         self.total_frames = self.capture.get(cv2.CAP_PROP_FRAME_COUNT)
 
     def __repr__(self) -> Dict:
+        """
+        For printing purpose, can be changed based on needs
+        :return:
+        """
         return {'reader': self.capture,
                 'height': self.height,
                 'width': self.width,
                 'fps': self.fps}
 
-    def __del__(self):
+    def __del__(self) -> None:
+        """
+        Release the video stream
+        :return:
+        """
         logger.debug('Destroying an instance of CV2VideoReader')
         self.capture.release()
 
-    def read_frame(self):
+    def read_frame(self) -> Tuple:
+        """
+        Get next frame
+        :return: ret, frame
+        """
         return self.capture.read()
 
 
 class CV2VideoWriter:
+    """
+    This class is a wrapper of opencv video-writing stream. It stores some commonly used
+    variables and implements some commonly used method
+    """
     def __init__(self, output_video_path, fps=30, height=740, width=960):
+        """
+
+        :param output_video_path: path to output video
+        :param fps: fps of the video
+        :param height: height of output video
+        :param width: width of output video
+        """
         logger.debug('Creating an instance of CV2VideoWriter')
         if os.path.splitext(output_video_path)[1] == '.avi':
             self.fourcc = cv2.VideoWriter_fourcc(*'XVID')
@@ -122,20 +177,36 @@ class CV2VideoWriter:
         self.width = width
 
     def __repr__(self) -> Dict:
+        """
+        For printing purpose
+        :return:
+        """
         return {'writer': self.writer,
                 'fps': self.fps,
                 'height': self.height,
                 'width': self.width}
 
-    def __del__(self):
+    def __del__(self) -> None:
+        """
+        Release writing stream
+        :return:
+        """
         logger.debug('Destroying an instance of CV2VideoWriter')
         self.writer.release()
 
-    def write_frame(self, frame):
+    def write_frame(self, frame) -> None:
+        """
+        Write next frame
+        :param frame:
+        :return:
+        """
         self.writer.write(frame)
 
 
 class ColorBGR:
+    """
+    For explicit color
+    """
     red = (0, 0, 255)
     green = (0, 255, 0)
     blue = (255, 0, 0)
@@ -143,10 +214,21 @@ class ColorBGR:
 
 class BoxWrapper:
     """
-    Objects of this class keep track of bounding box, frame_id, conf_score
+    This class keeps track of relevant variables for a bounding box and implements
+    commonly used methods
     """
 
     def __init__(self, xmin, xmax, ymin, ymax, frame_id, category='unknown', conf_score=-1):
+        """
+        Initialize bounding box's information
+        :param xmin:
+        :param xmax:
+        :param ymin:
+        :param ymax:
+        :param frame_id:
+        :param category:
+        :param conf_score:
+        """
         self.xmin = xmin
         self.xmax = xmax
         self.ymin = ymin
@@ -155,32 +237,60 @@ class BoxWrapper:
         self.conf_score = conf_score
         self.category = category
 
-    def get_xywh(self):
-        return self.xmin, self.ymin, self.xmax - self.xmin, self.ymax - self.ymin
+    def get_xywh(self) -> List:
+        return [self.xmin, self.ymin, self.xmax - self.xmin, self.ymax - self.ymin]
 
-    def get_xxyy(self):
-        return self.xmin, self.xmax, self.ymin, self.ymax
+    def get_xxyy(self) -> List:
+        return [self.xmin, self.xmax, self.ymin, self.ymax]
 
-    def get_csv_row(self):
+    def get_csv_row(self) -> List:
+        """
+        Get a csv row, can be changed to suit different formats
+        :return:
+        """
         return [self.frame_id, self.category, self.xmin, self.ymin,
                 self.xmax - self.xmin,
                 self.ymax - self.ymin, self.conf_score, 1]
 
 
 class FrameWrapper:
+    """
+    This class keep tracks of relevant variables of a frame and implement commonly used methods
+    """
     def __init__(self, frame: np.ndarray, frame_id=-1):
+        """
+        Initialize
+        :param frame:
+        :param frame_id:
+        """
         self.frame = frame
         self.current_text_position = 0.0
         self.frame_id = frame_id
 
-    def put_text(self, text: str, color=ColorBGR.red, font_scale=1.0):
+    def put_text(self, text: str, color=ColorBGR.red, font_scale=1.0) -> None:
+        """
+        This method is designed to put annotations on the frame
+        :param text:
+        :param color:
+        :param font_scale:
+        :return:
+        """
+        # This variable keeps track of occupied positions on the frame
         self.current_text_position = self.current_text_position + 0.1
         cv2.putText(self.frame, text,
                     org=(50, int(self.current_text_position * self.get_height())),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=font_scale, color=color)
 
-    def put_bbox(self, bbox: BoxWrapper, color=ColorBGR.blue, font_scale=0.3):
+    def put_bbox(self, bbox: BoxWrapper, color=ColorBGR.blue, font_scale=0.3) -> None:
+        """
+        This method is designed to draw a bounding box and relevant information on the frame,
+        intensity of color reflects conf_score
+        :param bbox:
+        :param color:
+        :param font_scale:
+        :return:
+        """
         # Be aware of type of color, cv2 is not good at throwing error messages
         color = tuple(map(int, np.array(color) * bbox.conf_score))
         cv2.rectangle(self.frame, pt1=(int(bbox.xmin), int(bbox.ymin)),
@@ -196,23 +306,39 @@ class FrameWrapper:
                     fontScale=font_scale,
                     color=color)
 
-    def get_width(self):
+    def get_width(self) -> int:
         return self.frame.shape[1]
 
-    def get_height(self):
+    def get_height(self) -> int:
         return self.frame.shape[0]
 
 
 # This is a strategy function
 class Canvas:
+    """
+    This is a template to use plt drawing functions and extract an image instead of visualizing
+    """
     def __init__(self, rows: int = 3, columns: int = 1):
+        """
+        Initialize a figure and attached axes, then attach the figure to a canvas
+        :param rows:
+        :param columns:
+        """
         # self.figure = Figure()
         self.figure, self.axes = plt.subplots(rows, columns)
         if rows * columns == 1:
             self.axes = [self.axes]
         self.canvas = FigureCanvasAgg(figure=self.figure)
 
-    def get_current_canvas(self, width=960, height=200, left=0.145, right=0.88):
+    def get_current_canvas(self, width=960, height=200, left=0.145, right=0.88) -> np.ndarray:
+        """
+        This methods resize the current canvas and return an image
+        :param width:
+        :param height:
+        :param left:
+        :param right:
+        :return:
+        """
         self.canvas.draw()
         img = cv2.cvtColor(np.asarray(self.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
         canvas_resized = cv2.resize(
@@ -221,6 +347,12 @@ class Canvas:
 
     # This is a strategy function
     def draw_on_canvas(self, seg_points) -> None:
+        """
+        This method is designed to draw something on the canvas. We can define another methods
+        to draw different things while using the structure of this class
+        :param seg_points: a list of timepoints
+        :return:
+        """
         # Do some plotting.
         # sns.violinplot(data=seg_points, orient='h', ax=ax)
         sns.swarmplot(data=seg_points, orient='h', ax=self.axes[0], alpha=.1)
@@ -231,7 +363,8 @@ class Canvas:
 
 class TrackerWrapper:
     """
-    Objects of this class keep track of tracker_algo, current and previous frame,
+    This class keep track of tracker_algorithm and boxes over time
+    Each instance of this class tracks one object
     """
 
     def __init__(self, **kwargs):
@@ -258,19 +391,29 @@ class TrackerWrapper:
         self.object_name = kwargs['box_wrapper'].category
         self.boxes = [kwargs['box_wrapper']]
 
-    def get_next_box(self, frame):
+    def get_next_box(self, frame) -> Dict:
+        """
+        This method receive a frame and return coordinates of its object on that frame
+        :param frame:
+        :return: outputs: object's coordinates and confidence score
+        """
         self.previous_frame = self.current_frame
         self.current_frame = frame
         outputs = self.tracker.track(frame)
         return outputs
 
-    def update(self, box_wrapper: BoxWrapper):
+    def update(self, box_wrapper: BoxWrapper) -> None:
+        """
+        Update boxes
+        :param box_wrapper:
+        :return:
+        """
         self.boxes.append(box_wrapper)
 
 
 class Context:
     """
-    Objects of this class keep track of active tracks and inactive tracks
+    This class keep track of active tracks and inactive tracks
     """
 
     def __init__(self):

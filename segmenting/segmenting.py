@@ -24,7 +24,7 @@ def process_features(features_dataframe: pd.DataFrame) -> np.ndarray:
     return x_train
 
 
-def plot_bayes(features_train, post):
+def plot_features_and_posterior(features_train, post):
     cluster_id = np.argmax(post, axis=1)
     cc = sns.color_palette('Dark2', post.shape[1])
 
@@ -47,10 +47,11 @@ if __name__ == '__main__':
     # Parse config file
     args = parse_config()
     logger.info(f'Config {args}')
+    # Create SEM parameters
     sem_kwargs = dict(lmda=float(args.stickyness), alfa=float(args.concentration), f_class=LinearEvent,
                       f_opts=dict(l2_regularization=float(args.l2_regularization)))
     features_df = pd.read_csv(args.features_csv)
     features_train = process_features(features_dataframe=features_df)
     segmentation_results = sem_run(features_train, sem_kwargs)
-    plot_bayes(features_train=features_train, post=segmentation_results.post)
+    plot_features_and_posterior(features_train=features_train, post=segmentation_results.post)
     plt.show()
