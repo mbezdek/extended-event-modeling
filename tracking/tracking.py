@@ -3,6 +3,8 @@ import numpy as np
 import torch
 # torch.backends.cudnn.enabled=False
 import sys
+import os
+sys.path.append(os.getcwd())
 import csv
 import pandas as pd
 import argparse
