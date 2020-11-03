@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 import tensorflow as tf
 import pandas as pd
 import seaborn as sns
+import sys
+import os
+sys.path.append(os.getcwd())
 from scipy.stats import zscore
 from sem.event_models import LinearEvent, NonLinearEvent, RecurrentLinearEvent
 from sem.event_models import RecurrentEvent, GRUEvent, LSTMEvent

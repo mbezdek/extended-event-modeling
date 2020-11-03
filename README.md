@@ -18,9 +18,11 @@ instead of tensorflow=2.1.0 because conda for OSX only has tensorflow 2.0.0 vers
 ```conda activate sem-pysot-37```
 
 ### Install pysot for tracking
+```cd ..```
 ```git clone https://github.com/STVIR/pysot``` \
 ```cd pysot``` \
 ```python setup.py build_ext --inplace```
+```export PYTHONPATH=/absolute/path/to/pysot```
 
 For Windows users, you might need Microsoft Visual Studio 2017 to be able to build: \
 ```python setup.py build_ext --inplace``` \
