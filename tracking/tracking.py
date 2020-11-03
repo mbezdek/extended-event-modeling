@@ -14,6 +14,10 @@ if __name__ == '__main__':
     # Parse config file
     args = parse_config()
     logger.info(f'Config {args}')
+    csv_headers = ['frame', 'name', 'x', 'y', 'w', 'h', 'confidence', 'ground_truth']
+    with open(args.output_csv_path, 'w') as g:
+        writer = csv.writer(g)
+        writer.writerow(csv_headers)
     # Create video writer and reader
     cv2_video_reader = CV2VideoReader(input_video_path=args.input_video_path)
     cv2_video_writer = CV2VideoWriter(output_video_path=args.output_video_path,
@@ -40,7 +44,7 @@ if __name__ == '__main__':
             logger.info('End of video stream, ret is False!')
             break
         logger.debug(f'Processing frame {frame_id}-th')
-        if frame_id == 1000 or frame_id == cv2_video_reader.total_frames:
+        if frame_id == 100 or frame_id == cv2_video_reader.total_frames:
             logger.info(f'Processing frame {frame_id}')
         my_frame = FrameWrapper(frame=frame, frame_id=frame_id)
         if frame_id in label_frames:  # If this is a label frame
@@ -51,12 +55,14 @@ if __name__ == '__main__':
                 w, h = box_df.iloc[i]['xmax'] - x, box_df.iloc[i]['ymax'] - y
                 init_bbox = [x, y, w, h]
                 object_name = box_df.iloc[i]['class']
-                # Create a wrapper and draw
-                box_wrapper = BoxWrapper(xmin=x, ymin=y,
-                                         xmax=x + w,
-                                         ymax=y + h,
+                # Create a wrapper, write csv, and draw
+                box_wrapper = BoxWrapper(xmin=x, ymin=y, xmax=x + w, ymax=y + h,
                                          frame_id=frame_id, category=object_name,
                                          conf_score=1.0)
+                # write csv at each frame
+                with open(args.output_csv_path, 'a') as g:
+                    writer = csv.writer(g)
+                    writer.writerow(box_wrapper.get_csv_row())
                 my_frame.put_bbox(bbox=box_wrapper, color=ColorBGR.green)
                 if object_name in context.tracks.keys():
                     # TODO: Prolong tracks?
@@ -64,14 +70,12 @@ if __name__ == '__main__':
                     # we choose the second one. By watching video output, we can know if
                     # objects of the same category switch.
                     track_kwargs['frame'] = my_frame.frame
-                    track_kwargs['init_bbox'] = init_bbox
-                    track_kwargs['object_name'] = object_name
+                    track_kwargs['box_wrapper'] = box_wrapper
                     context.tracks[object_name] = TrackerWrapper(**track_kwargs)
                 else:
                     # Initialize a new track
                     track_kwargs['frame'] = my_frame.frame
-                    track_kwargs['init_bbox'] = init_bbox
-                    track_kwargs['object_name'] = object_name
+                    track_kwargs['box_wrapper'] = box_wrapper
                     context.tracks[object_name] = TrackerWrapper(**track_kwargs)
         else:  # If this is not a label frame
             for object_name, track_wrapper in context.tracks.items():
@@ -82,6 +86,10 @@ if __name__ == '__main__':
                                          ymax=outputs['bbox'][1] + outputs['bbox'][3],
                                          frame_id=frame_id, category=object_name,
                                          conf_score=outputs['best_score'])
+                # write csv at each frame
+                with open(args.output_csv_path, 'a') as g:
+                    writer = csv.writer(g)
+                    writer.writerow(box_wrapper.get_csv_row())
                 my_frame.put_bbox(bbox=box_wrapper)
 
         cv2_video_writer.write_frame(my_frame.frame)
