@@ -42,7 +42,7 @@ def parse_config():
     parser = argparse.ArgumentParser(
         # Inherit options from config_parser
         parents=[arg_parser]
-        )
+    )
     parser.set_defaults(**defaults)
     # These arguments can be overridden by command line
     # parser.add_argument("--input_video_path")
@@ -156,10 +156,15 @@ class BoxWrapper:
         self.category = category
 
     def get_xywh(self):
-        pass
+        return self.xmin, self.ymin, self.xmax - self.xmin, self.ymax - self.ymin
 
     def get_xxyy(self):
         return self.xmin, self.xmax, self.ymin, self.ymax
+
+    def get_csv_row(self):
+        return [self.frame_id, self.category, self.xmin, self.ymin,
+                self.xmax - self.xmin,
+                self.ymax - self.ymin, self.conf_score, 1]
 
 
 class FrameWrapper:
@@ -186,7 +191,7 @@ class FrameWrapper:
                     fontScale=font_scale,
                     color=color)
         cv2.putText(self.frame, text=str(f'{bbox.conf_score:.3f}'),
-                    org=(int(bbox.xmin), int(bbox.ymin+20)),
+                    org=(int(bbox.xmin), int(bbox.ymin + 20)),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=font_scale,
                     color=color)
@@ -243,15 +248,15 @@ class TrackerWrapper:
                            map_location=lambda storage, loc: storage.cpu()))
             model.eval().to(device)
             siam_tracker = build_tracker(model)
-            siam_tracker.init(kwargs['frame'], kwargs['init_bbox'])
-
+            siam_tracker.init(kwargs['frame'], kwargs['box_wrapper'].get_xywh())
             self.tracker = siam_tracker
-            self.current_frame = kwargs['frame']
-            self.previous_frame = None
-            self.object_name = kwargs['object_name']
         else:
+            self.tracker = None
             logger.error(f'Unknown tracker type: {tracker_type}')
-        pass
+        self.current_frame = kwargs['frame']
+        self.previous_frame = None
+        self.object_name = kwargs['box_wrapper'].category
+        self.boxes = [kwargs['box_wrapper']]
 
     def get_next_box(self, frame):
         self.previous_frame = self.current_frame
@@ -259,8 +264,8 @@ class TrackerWrapper:
         outputs = self.tracker.track(frame)
         return outputs
 
-    def predict(self, frame):
-        pass
+    def update(self, box_wrapper: BoxWrapper):
+        self.boxes.append(box_wrapper)
 
 
 class Context:
