@@ -55,6 +55,35 @@ def parse_config():
     return args
 
 
+def get_frequency_ground_truth(time_boundaries, time_interval=1) -> np.ndarray:
+    frequency, _ = np.histogram(time_boundaries,
+                                bins=np.arange(0, max(time_boundaries) + time_interval,
+                                               time_interval))
+    return frequency
+
+
+def get_binned_prediction(posterior, time_interval=1, fps=30) -> np.ndarray:
+    e_hat = np.argmax(posterior, axis=1)
+    frame_boundaries = np.concatenate([[0], e_hat[1:] != e_hat[:-1]])
+    frame_interval = int(time_interval * fps)
+    time_boundaries = np.add.reduceat(frame_boundaries,
+                                      range(0, len(frame_boundaries), frame_interval))
+    return np.array(time_boundaries, dtype=bool)
+
+
+def get_point_biserial(boundaries_binned, binned_comp) -> float:
+    M_1 = np.mean(binned_comp[boundaries_binned == 1])
+    M_0 = np.mean(binned_comp[boundaries_binned == 0])
+
+    n_1 = np.sum(boundaries_binned == 1)
+    n_0 = np.sum(boundaries_binned == 0)
+    n = n_1 + n_0
+
+    s = np.std(binned_comp)
+    r_pb = (M_1 - M_0) / s * np.sqrt(n_1 * n_0 / (float(n) ** 2))
+    return r_pb
+
+
 class Sample:
     """
     This class contains example python object to test syntax
@@ -154,6 +183,7 @@ class CV2VideoWriter:
     This class is a wrapper of opencv video-writing stream. It stores some commonly used
     variables and implements some commonly used method
     """
+
     def __init__(self, output_video_path, fps=30, height=740, width=960):
         """
 
@@ -257,6 +287,7 @@ class FrameWrapper:
     """
     This class keep tracks of relevant variables of a frame and implement commonly used methods
     """
+
     def __init__(self, frame: np.ndarray, frame_id=-1):
         """
         Initialize
@@ -318,6 +349,7 @@ class Canvas:
     """
     This is a template to use plt drawing functions and extract an image instead of visualizing
     """
+
     def __init__(self, rows: int = 3, columns: int = 1):
         """
         Initialize a figure and attached axes, then attach the figure to a canvas

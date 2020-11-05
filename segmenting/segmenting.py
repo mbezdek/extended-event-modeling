@@ -5,6 +5,10 @@ import pandas as pd
 import seaborn as sns
 import sys
 import os
+import pickle as pkl
+# Normally, RNN runs faster on CPU
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
 sys.path.append(os.getcwd())
 from scipy.stats import zscore
 from sem.event_models import LinearEvent, NonLinearEvent, RecurrentLinearEvent
@@ -24,14 +28,15 @@ def process_features(features_dataframe: pd.DataFrame) -> np.ndarray:
     return x_train
 
 
-def plot_features_and_posterior(features_train, post):
+def plot_features_and_posterior(features_train, post) -> None:
     cluster_id = np.argmax(post, axis=1)
     cc = sns.color_palette('Dark2', post.shape[1])
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw=dict(width_ratios=[1, 2]))
     for clt in cluster_id:
         idx = np.nonzero(cluster_id == clt)[0]
-        axes[0].scatter(features_train[idx, 0], features_train[idx, 1], color=cc[clt], alpha=.5)
+        axes[0].scatter(features_train[idx, 0], features_train[idx, 1], color=cc[clt],
+                        alpha=.5)
     axes[0].set_xlabel(r'$\mathbf{x}_{s,1}$')
     axes[0].set_ylabel(r'$\mathbf{x}_{s,2}$')
 
@@ -48,10 +53,17 @@ if __name__ == '__main__':
     args = parse_config()
     logger.info(f'Config {args}')
     # Create SEM parameters
-    sem_kwargs = dict(lmda=float(args.stickyness), alfa=float(args.concentration), f_class=LinearEvent,
-                      f_opts=dict(l2_regularization=float(args.l2_regularization)))
+    f_opts = dict(
+        l2_regularization=args.l2_regularization,
+        n_epochs=args.epochs,
+    )
+    sem_kwargs = dict(lmda=float(args.stickyness), alfa=float(args.concentration),
+                      f_class=LinearEvent,
+                      f_opts=f_opts)
     features_df = pd.read_csv(args.features_csv)
     features_train = process_features(features_dataframe=features_df)
     segmentation_results = sem_run(features_train, sem_kwargs)
+    with open(args.posterior_output, 'wb') as f:
+        pkl.dump(segmentation_results, f, protocol=pkl.HIGHEST_PROTOCOL)
     plot_features_and_posterior(features_train=features_train, post=segmentation_results.post)
     plt.show()
