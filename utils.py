@@ -66,6 +66,7 @@ def get_binned_prediction(posterior, time_interval=1, fps=30) -> np.ndarray:
     e_hat = np.argmax(posterior, axis=1)
     frame_boundaries = np.concatenate([[0], e_hat[1:] != e_hat[:-1]])
     frame_interval = int(time_interval * fps)
+    # Sum for each interval
     time_boundaries = np.add.reduceat(frame_boundaries,
                                       range(0, len(frame_boundaries), frame_interval))
     return np.array(time_boundaries, dtype=bool)
