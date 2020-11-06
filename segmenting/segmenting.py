@@ -15,6 +15,7 @@ from sem.event_models import LinearEvent, NonLinearEvent, RecurrentLinearEvent
 from sem.event_models import RecurrentEvent, GRUEvent, LSTMEvent
 from sem import sem_run
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 from sklearn import metrics
 from mpl_toolkits.mplot3d import Axes3D
 from utils import parse_config, logger
@@ -32,21 +33,34 @@ def process_features(features_dataframe: pd.DataFrame) -> np.ndarray:
 def plot_features_and_posterior(features_train, post) -> None:
     cluster_id = np.argmax(post, axis=1)
     cc = sns.color_palette('Dark2', post.shape[1])
-    pca = PCA(n_components=2)
+    pca = PCA(n_components=3)
     pca_result = pca.fit_transform(features_train)
-    fig, axes = plt.subplots(1, 2, figsize=(12, 4), gridspec_kw=dict(width_ratios=[1, 2]))
+    tsne = TSNE(n_components=2, verbose=1, perplexity=50, n_iter=300)
+    tsne_result = tsne.fit_transform(features_train)
+    fig = plt.figure(figsize=(14, 4))
+    sns.set_palette('Dark2')
+    ax = fig.add_subplot(1, 3, 1, projection='3d')
     for clt in cluster_id:
         idx = np.nonzero(cluster_id == clt)[0]
-        axes[0].scatter(pca_result[idx, 0], pca_result[idx, 1], color=cc[clt],
-                        alpha=.5)
-    axes[0].set_xlabel(r'PCA dimension $\mathbf{x}_{s,1}$')
-    axes[0].set_ylabel(r'PCA dimension $\mathbf{x}_{s,2}$')
-
-    sns.set_palette('Dark2')
-    axes[1].plot(post)
+        ax.scatter(pca_result[idx, 0],
+                   pca_result[idx, 1],
+                   pca_result[idx, 2],
+                   color=tuple(list(cc[clt])+[0.5]),
+                   alpha=0.5)
+    ax.set_title('PCA')
+    ax = fig.add_subplot(1, 3, 2)
+    for clt in cluster_id:
+        idx = np.nonzero(cluster_id == clt)[0]
+        ax.scatter(tsne_result[idx, 0],
+                   tsne_result[idx, 1],
+                   color=tuple(list(cc[clt])+[0.5]),
+                   alpha=0.5)
+    ax.set_title('t-SNE')
+    ax = fig.add_subplot(1, 3, 3)
+    ax.plot(post, alpha=0.5)
     y_hat = np.argmax(post, axis=1)
-    axes[1].set_xlabel('Time')
-    axes[1].set_ylabel('Posterior Probability')
+    ax.set_xlabel('Time')
+    ax.set_ylabel('Posterior Probability')
     # print(np.argmax(post, axis=1))
 
 
