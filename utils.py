@@ -13,13 +13,18 @@ from pysot.models.model_builder import ModelBuilder
 from pysot.tracker.tracker_builder import build_tracker
 import argparse
 import configparser
+from scipy.optimize import linear_sum_assignment
+import coloredlogs
+from colorlog.colorlog import escape_codes  # necessary for ANSI escape
 
 # Set-up logger
 logger = logging.getLogger(__name__)
 logger.setLevel(os.environ.get('LOGLEVEL', logging.INFO))
 # must have a handler, otherwise logging will use lastresort
 c_handler = logging.StreamHandler()
-c_handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+LOGFORMAT = '%(name)s - %(levelname)s - %(message)s'
+# c_handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+c_handler.setFormatter(coloredlogs.ColoredFormatter(LOGFORMAT))
 logger.addHandler(c_handler)
 
 
@@ -241,6 +246,21 @@ class ColorBGR:
     red = (0, 0, 255)
     green = (0, 255, 0)
     blue = (255, 0, 0)
+    yellow = (0, 255, 255)
+    magenta = (255, 0, 255)
+    cyan = (255, 255, 0)
+
+
+class ColorRef:
+    forward_set = dict(init=ColorBGR.red, track=ColorBGR.green, match=ColorBGR.blue,
+                       terminate=ColorBGR.red)
+    backward_set = dict(init=ColorBGR.red, track=ColorBGR.yellow, match=ColorBGR.blue,
+                        terminate=ColorBGR.red)
+    merged_set = dict(init=ColorBGR.red, track=ColorBGR.magenta, match=ColorBGR.blue,
+                      terminate=ColorBGR.red)
+
+    def __init__(self, color_dict: Dict):
+        self.color_dict = color_dict
 
 
 class BoxWrapper:
@@ -249,7 +269,8 @@ class BoxWrapper:
     commonly used methods
     """
 
-    def __init__(self, xmin, xmax, ymin, ymax, frame_id, category='unknown', conf_score=-1):
+    def __init__(self, xmin, xmax, ymin, ymax, frame_id, state='init',
+                 category='unknown', conf_score=-1.0, color=(255, 255, 255)):
         """
         Initialize bounding box's information
         :param xmin:
@@ -267,12 +288,17 @@ class BoxWrapper:
         self.frame_id = frame_id
         self.conf_score = conf_score
         self.category = category
+        self.state = state
+        self.color = color
 
     def get_xywh(self) -> List:
         return [self.xmin, self.ymin, self.xmax - self.xmin, self.ymax - self.ymin]
 
     def get_xxyy(self) -> List:
         return [self.xmin, self.xmax, self.ymin, self.ymax]
+
+    def get_xyxy(self) -> List:
+        return [self.xmin, self.ymin, self.xmax, self.ymax]
 
     def get_csv_row(self) -> List:
         """
@@ -298,8 +324,9 @@ class FrameWrapper:
         self.frame = frame
         self.current_text_position = 0.0
         self.frame_id = frame_id
+        self.boxes = dict()
 
-    def put_text(self, text: str, color=ColorBGR.red, font_scale=1.0) -> None:
+    def put_text(self, text: str, color=ColorBGR.red, font_scale=0.7) -> None:
         """
         This method is designed to put annotations on the frame
         :param text:
@@ -308,13 +335,13 @@ class FrameWrapper:
         :return:
         """
         # This variable keeps track of occupied positions on the frame
-        self.current_text_position = self.current_text_position + 0.1
+        self.current_text_position = self.current_text_position + 0.05
         cv2.putText(self.frame, text,
                     org=(50, int(self.current_text_position * self.get_height())),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=font_scale, color=color)
 
-    def put_bbox(self, bbox: BoxWrapper, color=ColorBGR.blue, font_scale=0.3) -> None:
+    def put_bbox(self, bbox: BoxWrapper, color=ColorBGR.blue, font_scale=0.4) -> None:
         """
         This method is designed to draw a bounding box and relevant information on the frame,
         intensity of color reflects conf_score
@@ -328,12 +355,12 @@ class FrameWrapper:
         cv2.rectangle(self.frame, pt1=(int(bbox.xmin), int(bbox.ymin)),
                       pt2=(int(bbox.xmax), int(bbox.ymax)),
                       color=color, thickness=1)
-        cv2.putText(self.frame, text=bbox.category, org=(int(bbox.xmin), int(bbox.ymin - 5)),
+        cv2.putText(self.frame, text=bbox.category, org=(int(bbox.xmin), int(bbox.ymax - 5)),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=font_scale,
                     color=color)
         cv2.putText(self.frame, text=str(f'{bbox.conf_score:.3f}'),
-                    org=(int(bbox.xmin), int(bbox.ymin + 20)),
+                    org=(int(bbox.xmin), int(bbox.ymin + 10)),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=font_scale,
                     color=color)
@@ -400,42 +427,41 @@ class TrackerWrapper:
     Each instance of this class tracks one object
     """
 
-    def __init__(self, **kwargs):
-        tracker_type = kwargs['tracker_type']
+    def __init__(self, box_wrapper: BoxWrapper, frame: np.ndarray,
+                 tracker_type: str = 'notrack', model_config: str = '', model_path: str = ''):
+        tracker_type = tracker_type
         if tracker_type == 'siam':
             # init siamrpn tracker
             logger.debug(f'Building siamrpn')
-            cfg.merge_from_file(kwargs['model_config'])
+            cfg.merge_from_file(model_config)
             cfg.CUDA = torch.cuda.is_available() and cfg.CUDA
             device = torch.device('cuda' if cfg.CUDA else 'cpu')
             model = ModelBuilder()
             model.load_state_dict(
-                torch.load(kwargs['model_path'],
+                torch.load(model_path,
                            map_location=lambda storage, loc: storage.cpu()))
             model.eval().to(device)
             siam_tracker = build_tracker(model)
-            siam_tracker.init(kwargs['frame'], kwargs['box_wrapper'].get_xywh())
+            siam_tracker.init(frame, box_wrapper.get_xywh())
             self.tracker = siam_tracker
+            self.model = model
         else:
             self.tracker = None
             logger.error(f'Unknown tracker type: {tracker_type}')
-        self.current_frame = kwargs['frame']
-        self.previous_frame = None
-        self.object_name = kwargs['box_wrapper'].category
-        self.boxes = [kwargs['box_wrapper']]
+        self.object_name = box_wrapper.category
+        self.boxes = [box_wrapper]
+        self.active = True
 
-    def get_next_box(self, frame) -> Dict:
+    def predict_next_box(self, frame: np.ndarray) -> Dict:
         """
         This method receive a frame and return coordinates of its object on that frame
         :param frame:
         :return: outputs: object's coordinates and confidence score
         """
-        self.previous_frame = self.current_frame
-        self.current_frame = frame
         outputs = self.tracker.track(frame)
         return outputs
 
-    def update(self, box_wrapper: BoxWrapper) -> None:
+    def append_box_wrapper(self, box_wrapper: BoxWrapper) -> None:
         """
         Update boxes
         :param box_wrapper:
@@ -443,13 +469,118 @@ class TrackerWrapper:
         """
         self.boxes.append(box_wrapper)
 
+    def re_init(self, box_wrapper: BoxWrapper, frame: np.ndarray) -> None:
+        self.active = True
+        self.tracker.init(frame, box_wrapper.get_xywh())
+
+    def terminate_track(self) -> None:
+        self.active = False
+        # del self.tracker
+        # self.tracker = None
+
+    def change_name(self, name: str) -> None:
+        for box in self.boxes:
+            box.category = name
+        self.object_name = name
+
+    def sort_boxes(self) -> None:
+        self.boxes = sorted(self.boxes, key=lambda box_wrapper: box_wrapper.frame_id)
 
 class Context:
     """
     This class keep track of active tracks and inactive tracks
     """
 
-    def __init__(self):
+    def __init__(self, track_kwargs: dict(), color_reference: ColorRef):
         self.tracks = dict()
+        self.frame_results = dict()
+        self.track_kwargs = track_kwargs
+        self.color_reference = color_reference
 
-    pass
+    def matching(self, boxes: np.ndarray, object_type: str, frame_wrapper: FrameWrapper) -> None:
+        self.frame_results[frame_wrapper.frame_id][object_type] = dict()
+        distance_matrix = np.array([])
+        if object_type not in self.tracks.keys():
+            self.tracks[object_type] = dict()
+            row_ind = col_ind = []
+        else:
+            for object_id, tracks in sorted(self.tracks[object_type].items(),
+                                            key=lambda kv: kv[0]):
+                last_box = np.array(tracks.boxes[-1].get_xyxy())
+                dists = np.linalg.norm(boxes[:, :4] - last_box[:4], axis=1)
+                distance_matrix = np.hstack([distance_matrix, dists])
+            distance_matrix = distance_matrix.reshape(len(self.tracks[object_type]),
+                                                      len(boxes))
+            row_ind, col_ind = linear_sum_assignment(distance_matrix)
+        matched_boxes = []
+        for row, col in zip(row_ind, col_ind):
+            # Updating old tracks
+            if distance_matrix[row, col] < 200:
+                logger.info(
+                    f'FrameID {frame_wrapper.frame_id:4d}: match, re-initializing ')
+                matched_boxes.append(col)
+                object_name = object_type + str(row)
+                box_wrapper = BoxWrapper(xmin=boxes[col][0], ymin=boxes[col][1],
+                                         xmax=boxes[col][2], ymax=boxes[col][3],
+                                         frame_id=frame_wrapper.frame_id, category=object_name,
+                                         conf_score=1.0, state='match',
+                                         color=self.color_reference.color_dict['match'])
+                self.tracks[object_type][row].re_init(frame=frame_wrapper.frame,
+                                                      box_wrapper=box_wrapper)
+                self.tracks[object_type][row].boxes[-1] = box_wrapper
+                self.frame_results[frame_wrapper.frame_id][object_type][
+                    row] = box_wrapper.get_xyxy() + [box_wrapper.conf_score]
+                frame_wrapper.put_bbox(bbox=box_wrapper,
+                                       color=box_wrapper.color)
+        # Creating new tracks
+        for col, box in enumerate(boxes):
+            if col not in col_ind or col not in matched_boxes:
+                logger.info(
+                    f'FrameID {frame_wrapper.frame_id:4d}: Init track '
+                    f'{object_type + str(len(self.tracks[object_type]))} at {boxes[col]}')
+                object_name = object_type + str(len(self.tracks[object_type]))
+                box_wrapper = BoxWrapper(xmin=boxes[col][0], ymin=boxes[col][1],
+                                         xmax=boxes[col][2], ymax=boxes[col][3],
+                                         frame_id=frame_wrapper.frame_id, category=object_name,
+                                         conf_score=1.0, state='init',
+                                         color=self.color_reference.color_dict['init'])
+                track_kwargs = self.track_kwargs
+                track_kwargs['frame'] = frame_wrapper.frame
+                track_kwargs['box_wrapper'] = box_wrapper
+                self.frame_results[frame_wrapper.frame_id][object_type][
+                    (len(self.tracks[object_type]))] = boxes[col]
+                self.tracks[object_type][
+                    (len(self.tracks[object_type]))] = TrackerWrapper(**track_kwargs)
+                frame_wrapper.put_bbox(bbox=box_wrapper,
+                                       color=box_wrapper.color)
+
+    def tracking(self, object_type: str, frame_wrapper: FrameWrapper, conf_threshold=0.8) -> None:
+        if object_type not in self.tracks:
+            logger.debug(f'Tracking: no instance of {object_type} initialized')
+            return
+        category_track = self.tracks[object_type]
+        # Init
+        self.frame_results[frame_wrapper.frame_id][object_type] = dict()
+        for object_id, track_wrapper in category_track.items():
+            if not track_wrapper.active:
+                continue
+            logger.debug(f'Tracking {object_type + str(object_id)}')
+            outputs = track_wrapper.predict_next_box(frame_wrapper.frame)
+            object_name = object_type + str(object_id)
+            box_wrapper = BoxWrapper(xmin=outputs['bbox'][0], ymin=outputs['bbox'][1],
+                                     xmax=outputs['bbox'][0] + outputs['bbox'][2],
+                                     ymax=outputs['bbox'][1] + outputs['bbox'][3],
+                                     frame_id=frame_wrapper.frame_id, category=object_name,
+                                     conf_score=outputs['best_score'], state='track',
+                                     color=self.color_reference.color_dict['track'])
+            self.tracks[object_type][object_id].append_box_wrapper(box_wrapper)
+            if box_wrapper.conf_score < conf_threshold:
+                logger.info(f'FrameID {frame_wrapper.frame_id}: '
+                            f'terminate track {object_type + str(object_id)}')
+                track_wrapper.terminate_track()
+                box_wrapper.state = 'terminate'
+                box_wrapper.color = self.color_reference.color_dict['terminate']
+            self.frame_results[frame_wrapper.frame_id][object_type][
+                object_id] = box_wrapper.get_xyxy() + [box_wrapper.conf_score]
+            frame_wrapper.put_bbox(bbox=box_wrapper,
+                                   color=box_wrapper.color)

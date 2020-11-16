@@ -10,7 +10,7 @@ import pandas as pd
 import argparse
 import configparser
 from utils import TrackerWrapper, BoxWrapper, FrameWrapper, CV2VideoWriter, CV2VideoReader, \
-    Context, ColorBGR, Sample, logger, parse_config
+    Context, ColorBGR, Sample, logger, parse_config, ColorRef
 
 if __name__ == '__main__':
     # Parse config file
@@ -37,7 +37,7 @@ if __name__ == '__main__':
                     'model_path': args.model_path,
                     'tracker_type': 'siam'}
     # Create a context to manage all tracks
-    context = Context()
+    context = Context(track_kwargs=track_kwargs, color_reference=ColorRef(ColorRef.forward_set))
     frame_id = 0
     while cv2_video_reader.capture.isOpened():
         frame_id += 1
@@ -46,7 +46,7 @@ if __name__ == '__main__':
             logger.info('End of video stream, ret is False!')
             break
         logger.debug(f'Processing frame {frame_id}-th')
-        if frame_id == 100 or frame_id == cv2_video_reader.total_frames:
+        if frame_id % 100 == 0 or frame_id == cv2_video_reader.total_frames:
             logger.info(f'Processing frame {frame_id}')
         my_frame = FrameWrapper(frame=frame, frame_id=frame_id)
         if frame_id in label_frames:  # If this is a label frame
@@ -60,7 +60,7 @@ if __name__ == '__main__':
                 # Create a wrapper, write csv, and draw
                 box_wrapper = BoxWrapper(xmin=x, ymin=y, xmax=x + w, ymax=y + h,
                                          frame_id=frame_id, category=object_name,
-                                         conf_score=1.0)
+                                         conf_score=1.0, state='init')
                 # write csv at each frame
                 with open(args.output_csv_path, 'a') as g:
                     writer = csv.writer(g)
@@ -82,16 +82,16 @@ if __name__ == '__main__':
         else:  # If this is not a label frame
             for object_name, track_wrapper in context.tracks.items():
                 # Track this object and draw a box
-                outputs = track_wrapper.get_next_box(my_frame.frame)
+                outputs = track_wrapper.predict_next_box(my_frame.frame)
                 box_wrapper = BoxWrapper(xmin=outputs['bbox'][0], ymin=outputs['bbox'][1],
                                          xmax=outputs['bbox'][0] + outputs['bbox'][2],
                                          ymax=outputs['bbox'][1] + outputs['bbox'][3],
                                          frame_id=frame_id, category=object_name,
-                                         conf_score=outputs['best_score'])
-                # write csv at each frame
-                with open(args.output_csv_path, 'a') as g:
-                    writer = csv.writer(g)
-                    writer.writerow(box_wrapper.get_csv_row())
+                                         conf_score=outputs['best_score'], state='track')
+                # # write csv at each frame
+                # with open(args.output_csv_path, 'a') as g:
+                #     writer = csv.writer(g)
+                #     writer.writerow(box_wrapper.get_csv_row())
                 my_frame.put_bbox(bbox=box_wrapper)
 
         cv2_video_writer.write_frame(my_frame.frame)
