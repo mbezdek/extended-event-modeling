@@ -59,7 +59,7 @@ if __name__ == '__main__':
                 object_name = box_df.iloc[i]['class']
                 # Create a wrapper, write csv, and draw
                 box_wrapper = BoxWrapper(xmin=x, ymin=y, xmax=x + w, ymax=y + h,
-                                         frame_id=frame_id, category=object_name,
+                                         frame_id=frame_id, object_name=object_name,
                                          conf_score=1.0, state='init')
                 # write csv at each frame
                 with open(args.output_csv_path, 'a') as g:
@@ -86,7 +86,7 @@ if __name__ == '__main__':
                 box_wrapper = BoxWrapper(xmin=outputs['bbox'][0], ymin=outputs['bbox'][1],
                                          xmax=outputs['bbox'][0] + outputs['bbox'][2],
                                          ymax=outputs['bbox'][1] + outputs['bbox'][3],
-                                         frame_id=frame_id, category=object_name,
+                                         frame_id=frame_id, object_name=object_name,
                                          conf_score=outputs['best_score'], state='track')
                 # # write csv at each frame
                 # with open(args.output_csv_path, 'a') as g:

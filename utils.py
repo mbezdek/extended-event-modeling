@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import os
 import logging
+from scipy.optimize import linear_sum_assignment
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
@@ -252,12 +253,12 @@ class ColorBGR:
 
 
 class ColorRef:
-    forward_set = dict(init=ColorBGR.red, track=ColorBGR.green, match=ColorBGR.blue,
-                       terminate=ColorBGR.red)
-    backward_set = dict(init=ColorBGR.red, track=ColorBGR.yellow, match=ColorBGR.blue,
-                        terminate=ColorBGR.red)
-    merged_set = dict(init=ColorBGR.red, track=ColorBGR.magenta, match=ColorBGR.blue,
-                      terminate=ColorBGR.red)
+    forward_set = dict(init=ColorBGR.blue, track=ColorBGR.green, match=ColorBGR.blue,
+                       deactivate=ColorBGR.red)
+    backward_set = dict(init=ColorBGR.blue, track=ColorBGR.magenta, match=ColorBGR.blue,
+                        deactivate=ColorBGR.red)
+    merged_set = dict(init=ColorBGR.blue, track=ColorBGR.cyan, match=ColorBGR.blue,
+                      deactivate=ColorBGR.red)
 
     def __init__(self, color_dict: Dict):
         self.color_dict = color_dict
@@ -270,7 +271,7 @@ class BoxWrapper:
     """
 
     def __init__(self, xmin, xmax, ymin, ymax, frame_id, state='init',
-                 category='unknown', conf_score=-1.0, color=(255, 255, 255)):
+                 object_name='unknown', conf_score=-1.0, color=(255, 255, 255)):
         """
         Initialize bounding box's information
         :param xmin:
@@ -278,7 +279,7 @@ class BoxWrapper:
         :param ymin:
         :param ymax:
         :param frame_id:
-        :param category:
+        :param object_name:
         :param conf_score:
         """
         self.xmin = xmin
@@ -287,7 +288,7 @@ class BoxWrapper:
         self.ymax = ymax
         self.frame_id = frame_id
         self.conf_score = conf_score
-        self.category = category
+        self.object_name = object_name
         self.state = state
         self.color = color
 
@@ -305,7 +306,7 @@ class BoxWrapper:
         Get a csv row, can be changed to suit different formats
         :return:
         """
-        return [self.frame_id, self.category, self.xmin, self.ymin,
+        return [self.frame_id, self.object_name, self.xmin, self.ymin,
                 self.xmax - self.xmin,
                 self.ymax - self.ymin, self.conf_score, 1]
 
@@ -355,7 +356,8 @@ class FrameWrapper:
         cv2.rectangle(self.frame, pt1=(int(bbox.xmin), int(bbox.ymin)),
                       pt2=(int(bbox.xmax), int(bbox.ymax)),
                       color=color, thickness=1)
-        cv2.putText(self.frame, text=bbox.category, org=(int(bbox.xmin), int(bbox.ymax - 5)),
+        cv2.putText(self.frame, text=bbox.object_name,
+                    org=(int(bbox.xmin), int(bbox.ymax - 5)),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=font_scale,
                     color=color)
@@ -448,9 +450,12 @@ class TrackerWrapper:
         else:
             self.tracker = None
             logger.error(f'Unknown tracker type: {tracker_type}')
-        self.object_name = box_wrapper.category
         self.boxes = [box_wrapper]
         self.active = True
+        self.first_frame = frame
+
+    def get_track_name(self):
+        return self.boxes[0].object_name
 
     def predict_next_box(self, frame: np.ndarray) -> Dict:
         """
@@ -473,31 +478,35 @@ class TrackerWrapper:
         self.active = True
         self.tracker.init(frame, box_wrapper.get_xywh())
 
-    def terminate_track(self) -> None:
+    def deactivate_track(self) -> None:
         self.active = False
         # del self.tracker
         # self.tracker = None
 
-    def change_name(self, name: str) -> None:
+    def release_tracker(self) -> None:
+        self.tracker = None
+
+    def change_name(self, object_name: str) -> None:
         for box in self.boxes:
-            box.category = name
-        self.object_name = name
+            box.object_name = object_name
 
     def sort_boxes(self) -> None:
         self.boxes = sorted(self.boxes, key=lambda box_wrapper: box_wrapper.frame_id)
+
 
 class Context:
     """
     This class keep track of active tracks and inactive tracks
     """
 
-    def __init__(self, track_kwargs: dict(), color_reference: ColorRef):
+    def __init__(self, track_kwargs: dict, color_reference: ColorRef):
         self.tracks = dict()
         self.frame_results = dict()
         self.track_kwargs = track_kwargs
         self.color_reference = color_reference
 
-    def matching(self, boxes: np.ndarray, object_type: str, frame_wrapper: FrameWrapper) -> None:
+    def matching(self, boxes: np.ndarray, object_type: str,
+                 frame_wrapper: FrameWrapper) -> None:
         self.frame_results[frame_wrapper.frame_id][object_type] = dict()
         distance_matrix = np.array([])
         if object_type not in self.tracks.keys():
@@ -522,7 +531,8 @@ class Context:
                 object_name = object_type + str(row)
                 box_wrapper = BoxWrapper(xmin=boxes[col][0], ymin=boxes[col][1],
                                          xmax=boxes[col][2], ymax=boxes[col][3],
-                                         frame_id=frame_wrapper.frame_id, category=object_name,
+                                         frame_id=frame_wrapper.frame_id,
+                                         object_name=object_name,
                                          conf_score=1.0, state='match',
                                          color=self.color_reference.color_dict['match'])
                 self.tracks[object_type][row].re_init(frame=frame_wrapper.frame,
@@ -541,7 +551,8 @@ class Context:
                 object_name = object_type + str(len(self.tracks[object_type]))
                 box_wrapper = BoxWrapper(xmin=boxes[col][0], ymin=boxes[col][1],
                                          xmax=boxes[col][2], ymax=boxes[col][3],
-                                         frame_id=frame_wrapper.frame_id, category=object_name,
+                                         frame_id=frame_wrapper.frame_id,
+                                         object_name=object_name,
                                          conf_score=1.0, state='init',
                                          color=self.color_reference.color_dict['init'])
                 track_kwargs = self.track_kwargs
@@ -554,7 +565,8 @@ class Context:
                 frame_wrapper.put_bbox(bbox=box_wrapper,
                                        color=box_wrapper.color)
 
-    def tracking(self, object_type: str, frame_wrapper: FrameWrapper, conf_threshold=0.8) -> None:
+    def tracking(self, object_type: str, frame_wrapper: FrameWrapper,
+                 conf_threshold=0.8) -> None:
         if object_type not in self.tracks:
             logger.debug(f'Tracking: no instance of {object_type} initialized')
             return
@@ -570,17 +582,252 @@ class Context:
             box_wrapper = BoxWrapper(xmin=outputs['bbox'][0], ymin=outputs['bbox'][1],
                                      xmax=outputs['bbox'][0] + outputs['bbox'][2],
                                      ymax=outputs['bbox'][1] + outputs['bbox'][3],
-                                     frame_id=frame_wrapper.frame_id, category=object_name,
+                                     frame_id=frame_wrapper.frame_id, object_name=object_name,
                                      conf_score=outputs['best_score'], state='track',
                                      color=self.color_reference.color_dict['track'])
             self.tracks[object_type][object_id].append_box_wrapper(box_wrapper)
             if box_wrapper.conf_score < conf_threshold:
                 logger.info(f'FrameID {frame_wrapper.frame_id}: '
-                            f'terminate track {object_type + str(object_id)}')
-                track_wrapper.terminate_track()
-                box_wrapper.state = 'terminate'
-                box_wrapper.color = self.color_reference.color_dict['terminate']
+                            f'deactivate track {object_type + str(object_id)}')
+                track_wrapper.deactivate_track()
+                box_wrapper.state = 'deactivate'
+                box_wrapper.color = self.color_reference.color_dict['deactivate']
             self.frame_results[frame_wrapper.frame_id][object_type][
                 object_id] = box_wrapper.get_xyxy() + [box_wrapper.conf_score]
             frame_wrapper.put_bbox(bbox=box_wrapper,
                                    color=box_wrapper.color)
+
+    def merge_bw_track(self, object_type: str, backward_track: TrackerWrapper):
+        backward_track.change_name(object_type + str(len(self.tracks[object_type])))
+        backward_track.sort_boxes()
+        backward_track.re_init(backward_track.boxes[-1], backward_track.first_frame)
+        self.tracks[object_type][len(self.tracks[object_type])] = backward_track
+
+
+def bbox_iou(boxA, boxB):
+    # determine the (x, y)-coordinates of the intersection rectangle
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[2], boxB[2])
+    yB = min(boxA[3], boxB[3])
+    # compute the area of intersection rectangle
+    interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    # compute the area of both the prediction and ground-truth
+    # rectangles
+    boxAArea = (boxA[2] - boxA[0] + 1) * (boxA[3] - boxA[1] + 1)
+    boxBArea = (boxB[2] - boxB[0] + 1) * (boxB[3] - boxB[1] + 1)
+    # compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+    # return the intersection over union value
+    return iou
+
+
+def track_buffer(context: Context, buffer_frames: dict,
+                 label_df, labeled_frames, is_backward=False, fps=30) -> Context:
+    if not is_backward:
+        # Delete label frame while tracking forward
+        del buffer_frames[max(buffer_frames.keys())]
+    # Create video writer and reader
+
+    for frame_id, frame in sorted(buffer_frames.items(), key=lambda kv: kv[0],
+                                  reverse=is_backward):
+        frame_wrapper = FrameWrapper(frame=frame, frame_id=frame_id)
+        context.frame_results[frame_wrapper.frame_id] = dict()
+        if frame_id in labeled_frames:  # If this is a label frame
+            df_interested = label_df[
+                (label_df['index'] == (frame_id // fps)) & (
+                        label_df['class'] == 'bagel')]
+            boxes = df_interested[['xmin', 'ymin', 'xmax', 'ymax']].to_numpy()
+            context.tracking('bagel', frame_wrapper)
+            context.matching(boxes, 'bagel', frame_wrapper)
+        else:  # If this is not a label frame
+            context.tracking('bagel', frame_wrapper)
+
+    return context
+
+
+def matching_and_merging(context_forward: Context, context_backward: Context,
+                         agreement_threshold=0.8) -> Context:
+    forward_categories = set(context_forward.tracks.keys())
+    backward_categories = set(context_backward.tracks.keys())
+    shared_categories = forward_categories.intersection(backward_categories)
+    new_categories = backward_categories.difference(forward_categories)
+
+    for object_type in shared_categories:
+        n_fw_tracks = len(context_forward.tracks[object_type])
+        n_bw_tracks = len(context_backward.tracks[object_type])
+        distance_matrix = np.full(shape=(n_fw_tracks, n_bw_tracks), fill_value=10000,
+                                  dtype=np.float)
+        for fw_object_id, fw_track in context_forward.tracks[object_type].items():
+            for bw_object_id, bw_track in context_backward.tracks[object_type].items():
+                logger.info(
+                    f'Compare FW {object_type + str(fw_object_id)} with BW {object_type + str(bw_object_id)}')
+                distance_matrix[fw_object_id][bw_object_id] = compare_tracks(fw_track,
+                                                                             bw_track)
+        row_ind, col_ind = linear_sum_assignment(distance_matrix)
+        matched_bw_tracks = []
+        matched_fw_tracks = []
+        for row, col in zip(row_ind, col_ind):
+            if 1 - distance_matrix[row][col] > agreement_threshold:
+                logger.info(
+                    f'Merge FW {object_type + str(row)} with BW {object_type + str(col)} '
+                    f'Matching score: {1 - distance_matrix[row][col]}')
+                bw_track = context_backward.tracks[object_type][col]
+                fw_track = context_forward.tracks[object_type][row]
+                fw_track.re_init(frame=bw_track.first_frame, box_wrapper=bw_track.boxes[0])
+                bw_track.change_name(fw_track.get_track_name())
+                merge_boxes(context_forward.tracks[object_type][row],
+                            context_backward.tracks[object_type][col])
+                matched_bw_tracks.append(col)
+                matched_fw_tracks.append(row)
+
+        for bw_object_id, bw_track in context_backward.tracks[object_type].items():
+            if bw_object_id not in col_ind or bw_object_id not in matched_bw_tracks:
+                logger.info(
+                    f'Merge new bw track {bw_track.get_track_name()} to fw as {object_type + str(len(context_forward.tracks[object_type]))}')
+                context_forward.merge_bw_track(object_type, bw_track)
+
+        for fw_object_id, fw_track in context_forward.tracks[object_type].items():
+            if fw_object_id not in row_ind or fw_object_id not in matched_fw_tracks:
+                if not fw_track.active and fw_track.tracker is not None:
+                    logger.info(f'Inactive fw track {fw_track.get_track_name()} does not match'
+                                f' any bw track, Terminate tracker to release memory')
+                    fw_track.release_tracker()
+
+    for object_type in new_categories:
+        logger.info(f'Init new category FW {object_type}')
+        context_forward.tracks[object_type] = dict()
+        for bw_object_id, bw_track in context_backward.tracks[object_type].items():
+            logger.info(f'Merge new BW {bw_track.get_track_name()} into fw')
+            context_forward.merge_bw_track(object_type, bw_track)
+    return context_forward
+
+
+def get_temporal_tracks(forward_track: TrackerWrapper,
+                        backward_track: TrackerWrapper) -> Tuple:
+    """
+    This function gets temporal information from forward_track and backward_track
+    :param forward_track:
+    :param backward_track:
+    :return:
+    """
+    fw_start = forward_track.boxes[0].frame_id
+    fw_stop = forward_track.boxes[-1].frame_id
+    bw_start = backward_track.boxes[-1].frame_id
+    bw_stop = backward_track.boxes[0].frame_id
+    intersection_start = max(bw_start, fw_start)
+    intersection_stop = min(fw_stop, bw_stop)
+    logger.info(
+        f'fw start {fw_start} - fw stop {fw_stop} - bw start {bw_start} - bw stop {bw_stop}')
+    logger.info(f'intersection start {intersection_start} - intersection stop {intersection_stop}')
+    return fw_start, fw_stop, bw_start, bw_stop, intersection_start, intersection_stop
+
+
+def compare_tracks(forward_track: TrackerWrapper, backward_track: TrackerWrapper,
+                   iou_threshold=0.2) -> float:
+    """
+    This functions measures agreement score between forward_track and backward_track
+    :param forward_track:
+    :param backward_track:
+    :param iou_threshold:
+    :return:
+    """
+    # find a temporal intersection
+    fw_start, fw_stop, bw_start, bw_stop, intersection_start, intersection_stop = \
+        get_temporal_tracks(forward_track, backward_track)
+    intersection = intersection_stop - intersection_start + 1
+    if intersection_stop < intersection_start:
+        logger.info(
+            f'No temporal overlap between FW {forward_track.get_track_name()} and BW {backward_track.get_track_name()}')
+        return 1
+    # calculate agreement within temporal intersection
+    agreement = 0
+    for frame_id in range(intersection_start, intersection_stop + 1):
+        fw_box = forward_track.boxes[frame_id - fw_start]
+        bw_box = backward_track.boxes[bw_start - frame_id - 1]
+        iou = bbox_iou(fw_box.get_xyxy(), bw_box.get_xyxy())
+        if iou > iou_threshold:
+            agreement += 1
+    logger.info(f'Agreement {agreement} over intersection {intersection}: '
+                f'{agreement / intersection}')
+    return 1.0 - (agreement / intersection)
+
+
+def merge_boxes(forward_track: TrackerWrapper, backward_track: TrackerWrapper) -> None:
+    """
+    This function merges boxes from backward_track to forward_track
+    :param forward_track:
+    :param backward_track:
+    :return:
+    """
+    # re-init tracker
+    # adding backward boxes to forward, using conf_score to judge
+    fw_start, fw_stop, bw_start, bw_stop, intersection_start, intersection_stop = \
+        get_temporal_tracks(forward_track, backward_track)
+    fw_votes = 0
+    bw_votes = 0
+    for frame_id in range(intersection_start, intersection_stop + 1):
+        fw_box = forward_track.boxes[frame_id - fw_start]
+        bw_box = backward_track.boxes[bw_start - frame_id - 1]
+        if fw_box.conf_score >= bw_box.conf_score:
+            fw_votes += 1
+        else:
+            bw_votes += 1
+    logger.info(f'fw_votes {fw_votes} - bw_votes {bw_votes}')
+    if fw_votes < bw_votes:
+        logger.info(f'bw_votes win - '
+                    f'Remove fw and replace by bw boxes from {intersection_start} to {intersection_stop}')
+    else:
+        logger.info(
+            f'fw_votes win - Keep fw boxes from {intersection_start} to {intersection_stop}')
+    logger.info(f'Append bw boxes from {fw_stop + 1} to {bw_stop} to fw')
+    for frame_id in range(intersection_start, bw_stop + 1):
+        if frame_id <= fw_stop:
+            if fw_votes >= bw_votes:
+                continue
+            else:
+                forward_track.boxes[frame_id - fw_start] = backward_track.boxes[
+                    bw_start - frame_id - 1]
+        else:
+            forward_track.boxes.append(backward_track.boxes[bw_start - frame_id - 1])
+
+
+def draw_context_on_frames(context: Context, buffer_frames: Dict,
+                           cv2_video_writer: CV2VideoWriter, labeled_frames=[]) -> None:
+    """
+    This functions draw all tracks from a context on a list of frames
+    :param context:
+    :param buffer_frames:
+    :param cv2_video_writer:
+    :param labeled_frames:
+    :return:
+    """
+    # going over all tracks
+    for object_type, category_track in context.tracks.items():
+        for object_id, track_wrapper in category_track.items():
+            for box_wrapper in track_wrapper.boxes:
+                if box_wrapper.frame_id in buffer_frames:
+                    frame = buffer_frames[box_wrapper.frame_id]
+                    frame_wrapper = FrameWrapper(frame, frame_id=box_wrapper.frame_id)
+                    frame_wrapper.put_bbox(box_wrapper,
+                                           color=box_wrapper.color)
+
+    for frame_id, frame in buffer_frames.items():
+        frame_wrapper = FrameWrapper(frame, frame_id=frame_id)
+        frame_wrapper.put_text(f'FrameID {frame_id}')
+        frame_wrapper.put_text(f'Second {frame_id // 30}')
+        if frame_id in labeled_frames:
+            frame_wrapper.put_text(f'LABEL!!!', color=ColorBGR.cyan)
+        cv2_video_writer.write_frame(frame)
+
+
+def print_context(context: Context):
+    log_str = ''
+    for object_type, tracks in context.tracks.items():
+        log_str += f'Object type: {object_type} - '
+        for object_id, track in tracks.items():
+            log_str += f'Object name {track.get_track_name()}, '
+        log_str += '\n'
+    logger.info(log_str)
