@@ -2,9 +2,7 @@ import numpy as np
 import cv2
 import os
 import logging
-from scipy.optimize import linear_sum_assignment
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import List, Dict, Tuple
@@ -16,6 +14,7 @@ import argparse
 import configparser
 from scipy.optimize import linear_sum_assignment
 import coloredlogs
+from copy import deepcopy
 from colorlog.colorlog import escape_codes  # necessary for ANSI escape
 
 # Set-up logger
@@ -407,6 +406,9 @@ class Canvas:
             img[:, int(img.shape[1] * left): int(img.shape[1] * right), :], (width, height))
         return canvas_resized
 
+    def save_fig(self, img_name=''):
+        self.figure.savefig(img_name)
+
     # This is a strategy function
     def draw_on_canvas(self, seg_points) -> None:
         """
@@ -452,6 +454,7 @@ class TrackerWrapper:
             logger.error(f'Unknown tracker type: {tracker_type}')
         self.boxes = [box_wrapper]
         self.active = True
+        self.terminate = False
         self.first_frame = frame
 
     def get_track_name(self):
@@ -484,6 +487,7 @@ class TrackerWrapper:
         # self.tracker = None
 
     def release_tracker(self) -> None:
+        self.terminate = True
         self.tracker = None
 
     def change_name(self, object_name: str) -> None:
@@ -522,8 +526,8 @@ class Context:
                                                       len(boxes))
             row_ind, col_ind = linear_sum_assignment(distance_matrix)
         matched_boxes = []
+        # Updating old tracks
         for row, col in zip(row_ind, col_ind):
-            # Updating old tracks
             if distance_matrix[row, col] < 200:
                 logger.info(
                     f'FrameID {frame_wrapper.frame_id:4d}: match, re-initializing ')
@@ -566,7 +570,7 @@ class Context:
                                        color=box_wrapper.color)
 
     def tracking(self, object_type: str, frame_wrapper: FrameWrapper,
-                 conf_threshold=0.8) -> None:
+                 conf_threshold=0.4) -> None:
         if object_type not in self.tracks:
             logger.debug(f'Tracking: no instance of {object_type} initialized')
             return
@@ -636,31 +640,41 @@ def track_buffer(context: Context, buffer_frames: dict,
         frame_wrapper = FrameWrapper(frame=frame, frame_id=frame_id)
         context.frame_results[frame_wrapper.frame_id] = dict()
         if frame_id in labeled_frames:  # If this is a label frame
-            df_interested = label_df[
-                (label_df['index'] == (frame_id // fps)) & (
-                        label_df['class'] == 'bagel')]
-            boxes = df_interested[['xmin', 'ymin', 'xmax', 'ymax']].to_numpy()
-            context.tracking('bagel', frame_wrapper)
-            context.matching(boxes, 'bagel', frame_wrapper)
+            df_current = label_df[
+                (label_df['index'] == (frame_id // fps))]
+            object_types = set(df_current['class'].unique())
+            for object_type in object_types:
+                df_category = df_current[df_current['class'] == object_type]
+                boxes = df_category[['xmin', 'ymin', 'xmax', 'ymax']].to_numpy()
+                # no need to run tracking, only backward go into this condition,
+                # and matching in this case only does initialization
+                # context.tracking(object_type, frame_wrapper)
+                context.matching(boxes, object_type, frame_wrapper)
         else:  # If this is not a label frame
-            context.tracking('bagel', frame_wrapper)
+            for object_type in context.tracks.keys():
+                context.tracking(object_type, frame_wrapper)
 
     return context
 
 
 def matching_and_merging(context_forward: Context, context_backward: Context,
-                         agreement_threshold=0.8) -> Context:
+                         agreement_threshold=0.5) -> Context:
     forward_categories = set(context_forward.tracks.keys())
     backward_categories = set(context_backward.tracks.keys())
     shared_categories = forward_categories.intersection(backward_categories)
     new_categories = backward_categories.difference(forward_categories)
+    old_categories = forward_categories.difference(backward_categories)
 
+    # Process shared categories between fw and bw
     for object_type in shared_categories:
         n_fw_tracks = len(context_forward.tracks[object_type])
         n_bw_tracks = len(context_backward.tracks[object_type])
         distance_matrix = np.full(shape=(n_fw_tracks, n_bw_tracks), fill_value=10000,
                                   dtype=np.float)
         for fw_object_id, fw_track in context_forward.tracks[object_type].items():
+            if fw_track.terminate:
+                logger.info(f'FW {object_type + str(fw_object_id)} terminated last interval')
+                continue
             for bw_object_id, bw_track in context_backward.tracks[object_type].items():
                 logger.info(
                     f'Compare FW {object_type + str(fw_object_id)} with BW {object_type + str(bw_object_id)}')
@@ -669,6 +683,7 @@ def matching_and_merging(context_forward: Context, context_backward: Context,
         row_ind, col_ind = linear_sum_assignment(distance_matrix)
         matched_bw_tracks = []
         matched_fw_tracks = []
+        # Process matched pairs
         for row, col in zip(row_ind, col_ind):
             if 1 - distance_matrix[row][col] > agreement_threshold:
                 logger.info(
@@ -683,19 +698,41 @@ def matching_and_merging(context_forward: Context, context_backward: Context,
                 matched_bw_tracks.append(col)
                 matched_fw_tracks.append(row)
 
-        for bw_object_id, bw_track in context_backward.tracks[object_type].items():
-            if bw_object_id not in col_ind or bw_object_id not in matched_bw_tracks:
-                logger.info(
-                    f'Merge new bw track {bw_track.get_track_name()} to fw as {object_type + str(len(context_forward.tracks[object_type]))}')
-                context_forward.merge_bw_track(object_type, bw_track)
-
+        # Process unmatched fw tracks
         for fw_object_id, fw_track in context_forward.tracks[object_type].items():
             if fw_object_id not in row_ind or fw_object_id not in matched_fw_tracks:
                 if not fw_track.active and fw_track.tracker is not None:
                     logger.info(f'Inactive fw track {fw_track.get_track_name()} does not match'
                                 f' any bw track, Terminate tracker to release memory')
                     fw_track.release_tracker()
+                elif fw_track.active:
+                    logger.info(f'Active fw track {fw_track.get_track_name()} does not match'
+                                f' any bw track, duplicate last box for indexing')
+                    box_wrapper = deepcopy(fw_track.boxes[-1])
+                    box_wrapper.frame_id = fw_track.boxes[-1].frame_id + 1
+                    fw_track.append_box_wrapper(box_wrapper=box_wrapper)
+        # Process unmatched bw tracks
+        for bw_object_id, bw_track in context_backward.tracks[object_type].items():
+            if bw_object_id not in col_ind or bw_object_id not in matched_bw_tracks:
+                logger.info(
+                    f'Merge new bw track {bw_track.get_track_name()} to fw as {object_type + str(len(context_forward.tracks[object_type]))}')
+                context_forward.merge_bw_track(object_type, bw_track)
 
+    # Process categories that bw doesn't have
+    for object_type in old_categories:
+        for fw_object_id, fw_track in context_forward.tracks[object_type].items():
+            if fw_track.active:
+                logger.info(f'Active fw category {fw_track.get_track_name()} does not match'
+                            f' any bw category, duplicate last box for indexing')
+                box_wrapper = deepcopy(fw_track.boxes[-1])
+                box_wrapper.frame_id = fw_track.boxes[-1].frame_id + 1
+                fw_track.append_box_wrapper(box_wrapper=box_wrapper)
+            elif fw_track.tracker is not None:
+                logger.info(f'Inactive fw category {fw_track.get_track_name()} does not match'
+                            f' any bw category, Terminate tracker to release memory')
+                fw_track.release_tracker()
+
+    # Process categories that fw doesn't have
     for object_type in new_categories:
         logger.info(f'Init new category FW {object_type}')
         context_forward.tracks[object_type] = dict()
@@ -721,7 +758,8 @@ def get_temporal_tracks(forward_track: TrackerWrapper,
     intersection_stop = min(fw_stop, bw_stop)
     logger.info(
         f'fw start {fw_start} - fw stop {fw_stop} - bw start {bw_start} - bw stop {bw_stop}')
-    logger.info(f'intersection start {intersection_start} - intersection stop {intersection_stop}')
+    logger.info(
+        f'intersection start {intersection_start} - intersection stop {intersection_stop}')
     return fw_start, fw_stop, bw_start, bw_stop, intersection_start, intersection_stop
 
 
@@ -791,7 +829,7 @@ def merge_boxes(forward_track: TrackerWrapper, backward_track: TrackerWrapper) -
                 forward_track.boxes[frame_id - fw_start] = backward_track.boxes[
                     bw_start - frame_id - 1]
         else:
-            forward_track.boxes.append(backward_track.boxes[bw_start - frame_id - 1])
+            forward_track.append_box_wrapper(backward_track.boxes[bw_start - frame_id - 1])
 
 
 def draw_context_on_frames(context: Context, buffer_frames: Dict,

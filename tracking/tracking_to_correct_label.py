@@ -4,7 +4,6 @@ import torch
 # torch.backends.cudnn.enabled=False
 import sys
 
-sys.path.append('C:\\Users\\nguye\\Documents\\PBS\\Research\\pysot')
 import os
 
 sys.path.append(os.getcwd())
