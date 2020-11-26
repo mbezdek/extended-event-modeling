@@ -54,7 +54,8 @@ def parse_config():
     )
     parser.set_defaults(**defaults)
     # These arguments can be overridden by command line
-    # parser.add_argument("--input_video_path")
+    parser.add_argument("--run")
+    parser.add_argument("--tag")
     args = parser.parse_args(remaining_argv)
 
     return args
@@ -360,11 +361,11 @@ class FrameWrapper:
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                     fontScale=font_scale,
                     color=color)
-        cv2.putText(self.frame, text=str(f'{bbox.conf_score:.3f}'),
-                    org=(int(bbox.xmin), int(bbox.ymin + 10)),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=font_scale,
-                    color=color)
+        # cv2.putText(self.frame, text=str(f'{bbox.conf_score:.3f}'),
+        #             org=(int(bbox.xmin), int(bbox.ymin + 10)),
+        #             fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+        #             fontScale=font_scale,
+        #             color=color)
 
     def get_width(self) -> int:
         return self.frame.shape[1]
@@ -439,16 +440,25 @@ class TrackerWrapper:
             logger.debug(f'Building siamrpn')
             cfg.merge_from_file(model_config)
             cfg.CUDA = torch.cuda.is_available() and cfg.CUDA
-            device = torch.device('cuda' if cfg.CUDA else 'cpu')
-            model = ModelBuilder()
-            model.load_state_dict(
-                torch.load(model_path,
-                           map_location=lambda storage, loc: storage.cpu()))
-            model.eval().to(device)
-            siam_tracker = build_tracker(model)
-            siam_tracker.init(frame, box_wrapper.get_xywh())
+            if cfg.CUDA:
+                cuda_id = np.random.randint(torch.cuda.device_count())
+                self.cuda_id = cuda_id
+                self.device = torch.device(f'cuda:{self.cuda_id}')
+                with torch.cuda.device(self.cuda_id):
+                    model = ModelBuilder()
+                    model.load_state_dict(torch.load(model_path, map_location=self.device))
+                    model.eval().to(self.device)
+                    siam_tracker = build_tracker(model)
+                    siam_tracker.init(frame, box_wrapper.get_xywh())
+            else:
+                self.device = torch.device('cpu')
+                model = ModelBuilder()
+                model.load_state_dict(torch.load(model_path, map_location=self.device))
+                model.eval().to(self.device)
+                siam_tracker = build_tracker(model)
+                siam_tracker.init(frame, box_wrapper.get_xywh())
+
             self.tracker = siam_tracker
-            self.model = model
         else:
             self.tracker = None
             logger.error(f'Unknown tracker type: {tracker_type}')
@@ -456,6 +466,12 @@ class TrackerWrapper:
         self.active = True
         self.terminate = False
         self.first_frame = frame
+        self.no_hit = 0
+        self.no_hit_threshold = 30
+
+    def __str__(self) -> str:
+        return f'track_name={self.get_track_name()}, active={self.active}, ' \
+               f'terminate={self.terminate}'
 
     def get_track_name(self):
         return self.boxes[0].object_name
@@ -466,7 +482,11 @@ class TrackerWrapper:
         :param frame:
         :return: outputs: object's coordinates and confidence score
         """
-        outputs = self.tracker.track(frame)
+        if self.device != torch.device('cpu'):
+            with torch.cuda.device(self.cuda_id):
+                outputs = self.tracker.track(frame)
+        else:
+            outputs = self.tracker.track(frame)
         return outputs
 
     def append_box_wrapper(self, box_wrapper: BoxWrapper) -> None:
@@ -479,15 +499,19 @@ class TrackerWrapper:
 
     def re_init(self, box_wrapper: BoxWrapper, frame: np.ndarray) -> None:
         self.active = True
-        self.tracker.init(frame, box_wrapper.get_xywh())
+        if self.device != torch.device('cpu'):
+            with torch.cuda.device(self.cuda_id):
+                self.tracker.init(frame, box_wrapper.get_xywh())
+        else:
+            self.tracker.init(frame, box_wrapper.get_xywh())
 
     def deactivate_track(self) -> None:
         self.active = False
-        # del self.tracker
-        # self.tracker = None
 
     def release_tracker(self) -> None:
+        logger.info(f'Releasing {self.get_track_name()}')
         self.terminate = True
+        self.tracker.model = None
         self.tracker = None
 
     def change_name(self, object_name: str) -> None:
@@ -591,11 +615,16 @@ class Context:
                                      color=self.color_reference.color_dict['track'])
             self.tracks[object_type][object_id].append_box_wrapper(box_wrapper)
             if box_wrapper.conf_score < conf_threshold:
-                logger.info(f'FrameID {frame_wrapper.frame_id}: '
-                            f'deactivate track {object_type + str(object_id)}')
-                track_wrapper.deactivate_track()
-                box_wrapper.state = 'deactivate'
-                box_wrapper.color = self.color_reference.color_dict['deactivate']
+                track_wrapper.no_hit += 1
+                if track_wrapper.no_hit > track_wrapper.no_hit_threshold:
+                    logger.info(f'FrameID {frame_wrapper.frame_id}: '
+                                f'deactivate track {object_type + str(object_id)}')
+                    track_wrapper.deactivate_track()
+                    box_wrapper.state = 'deactivate'
+                    box_wrapper.color = self.color_reference.color_dict['deactivate']
+            # else:
+                # reset count
+                # track_wrapper.no_hit = 0
             self.frame_results[frame_wrapper.frame_id][object_type][
                 object_id] = box_wrapper.get_xyxy() + [box_wrapper.conf_score]
             frame_wrapper.put_bbox(bbox=box_wrapper,
@@ -697,6 +726,7 @@ def matching_and_merging(context_forward: Context, context_backward: Context,
                             context_backward.tracks[object_type][col])
                 matched_bw_tracks.append(col)
                 matched_fw_tracks.append(row)
+                bw_track.terminate = True  # Mark to release after
 
         # Process unmatched fw tracks
         for fw_object_id, fw_track in context_forward.tracks[object_type].items():
@@ -863,9 +893,14 @@ def draw_context_on_frames(context: Context, buffer_frames: Dict,
 
 def print_context(context: Context):
     log_str = ''
+    num_tracks = 0
+    num_active = 0
+    num_terminate = 0
     for object_type, tracks in context.tracks.items():
-        log_str += f'Object type: {object_type} - '
         for object_id, track in tracks.items():
-            log_str += f'Object name {track.get_track_name()}, '
-        log_str += '\n'
+            num_tracks += 1
+            num_active += int(track.active)
+            num_terminate += int(track.terminate)
+            log_str += str(track) + '\n'
+    log_str += f'Stats: num_tracks: {num_tracks}, active {num_active}, terminate {num_terminate}'
     logger.info(log_str)
