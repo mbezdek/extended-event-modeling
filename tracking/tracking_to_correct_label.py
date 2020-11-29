@@ -4,7 +4,6 @@ import torch
 # torch.backends.cudnn.enabled=False
 import sys
 
-sys.path.append('C:\\Users\\nguye\\Documents\\PBS\\Research\\pysot')
 import os
 
 sys.path.append(os.getcwd())
@@ -22,22 +21,33 @@ if __name__ == '__main__':
     logger.info(f'Config {args}')
     # Create video writer and reader
     start = perf_counter()
-    cv2_video_reader = CV2VideoReader(args.input_video_path)
-    cv2_video_writer_fw = CV2VideoWriter(output_video_path=args.output_video_path_forward,
+    INPUT_VIDEO_PATH = os.path.join(args.input_video_dir, args.run + f'_trim.mp4')
+    INPUT_LABEL_PATH = os.path.join(args.input_label_dir, args.run + f'_labels.csv')
+    OUTPUT_VIDEO_FW = os.path.join(args.output_video_dir, args.run + f'_{args.tag}_fw.avi')
+    OUTPUT_VIDEO_BW = os.path.join(args.output_video_dir, args.run + f'_{args.tag}_bw.avi')
+    OUTPUT_VIDEO_MERGED = os.path.join(args.output_video_dir, args.run + f'_{args.tag}_merged.avi')
+    OUTPUT_CSV_PATH = os.path.join(args.output_csv_dir, args.run + f'_{args.tag}.csv')
+
+    cv2_video_reader = CV2VideoReader(INPUT_VIDEO_PATH)
+    cv2_video_writer_fw = CV2VideoWriter(output_video_path=OUTPUT_VIDEO_FW,
                                          width=cv2_video_reader.width,
                                          height=cv2_video_reader.height, fps=120)
-    cv2_video_writer_bw = CV2VideoWriter(output_video_path=args.output_video_path_backward,
+    cv2_video_writer_bw = CV2VideoWriter(output_video_path=OUTPUT_VIDEO_BW,
                                          width=cv2_video_reader.width,
                                          height=cv2_video_reader.height, fps=120)
-    cv2_video_writer_merged = CV2VideoWriter(output_video_path=args.output_video_path_merged,
+    cv2_video_writer_merged = CV2VideoWriter(output_video_path=OUTPUT_VIDEO_MERGED,
                                              width=cv2_video_reader.width,
                                              height=cv2_video_reader.height, fps=120)
-    label_df = pd.read_csv(args.input_label_path)
+    csv_headers = ['frame', 'name', 'x', 'y', 'w', 'h', 'confidence', 'ground_truth']
+    with open(OUTPUT_CSV_PATH, 'w') as g:
+        writer = csv.writer(g)
+        writer.writerow(csv_headers)
+    label_df = pd.read_csv(INPUT_LABEL_PATH)
     labeled_seconds = np.array(sorted(label_df['index'].unique()))
     labeled_frames = labeled_seconds * cv2_video_reader.fps
     labeled_frames = list(labeled_frames.astype(np.int))
-    cv2_video_reader.capture.set(cv2.CAP_PROP_POS_FRAMES, 12100)
-    frame_id = 12100 - 1
+    cv2_video_reader.capture.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    frame_id = 0 - 1
     buffer_frames = dict()
     track_kwargs = dict(model_config=args.model_config, model_path=args.model_path,
                         tracker_type='siam')
@@ -46,7 +56,7 @@ if __name__ == '__main__':
     while cv2_video_reader.capture.isOpened():
         frame_id += 1
         ret, frame = cv2_video_reader.read_frame()
-        if not ret or frame_id > 14850:
+        if not ret:
             logger.info('End of video stream, ret is False!')
             break
         buffer_frames[frame_id] = frame
@@ -80,8 +90,23 @@ if __name__ == '__main__':
             print_context(context_forward)
             draw_context_on_frames(context_forward, deepcopy(buffer_frames),
                                    cv2_video_writer_merged, labeled_frames=labeled_frames)
+            # write csv tracking
+            with open(OUTPUT_CSV_PATH, 'a') as g:
+                for object_type, category_track in context_forward.tracks.items():
+                    for object_id, track_wrapper in category_track.items():
+                        for box_wrapper in track_wrapper.boxes:
+                            if box_wrapper.frame_id in buffer_frames:
+                                writer = csv.writer(g)
+                                writer.writerow(box_wrapper.get_csv_row())
             # reset buffer
             buffer_frames = dict()
+            # release backward tracks
+            logger.info('Release backward trackers')
+            for object_type, category_track in context_backward.tracks.items():
+                for object_id, track_wrapper in category_track.items():
+                    if track_wrapper.terminate:
+                        track_wrapper.release_tracker()
+            torch.cuda.empty_cache()
 
     cv2_video_writer_bw.writer.release()
     cv2_video_writer_fw.writer.release()
