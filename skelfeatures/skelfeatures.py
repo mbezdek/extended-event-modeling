@@ -19,4 +19,4 @@ if __name__ == '__main__':
     skeldf = calc_interhand_dist(skeldf)
     skeldf = calc_interhand_speed(skeldf)
     skeldf = calc_interhand_acceleration(skeldf)
-    skeldf.to_csv(args.skel_csv_out)
+    skeldf.to_csv(args.skel_csv_out, index=False)
