@@ -2,6 +2,10 @@ import numpy as np
 import cv2
 import os
 import logging
+import pandas as pd
+import matplotlib.animation as animation
+import math
+from scipy.ndimage import gaussian_filter1d
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -61,17 +65,18 @@ def parse_config():
     return args
 
 
-def get_frequency_ground_truth(time_boundaries, time_interval=1) -> np.ndarray:
-    frequency, _ = np.histogram(time_boundaries,
-                                bins=np.arange(0, max(time_boundaries) + time_interval,
-                                               time_interval))
-    return frequency
+def get_frequency_ground_truth(second_boundaries, second_interval=1,
+                               end_second=555) -> Tuple:
+    frequency, bins = np.histogram(second_boundaries,
+                                   bins=np.arange(0, end_second + second_interval,
+                                                  second_interval))
+    return frequency, bins
 
 
-def get_binned_prediction(posterior, time_interval=1, fps=30) -> np.ndarray:
+def get_binned_prediction(posterior, second_interval=1, fps=30) -> np.ndarray:
     e_hat = np.argmax(posterior, axis=1)
     frame_boundaries = np.concatenate([[0], e_hat[1:] != e_hat[:-1]])
-    frame_interval = int(time_interval * fps)
+    frame_interval = int(second_interval * fps)
     # Sum for each interval
     time_boundaries = np.add.reduceat(frame_boundaries,
                                       range(0, len(frame_boundaries), frame_interval))
@@ -112,6 +117,9 @@ class SegmentationVideo:
     def __init__(self, data_frame, video_path):
         self.data_frame = data_frame[
             data_frame['movie1'] == os.path.splitext(os.path.basename(video_path))[0]]
+        self.n_participants = 0
+        self.biserials = None
+        self.seg_points = None
 
     @staticmethod
     def string_to_segments(raw_string: str) -> np.ndarray:
@@ -125,7 +133,40 @@ class SegmentationVideo:
         list_of_segments = np.array(list_of_segments)
         return list_of_segments
 
-    def get_segments(self, n_annotators=1, condition='coarse') -> List:
+    def get_point_biserial(self, second_interval=1, end_second=555):
+        self.biserials = []
+        all_seg_points = np.hstack(self.seg_points)
+        gt_boundaries, _ = get_frequency_ground_truth(all_seg_points,
+                                                      second_interval=second_interval,
+                                                      end_second=end_second)
+        gt_freqs = gt_boundaries / self.n_participants
+        for seg_point in self.seg_points:
+            participant_seg, _ = get_frequency_ground_truth(seg_point,
+                                                            second_interval=second_interval,
+                                                            end_second=end_second)
+            point = get_point_biserial(participant_seg, gt_freqs)
+            self.biserials.append(point)
+
+    def preprocess_segments(self):
+        average = np.mean([len(seg) for seg in self.seg_points if len(seg)])
+        std = np.std([len(seg) for seg in self.seg_points if len(seg)])
+        empty = 0
+        out_lier = 0
+        new_seg_points = []
+        for seg in self.seg_points:
+            if len(seg) > 0:
+                if average + 2 * std > len(seg) > average - 2 * std:
+                    new_seg_points.append(seg)
+                else:
+                    out_lier += 1
+            else:
+                empty += 1
+        assert len(self.seg_points) == empty + out_lier + len(new_seg_points)
+        logger.info(f'{empty} Empty participants and {out_lier} Outlier participants')
+        self.seg_points = new_seg_points
+        self.n_participants = len(self.seg_points)
+
+    def get_segments(self, n_annotators=100, condition='coarse') -> List:
         """
         This method extract a list of segmentations, each according to an annotator
         :param n_annotators: number of annotators to return
@@ -133,10 +174,12 @@ class SegmentationVideo:
         :return:
         """
         seg = self.data_frame[self.data_frame['condition'] == condition]
+        logger.info(f'Total of participants {len(seg)}')
         # parse annotations, from string to a list of breakpoints for each annotation
         seg_processed = seg['segment1'].apply(SegmentationVideo.string_to_segments)
-        seg_points = seg_processed.values[:n_annotators]
-        return seg_points
+        self.seg_points = seg_processed.values[:n_annotators]
+        self.preprocess_segments()
+        return self.seg_points
 
 
 class CV2VideoReader:
@@ -623,8 +666,8 @@ class Context:
                     box_wrapper.state = 'deactivate'
                     box_wrapper.color = self.color_reference.color_dict['deactivate']
             # else:
-                # reset count
-                # track_wrapper.no_hit = 0
+            # reset count
+            # track_wrapper.no_hit = 0
             self.frame_results[frame_wrapper.frame_id][object_type][
                 object_id] = box_wrapper.get_xyxy() + [box_wrapper.conf_score]
             frame_wrapper.put_bbox(bbox=box_wrapper,
@@ -637,6 +680,7 @@ class Context:
         self.tracks[object_type][len(self.tracks[object_type])] = backward_track
 
 
+# Tracking utilities
 def bbox_iou(boxA, boxB):
     # determine the (x, y)-coordinates of the intersection rectangle
     xA = max(boxA[0], boxB[0])
@@ -906,42 +950,47 @@ def print_context(context: Context):
     logger.info(log_str)
 
 
+# Skeleton utilities
 def calc_joint_dist(df, joint):
     # df : skeleton tracking dataframe with 3D joint coordinates
     # joint : integer 0 to 24 corresponding to a Kinect skeleton joint
     # returns df with column of distance between the joint and spine mid:
     # some key joints are spine_mid:J1,left hand:J7,right hand: J11, foot left J15, foot right: J19
     j = str(joint)
-    jx = 'J'+j+'_3D_X'
-    jy = 'J'+j+'_3D_Y'
-    jz = 'J'+j+'_3D_Z'
-    jout = 'J'+j+'_dist_from_J1'
-    df[jout] = np.sqrt((df[jx]-df.J1_3D_X)**2 + (df[jy]-df.J1_3D_Y)**2 + (df[jz]-df.J1_3D_Z)**2)
+    jx = 'J' + j + '_3D_X'
+    jy = 'J' + j + '_3D_Y'
+    jz = 'J' + j + '_3D_Z'
+    jout = 'J' + j + '_dist_from_J1'
+    df[jout] = np.sqrt(
+        (df[jx] - df.J1_3D_X) ** 2 + (df[jy] - df.J1_3D_Y) ** 2 + (df[jz] - df.J1_3D_Z) ** 2)
     return df
 
 
 def calc_joint_speed(df, joint):
     j = str(joint)
-    jx = 'J'+j+'_3D_X'
-    jy = 'J'+j+'_3D_Y'
-    jz = 'J'+j+'_3D_Z'
-    jout = 'J'+j+'_speed'
-    df[jout] = np.sqrt((df[jx] - df[jx].shift(1)) ** 2 + (df[jy] - df[jy].shift(1)) ** 2 + (df[jz] - df[jz].shift(1)) ** 2)/(df.sync_time-df.sync_time.shift(1))
+    jx = 'J' + j + '_3D_X'
+    jy = 'J' + j + '_3D_Y'
+    jz = 'J' + j + '_3D_Z'
+    jout = 'J' + j + '_speed'
+    df[jout] = np.sqrt((df[jx] - df[jx].shift(1)) ** 2 + (df[jy] - df[jy].shift(1)) ** 2 + (
+            df[jz] - df[jz].shift(1)) ** 2) / (df.sync_time - df.sync_time.shift(1))
     return df
 
 
 def calc_joint_acceleration(df, joint):
     j = str(joint)
-    js = 'J'+j+'_speed'
+    js = 'J' + j + '_speed'
     if js not in df.columns:
         df = calc_joint_speed(df, joint)
-    jout = 'J'+j+'_acceleration'
-    df[jout] = (df[js] - df[js].shift(1))/(df.sync_time-df.sync_time.shift(1))
+    jout = 'J' + j + '_acceleration'
+    df[jout] = (df[js] - df[js].shift(1)) / (df.sync_time - df.sync_time.shift(1))
     return df
 
 
 def calc_interhand_dist(df):
-    df['interhand_dist'] = np.sqrt((df.J11_3D_X - df.J7_3D_X) ** 2 + (df.J11_3D_Y - df.J7_3D_Y) ** 2 + (df.J11_3D_Z - df.J7_3D_Z) ** 2)
+    df['interhand_dist'] = np.sqrt(
+        (df.J11_3D_X - df.J7_3D_X) ** 2 + (df.J11_3D_Y - df.J7_3D_Y) ** 2 + (
+                df.J11_3D_Z - df.J7_3D_Z) ** 2)
     return df
 
 
@@ -963,3 +1012,145 @@ def calc_interhand_acceleration(df):
         df = calc_joint_acceleration(df, 11)
     df['interhand_acceleration'] = df.J11_acceleration - df.J7_acceleration
     return df
+
+
+# Object-hand utilities
+def resample_df(objhand_df, rate='40ms'):
+    outdf = objhand_df.set_index(pd.to_datetime(objhand_df['sync_time'], unit='s'), drop=False,
+                                 verify_integrity=True)
+    resample_index = pd.date_range(start=outdf.index[0], end=outdf.index[-1], freq=rate)
+    dummy_frame = pd.DataFrame(np.NaN, index=resample_index, columns=outdf.columns)
+    outdf = outdf.combine_first(dummy_frame).interpolate('time').resample(rate).first()
+    return outdf
+
+
+def calculateDistance(x1, y1, x2, y2):
+    if (x1, y1, x2, y2):
+        distance = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        return distance
+
+
+def boxDistance(rx, ry, rw, rh, px, py):
+    # find shortest distance between a point and a axis-aligned bounding box.
+    # rx,ry: bottom left corner of rectangle
+    # rw: rectangle width
+    # rh: rectangle height
+    # px,py: point coordinates
+    dx = max([rx - px, 0, px - (rx + rw)])
+    dy = max([ry - py, 0, py - (ry + rh)])
+    return math.sqrt(dx * dx + dy * dy)
+
+
+def calc_center(df):
+    # Input: a dataframe with x,y,w, & h columns.
+    # Output: dataframe with added columns for x and y center of each box.
+    df['x_cent'] = df['x'] + (df['w'] / 2.0)
+    df['y_cent'] = df['y'] + (df['h'] / 2.0)
+    return df
+
+
+def animate_video(resampledf, output_video_path):
+    Writer = animation.writers['ffmpeg']
+    writer = Writer(fps=14, bitrate=1800)
+    valcols = [i for i in resampledf.columns if i not in ['sync_time']]
+    fdflong = pd.melt(resampledf, id_vars=['sync_time'], value_vars=valcols)
+    fdflong = fdflong.sort_values('sync_time')
+
+    times = fdflong['sync_time'].unique()
+    NUM_COLORS = len(fdflong['variable'].unique())
+
+    cm = plt.get_cmap('gist_rainbow')
+    colors = [cm(0. * i / NUM_COLORS) for i in range(NUM_COLORS)]
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    thresh = 299
+
+    def draw_barchart(current_time):
+        fdff = fdflong[fdflong['sync_time'].eq(current_time)].sort_values('variable')
+        mask = fdff['value'] > thresh
+        fdff.loc[mask, 'value'] = -1
+        ax.clear()
+        ax.barh(fdff['variable'], fdff['value'], color=colors)
+        ax.text(0, 0.4, round(current_time, 2), transform=ax.transAxes, color='#777777',
+                size=45, ha='right', weight=800)
+        plt.xlim([-1, thresh])
+        ax.set_axisbelow(True)
+        ax.text(-1, 1.15, 'Object Movement',
+                transform=ax.transAxes, size=23, weight=600, ha='left', va='top')
+        # plt.box(False)
+
+    draw_barchart(times[9])
+    fig, ax = plt.subplots(figsize=(14, 8))
+    animator = animation.FuncAnimation(fig, draw_barchart, frames=times)
+    # HTML(animator.to_jshtml())
+    animator.save(output_video_path, writer=writer)
+
+
+def gen_feature_video(track_csv, skel_csv, output_csv, fps=30):
+    # Read tracking result
+    track_df = pd.read_csv(track_csv)
+    track_df = calc_center(track_df)
+    track_df['sync_time'] = track_df['frame'] / fps
+    # Read skeleton result and set index by frame to merge tracking and skeleton
+    skel_df = pd.read_csv(skel_csv)
+    # sync_time, Right Hand: J11_2D_X, J11_2D_Y
+    hand_df = skel_df.loc[:, ['sync_time', 'J11_2D_X', 'J11_2D_Y']]
+    hand_df['frame'] = (hand_df.loc[:, 'sync_time'] * fps).apply(round).astype(np.int)
+    hand_df.set_index('frame', drop=False, verify_integrity=True, inplace=True)
+    # Process tracking result to create tracking dataframe
+    final_frameid = max(max(hand_df['frame']), max(track_df['frame']))
+    objs = track_df['name'].unique()
+    objs_df = pd.DataFrame(index=range(final_frameid))
+    objs_df.index.name = 'frame'
+    for obj in objs:
+        obj_df = track_df[track_df['name'] == obj].set_index('frame', drop=False,
+                                                             verify_integrity=True)
+        objs_df[obj + '_x_cent'] = obj_df['x_cent']
+        objs_df[obj + '_y_cent'] = obj_df['y_cent']
+        objs_df[obj + '_x'] = obj_df['x']
+        objs_df[obj + '_y'] = obj_df['y']
+        objs_df[obj + '_w'] = obj_df['w']
+        objs_df[obj + '_h'] = obj_df['h']
+        objs_df[obj + '_confidence'] = obj_df['confidence']
+    logger.info('Combine hand dataframe and objects dataframe')
+    # objhand_df = pd.concat([hand_df, objs_df], axis=1)
+    objhand_df = hand_df.combine_first(objs_df)
+    objhand_df = objhand_df.sort_index()
+    # Process null entry by interpolation
+    logger.info('Interpolate')
+    for obj in objs:
+        objhand_df[obj + '_x_cent'] = objhand_df[obj + '_x_cent'].interpolate(method='linear')
+        objhand_df[obj + '_y_cent'] = objhand_df[obj + '_y_cent'].interpolate(method='linear')
+        objhand_df[obj + '_x'] = objhand_df[obj + '_x'].interpolate(method='linear')
+        objhand_df[obj + '_y'] = objhand_df[obj + '_y'].interpolate(method='linear')
+        objhand_df[obj + '_w'] = objhand_df[obj + '_w'].interpolate(method='linear')
+        objhand_df[obj + '_h'] = objhand_df[obj + '_h'].interpolate(method='linear')
+    objhand_df['J11_2D_X'] = objhand_df['J11_2D_X'].interpolate(method='linear')
+    objhand_df['J11_2D_Y'] = objhand_df['J11_2D_Y'].interpolate(method='linear')
+    objhand_df['J11_2D_X'] = objhand_df['J11_2D_X'] / 2
+    objhand_df['J11_2D_Y'] = objhand_df['J11_2D_Y'] / 2
+    # Smooth movements
+    logger.info('Gaussian filtering')
+    for obj in objs:
+        objhand_df[obj + '_x_cent'] = gaussian_filter1d(objhand_df[obj + '_x_cent'], 3)
+        objhand_df[obj + '_y_cent'] = gaussian_filter1d(objhand_df[obj + '_y_cent'], 3)
+        objhand_df[obj + '_x'] = gaussian_filter1d(objhand_df[obj + '_x'], 3)
+        objhand_df[obj + '_y'] = gaussian_filter1d(objhand_df[obj + '_y'], 3)
+        objhand_df[obj + '_w'] = gaussian_filter1d(objhand_df[obj + '_w'], 3)
+        objhand_df[obj + '_h'] = gaussian_filter1d(objhand_df[obj + '_h'], 3)
+    objhand_df['J11_2D_X'] = gaussian_filter1d(objhand_df['J11_2D_X'], 3)
+    objhand_df['J11_2D_Y'] = gaussian_filter1d(objhand_df['J11_2D_Y'], 3)
+    # Resample dataframe
+    objhand_df.loc[:, 'sync_time'] = objhand_df.index / fps
+    objhand_df.loc[:, 'frame'] = objhand_df.index
+    resampledf = resample_df(objhand_df, rate='333ms')
+    # Calculate distances between all objects and hand
+    logger.info('Calculate object-hand distances')
+    for obj in objs:
+        resampledf[obj + '_dist'] = resampledf[
+            [obj + '_x', obj + '_y', obj + '_w', obj + '_h', 'J11_2D_X',
+             'J11_2D_Y']].apply(
+            lambda x: boxDistance(x[0], x[1], x[2], x[3], x[4], x[5]) if (
+                np.all(pd.notnull(x))) else np.nan, axis=1)
+    resampledf.to_csv(output_csv, index=False)
+    # animate_video(resampledf, output_video_path='output/objhand/1.2.5_C1_objhand.mp4')
