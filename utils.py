@@ -65,6 +65,35 @@ def parse_config():
     return args
 
 
+def bin_times(array, max_seconds, bin_size=1.0):
+    """ Helper function to learn the bin the subject data"""
+    cumulative_binned = [np.sum(array <= t0 * 1000) for t0 in
+                         np.arange(bin_size, max_seconds + bin_size, bin_size)]
+    binned = np.array(cumulative_binned)[1:] - np.array(cumulative_binned)[:-1]
+    binned = np.concatenate([[cumulative_binned[0]], binned])
+    return binned
+
+
+def load_comparison_data(data, bin_size=1.0):
+    # Movie A is Saxaphone (185s long)
+    # Movie B is making a bed (336s long)
+    # Movie C is doing dishes (255s long)
+
+    # here, we'll collapse over all of the groups (old, young; warned, unwarned) for now
+    n_subjs = len(set(data.SubjNum))
+
+    sax_times = np.sort(list(set(data.loc[data.Movie == 'A', 'MS']))).astype(np.float32)
+    binned_sax = bin_times(sax_times, 185, bin_size) / np.float(n_subjs)
+
+    bed_times = np.sort(list(set(data.loc[data.Movie == 'B', 'MS']))).astype(np.float32)
+    binned_bed = bin_times(bed_times, 336, bin_size) / np.float(n_subjs)
+
+    dishes_times = np.sort(list(set(data.loc[data.Movie == 'C', 'MS']))).astype(np.float32)
+    binned_dishes = bin_times(dishes_times, 255, bin_size) / np.float(n_subjs)
+
+    return binned_sax, binned_bed, binned_dishes
+
+
 def get_frequency_ground_truth(second_boundaries, second_interval=1,
                                end_second=555) -> Tuple:
     frequency, bins = np.histogram(second_boundaries,
@@ -73,10 +102,10 @@ def get_frequency_ground_truth(second_boundaries, second_interval=1,
     return frequency, bins
 
 
-def get_binned_prediction(posterior, second_interval=1, fps=30) -> np.ndarray:
+def get_binned_prediction(posterior, second_interval=1, sample_per_second=30) -> np.ndarray:
     e_hat = np.argmax(posterior, axis=1)
     frame_boundaries = np.concatenate([[0], e_hat[1:] != e_hat[:-1]])
-    frame_interval = int(second_interval * fps)
+    frame_interval = int(second_interval * sample_per_second)
     # Sum for each interval
     time_boundaries = np.add.reduceat(frame_boundaries,
                                       range(0, len(frame_boundaries), frame_interval))
@@ -120,6 +149,8 @@ class SegmentationVideo:
         self.n_participants = 0
         self.biserials = None
         self.seg_points = None
+        self.gt_freqs = None
+        self.gt_boundaries = None
 
     @staticmethod
     def string_to_segments(raw_string: str) -> np.ndarray:
@@ -133,18 +164,21 @@ class SegmentationVideo:
         list_of_segments = np.array(list_of_segments)
         return list_of_segments
 
-    def get_point_biserial(self, second_interval=1, end_second=555):
+    def get_biserial_subjects(self, second_interval=1, end_second=555):
         self.biserials = []
         all_seg_points = np.hstack(self.seg_points)
-        gt_boundaries, _ = get_frequency_ground_truth(all_seg_points,
+        self.gt_boundaries, _ = get_frequency_ground_truth(all_seg_points,
                                                       second_interval=second_interval,
                                                       end_second=end_second)
-        gt_freqs = gt_boundaries / self.n_participants
+        self.gt_freqs = self.gt_boundaries / self.n_participants
         for seg_point in self.seg_points:
             participant_seg, _ = get_frequency_ground_truth(seg_point,
                                                             second_interval=second_interval,
                                                             end_second=end_second)
-            point = get_point_biserial(participant_seg, gt_freqs)
+            if sum(participant_seg) == 0:
+                logger.info(f'Subject_segmentation={participant_seg} out of end_second={end_second}')
+                continue
+            point = get_point_biserial(participant_seg, self.gt_freqs)
             self.biserials.append(point)
 
     def preprocess_segments(self):
