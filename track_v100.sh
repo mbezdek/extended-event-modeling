@@ -6,4 +6,4 @@ run=$1
 tag=$2
 cd /scratch/tantan132/extended-event-modeling/
 source activate sem-pysot-37-new
-python tracking/tracking_to_correct_label.py -c configs/config_tracking_to_correct_label.ini --run $run --tag $tag 2>&1 | tee "$run$tag.log"
+python tracking/tracking_to_correct_label.py -c configs/config_tracking_to_correct_label.ini --run $run --tag $tag 2>&1 | tee "logs/$run$tag.log"

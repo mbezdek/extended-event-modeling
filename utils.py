@@ -235,6 +235,8 @@ class CV2VideoReader:
             self.capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.fps = self.capture.get(cv2.CAP_PROP_FPS)
         self.total_frames = self.capture.get(cv2.CAP_PROP_FRAME_COUNT)
+        logger.info(f'CV2 Reader fps {input_video_path}={self.fps}')
+        logger.info(f'CV2 Reader # frames {input_video_path}={self.total_frames}')
 
     def __repr__(self) -> Dict:
         """
@@ -545,6 +547,8 @@ class TrackerWrapper:
         self.first_frame = frame
         self.no_hit = 0
         self.no_hit_threshold = 30
+        self.no_match_intervals = 0
+        self.no_match_threshold = 2
 
     def __str__(self) -> str:
         return f'track_name={self.get_track_name()}, active={self.active}, ' \
@@ -748,7 +752,7 @@ def track_buffer(context: Context, buffer_frames: dict,
         context.frame_results[frame_wrapper.frame_id] = dict()
         if frame_id in labeled_frames:  # If this is a label frame
             df_current = label_df[
-                (label_df['index'] == (frame_id // fps))]
+                (label_df['index'] == round(frame_id / fps))]
             object_types = set(df_current['class'].unique())
             for object_type in object_types:
                 df_category = df_current[df_current['class'] == object_type]
@@ -799,6 +803,7 @@ def matching_and_merging(context_forward: Context, context_backward: Context,
                 bw_track = context_backward.tracks[object_type][col]
                 fw_track = context_forward.tracks[object_type][row]
                 fw_track.re_init(frame=bw_track.first_frame, box_wrapper=bw_track.boxes[0])
+                fw_track.no_match_intervals = 0
                 bw_track.change_name(fw_track.get_track_name())
                 merge_boxes(context_forward.tracks[object_type][row],
                             context_backward.tracks[object_type][col])
@@ -814,11 +819,19 @@ def matching_and_merging(context_forward: Context, context_backward: Context,
                                 f' any bw track, Terminate tracker to release memory')
                     fw_track.release_tracker()
                 elif fw_track.active:
-                    logger.info(f'Active fw track {fw_track.get_track_name()} does not match'
-                                f' any bw track, duplicate last box for indexing')
-                    box_wrapper = deepcopy(fw_track.boxes[-1])
-                    box_wrapper.frame_id = fw_track.boxes[-1].frame_id + 1
-                    fw_track.append_box_wrapper(box_wrapper=box_wrapper)
+                    fw_track.no_match_intervals += 1
+                    if fw_track.no_match_intervals >= fw_track.no_match_threshold:
+                        logger.info(f'Active fw track {fw_track.get_track_name()} does not match'
+                                    f' any bw track for {fw_track.no_match_threshold} intervals,'
+                                    f'Deactivate and Terminate')
+                        fw_track.deactivate_track()
+                        fw_track.release_tracker()
+                    else:
+                        logger.info(f'Active fw track {fw_track.get_track_name()} does not match'
+                                    f' any bw track, duplicate last box for indexing')
+                        box_wrapper = deepcopy(fw_track.boxes[-1])
+                        box_wrapper.frame_id = fw_track.boxes[-1].frame_id + 1
+                        fw_track.append_box_wrapper(box_wrapper=box_wrapper)
         # Process unmatched bw tracks
         for bw_object_id, bw_track in context_backward.tracks[object_type].items():
             if bw_object_id not in col_ind or bw_object_id not in matched_bw_tracks:
@@ -830,11 +843,19 @@ def matching_and_merging(context_forward: Context, context_backward: Context,
     for object_type in old_categories:
         for fw_object_id, fw_track in context_forward.tracks[object_type].items():
             if fw_track.active:
-                logger.info(f'Active fw category {fw_track.get_track_name()} does not match'
-                            f' any bw category, duplicate last box for indexing')
-                box_wrapper = deepcopy(fw_track.boxes[-1])
-                box_wrapper.frame_id = fw_track.boxes[-1].frame_id + 1
-                fw_track.append_box_wrapper(box_wrapper=box_wrapper)
+                fw_track.no_match_intervals += 1
+                if fw_track.no_match_intervals >= fw_track.no_match_threshold:
+                    logger.info(f'Active fw category {fw_track.get_track_name()} does not match'
+                                f' any bw track for {fw_track.no_match_threshold} intervals,'
+                                f'Deactivate and Terminate')
+                    fw_track.deactivate_track()
+                    fw_track.release_tracker()
+                else:
+                    logger.info(f'Active fw category {fw_track.get_track_name()} does not match'
+                                f' any bw category, duplicate last box for indexing')
+                    box_wrapper = deepcopy(fw_track.boxes[-1])
+                    box_wrapper.frame_id = fw_track.boxes[-1].frame_id + 1
+                    fw_track.append_box_wrapper(box_wrapper=box_wrapper)
             elif fw_track.tracker is not None:
                 logger.info(f'Inactive fw category {fw_track.get_track_name()} does not match'
                             f' any bw category, Terminate tracker to release memory')
@@ -982,6 +1003,7 @@ def print_context(context: Context):
             log_str += str(track) + '\n'
     log_str += f'Stats: num_tracks: {num_tracks}, active {num_active}, terminate {num_terminate}'
     logger.info(log_str)
+    return log_str
 
 
 # Skeleton utilities
