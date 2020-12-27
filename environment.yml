@@ -1,4 +1,4 @@
-name: sem-pysot-37
+name: sem-37
 channels:
   - defaults
   - conda-forge
@@ -6,21 +6,20 @@ channels:
 dependencies:
   - python=3.7
   - tensorflow=2.1.0
-  - numpy
-  - opencv=4.5.0
+  - pytorch=0.4.1
+  - torchvision
+  - opencv
+  - scipy
+  - scikit-learn
   - pandas
   - ipywidgets
   - jupyterlab
   - jupyter
   - nodejs
   - ipywebrtc
-  - scipy=1.4.1
-  - scikit-video
   - matplotlib
   - seaborn
   - nodejs
-  - pytorch=0.4.1
-  - torchvision
   - pyyaml
   - yacs
   - tqdm
@@ -29,3 +28,5 @@ dependencies:
   - tensorboardX
   - coloredlogs
   - colorlog
+  - gensim
+  - numpy

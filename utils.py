@@ -104,7 +104,8 @@ def get_frequency_ground_truth(second_boundaries, second_interval=1,
 
 def get_binned_prediction(posterior, second_interval=1, sample_per_second=30) -> np.ndarray:
     e_hat = np.argmax(posterior, axis=1)
-    frame_boundaries = np.concatenate([[0], e_hat[1:] != e_hat[:-1]])
+    # TODO: change to [0] for the first frame after done modeling
+    frame_boundaries = np.concatenate([[1], e_hat[1:] != e_hat[:-1]])
     frame_interval = int(second_interval * sample_per_second)
     # Sum for each interval
     time_boundaries = np.add.reduceat(frame_boundaries,
@@ -176,7 +177,7 @@ class SegmentationVideo:
                                                             second_interval=second_interval,
                                                             end_second=end_second)
             if sum(participant_seg) == 0:
-                logger.info(f'Subject_segmentation={participant_seg} out of end_second={end_second}')
+                logger.info(f'Subject has no segments within end_second={end_second}')
                 continue
             point = get_point_biserial(participant_seg, self.gt_freqs)
             self.biserials.append(point)
@@ -1072,11 +1073,12 @@ def calc_interhand_acceleration(df):
 
 # Object-hand utilities
 def resample_df(objhand_df, rate='40ms'):
-    outdf = objhand_df.set_index(pd.to_datetime(objhand_df['sync_time'], unit='s'), drop=False,
+    # fps doesn't matter hear, only need an approximate value to resample based on rate
+    outdf = objhand_df.set_index(pd.to_datetime(objhand_df.index / 30, unit='s'), drop=False,
                                  verify_integrity=True)
     resample_index = pd.date_range(start=outdf.index[0], end=outdf.index[-1], freq=rate)
     dummy_frame = pd.DataFrame(np.NaN, index=resample_index, columns=outdf.columns)
-    outdf = outdf.combine_first(dummy_frame).interpolate('time').resample(rate).first()
+    outdf = outdf.combine_first(dummy_frame).interpolate('time').resample(rate).mean()
     return outdf
 
 
@@ -1199,7 +1201,9 @@ def gen_feature_video(track_csv, skel_csv, output_csv, fps=30):
     # Resample dataframe
     objhand_df.loc[:, 'sync_time'] = objhand_df.index / fps
     objhand_df.loc[:, 'frame'] = objhand_df.index
-    resampledf = resample_df(objhand_df, rate='333ms')
+    # resampledf = resample_df(objhand_df, rate='333ms')
+    # resampledf['frame'] = resampledf['frame'].apply(round)
+    resampledf = objhand_df
     # Calculate distances between all objects and hand
     logger.info('Calculate object-hand distances')
     for obj in objs:
