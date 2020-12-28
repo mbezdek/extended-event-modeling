@@ -150,7 +150,7 @@ def preprocess_objhand(objhand_csv, standardize=True):
     return scene_embs, obj_handling_embs
 
 
-def combine_dataframes(data_frames, rate='40ms', fps=30):
+def combine_dataframes(data_frames, rate='40ms'):
     combine_df = pd.concat(data_frames, axis=1)
     combine_df.dropna(axis=0, inplace=True)
     first_frame = combine_df.index[0]
@@ -188,13 +188,17 @@ def infer_on_video(args, run, tag):
     args.tag = tag
     logger.info(f'Config {args}')
     end_second = int(args.end_second)
-    fps = int(args.fps)
-    movie = args.run + '_trim.mp4'
-    objhand_csv = os.path.join(args.objhand_csv, args.run + '_objhand.csv')
+    # FPS is used to pad prediction boundaries, should be inferred from run
+    if 'kinect' in run:
+        fps = 25
+    else:
+        fps = 30
+    movie = run + '_trim.mp4'
+    objhand_csv = os.path.join(args.objhand_csv, run + '_objhand.csv')
     # TODO: skel for C1 and C2 videos
-    skel_csv = os.path.join(args.skel_csv, args.run.replace('_C1', '') + '_skel_features.csv')
-    appear_csv = os.path.join(args.appear_csv, args.run + '_appear.csv')
-    optical_csv = os.path.join(args.optical_csv, args.run + '_video_features.csv')
+    skel_csv = os.path.join(args.skel_csv, run.replace('_C1', '') + '_skel_features.csv')
+    appear_csv = os.path.join(args.appear_csv, run + '_appear.csv')
+    optical_csv = os.path.join(args.optical_csv, run + '_video_features.csv')
 
     # Load csv files and preprocess to get a scene vector
     appear_df = preprocess_appear(appear_csv)
@@ -259,13 +263,13 @@ def infer_on_video(args, run, tag):
         return sem_model, bicorr, percentile
 
     x_train /= np.sqrt(x_train.shape[1])
-    sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag='_nopos_fine')
+    sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag=f'_nopos_fine_{tag}')
     return sem_model.results, bicorr, percentile
 
 
 if __name__ == "__main__":
     args = parse_config()
-    # infer_on_video(args, args.run, args.tag)
+    # infer_on_video(args, run, tag)
 
     runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
     # runs = ['1.1.5_C1']
@@ -277,5 +281,5 @@ if __name__ == "__main__":
     results = dict()
     for i, run in enumerate(runs):
         results[run] = dict(tag=tag, bicorr=bicorrs[i], percentile=percentiles[i])
-    with open('results.json', 'w') as f:
+    with open('results_run_sem.json', 'w') as f:
         json.dump(results, f)
