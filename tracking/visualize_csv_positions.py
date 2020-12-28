@@ -9,8 +9,9 @@ import csv
 import pandas as pd
 import argparse
 import configparser
-from utils import TrackerWrapper, BoxWrapper, FrameWrapper, CV2VideoWriter, CV2VideoReader, \
-    Context, ColorBGR, Sample, logger, parse_config, ColorRef
+from utils import BoxWrapper, FrameWrapper, CV2VideoWriter, CV2VideoReader, \
+    ColorBGR, Sample, logger, parse_config, ColorRef
+from tracking_to_correct_label import TrackerWrapper, Context
 
 if __name__ == '__main__':
     # Parse config file

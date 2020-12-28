@@ -1,8 +1,11 @@
+import math
 import sys
+
+from matplotlib import animation as animation, pyplot as plt
+
 sys.path.append('.')
 sys.path.append('../pysot')
 from utils import logger, parse_config
-from utils import calc_center, boxDistance
 import pandas as pd
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
@@ -94,6 +97,68 @@ def gen_feature_video(args, run, tag):
     return track_csv, skel_csv, output_csv
 
 
+def calculateDistance(x1, y1, x2, y2):
+    if (x1, y1, x2, y2):
+        distance = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+        return distance
+
+
+def boxDistance(rx, ry, rw, rh, px, py):
+    # find shortest distance between a point and a axis-aligned bounding box.
+    # rx,ry: bottom left corner of rectangle
+    # rw: rectangle width
+    # rh: rectangle height
+    # px,py: point coordinates
+    dx = max([rx - px, 0, px - (rx + rw)])
+    dy = max([ry - py, 0, py - (ry + rh)])
+    return math.sqrt(dx * dx + dy * dy)
+
+
+def calc_center(df):
+    # Input: a dataframe with x,y,w, & h columns.
+    # Output: dataframe with added columns for x and y center of each box.
+    df['x_cent'] = df['x'] + (df['w'] / 2.0)
+    df['y_cent'] = df['y'] + (df['h'] / 2.0)
+    return df
+
+
+def animate_video(resampledf, output_video_path):
+    Writer = animation.writers['ffmpeg']
+    writer = Writer(fps=14, bitrate=1800)
+    valcols = [i for i in resampledf.columns if i not in ['sync_time']]
+    fdflong = pd.melt(resampledf, id_vars=['sync_time'], value_vars=valcols)
+    fdflong = fdflong.sort_values('sync_time')
+
+    times = fdflong['sync_time'].unique()
+    NUM_COLORS = len(fdflong['variable'].unique())
+
+    cm = plt.get_cmap('gist_rainbow')
+    colors = [cm(0. * i / NUM_COLORS) for i in range(NUM_COLORS)]
+
+    fig, ax = plt.subplots(figsize=(14, 8))
+    thresh = 299
+
+    def draw_barchart(current_time):
+        fdff = fdflong[fdflong['sync_time'].eq(current_time)].sort_values('variable')
+        mask = fdff['value'] > thresh
+        fdff.loc[mask, 'value'] = -1
+        ax.clear()
+        ax.barh(fdff['variable'], fdff['value'], color=colors)
+        ax.text(0, 0.4, round(current_time, 2), transform=ax.transAxes, color='#777777',
+                size=45, ha='right', weight=800)
+        plt.xlim([-1, thresh])
+        ax.set_axisbelow(True)
+        ax.text(-1, 1.15, 'Object Movement',
+                transform=ax.transAxes, size=23, weight=600, ha='left', va='top')
+        # plt.box(False)
+
+    draw_barchart(times[9])
+    fig, ax = plt.subplots(figsize=(14, 8))
+    animator = animation.FuncAnimation(fig, draw_barchart, frames=times)
+    # HTML(animator.to_jshtml())
+    animator.save(output_video_path, writer=writer)
+
+
 if __name__ == '__main__':
     # Parse config file
     args = parse_config()
@@ -114,7 +179,7 @@ if __name__ == '__main__':
     track_csvs, skel_csvs, output_csvs = zip(*res)
     results = dict()
     for i, run in enumerate(runs):
-        results[run] = dict(track_csv=track_csvs[i], skel_csv=skel_csvs[i], output_csv=output_csvs[i])
+        results[run] = dict(track_csv=track_csvs[i], skel_csv=skel_csvs[i],
+                            output_csv=output_csvs[i])
     with open('results_objhand.json', 'w') as f:
         json.dump(results, f)
-

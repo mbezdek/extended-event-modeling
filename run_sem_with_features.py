@@ -14,7 +14,7 @@ from scipy.stats import percentileofscore
 from sem.event_models import LinearEvent, NonLinearEvent, RecurrentLinearEvent, RecurrentEvent, \
     GRUEvent, LSTMEvent
 from sem import sem_run, SEM
-from utils import resample_df, SegmentationVideo, get_binned_prediction, get_point_biserial, \
+from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, \
     get_frequency_ground_truth, logger, parse_config, load_comparison_data
 from joblib import Parallel, delayed
 import gensim.downloader
@@ -263,8 +263,18 @@ def infer_on_video(args, run, tag):
         return sem_model, bicorr, percentile
 
     x_train /= np.sqrt(x_train.shape[1])
-    sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag=f'_nopos_fine_{tag}')
+    sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag=f'_nopos_fine{tag}')
     return sem_model.results, bicorr, percentile
+
+
+def resample_df(objhand_df, rate='40ms'):
+    # fps doesn't matter hear, only need an approximate value to resample based on rate
+    outdf = objhand_df.set_index(pd.to_datetime(objhand_df.index / 30, unit='s'), drop=False,
+                                 verify_integrity=True)
+    resample_index = pd.date_range(start=outdf.index[0], end=outdf.index[-1], freq=rate)
+    dummy_frame = pd.DataFrame(np.NaN, index=resample_index, columns=outdf.columns)
+    outdf = outdf.combine_first(dummy_frame).interpolate('time').resample(rate).mean()
+    return outdf
 
 
 if __name__ == "__main__":

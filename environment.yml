@@ -6,11 +6,12 @@ channels:
 dependencies:
   - python=3.7
   - tensorflow=2.1.0
+  - tensorboard=2.1.1
   - pytorch=0.4.1
   - torchvision
-  - opencv
-  - scipy
-  - scikit-learn
+  - scipy=1.4.1
+  - scikit-learn=0.23.2
+  - numpy=1.19.2
   - pandas
   - ipywidgets
   - jupyterlab
@@ -29,4 +30,4 @@ dependencies:
   - coloredlogs
   - colorlog
   - gensim
-  - numpy
+  - opencv
