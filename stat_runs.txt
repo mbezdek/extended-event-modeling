@@ -1,0 +1,242 @@
+1.1.5_C1
+Stats: num_tracks: 108, active 15, terminate 93
+1.1.2_C1
+Stats: num_tracks: 164, active 14, terminate 150
+1.1.1_C1
+Stats: num_tracks: 184, active 18, terminate 166
+1.1.4_C1
+Stats: num_tracks: 165, active 15, terminate 150
+1.1.3_C1
+Stats: num_tracks: 207, active 14, terminate 193
+1.2.1_C1
+Stats: num_tracks: 36, active 8, terminate 28
+1.2.8_C1
+Stats: num_tracks: 26, active 8, terminate 18
+1.2.5_C1
+Stats: num_tracks: 49, active 10, terminate 39
+1.1.8_C1
+Stats: num_tracks: 128, active 13, terminate 115
+1.1.7_C1
+Stats: num_tracks: 143, active 14, terminate 129
+1.2.7_C1
+Stats: num_tracks: 45, active 11, terminate 34
+1.1.10_C1
+Stats: num_tracks: 184, active 10, terminate 174
+1.1.9_C1
+Stats: num_tracks: 151, active 12, terminate 139
+1.1.6_C1
+Stats: num_tracks: 176, active 16, terminate 160
+1.3.3_C1
+Stats: num_tracks: 41, active 9, terminate 32
+1.3.2_C1
+Stats: num_tracks: 32, active 4, terminate 28
+1.3.1_C1
+Stats: num_tracks: 52, active 10, terminate 42
+1.3.4_C1
+Stats: num_tracks: 51, active 8, terminate 43
+4.4.1_C1
+Stats: num_tracks: 28, active 11, terminate 17
+1.3.6_C1
+Stats: num_tracks: 45, active 8, terminate 37
+1.3.8_C1
+Stats: num_tracks: 33, active 10, terminate 23
+2.4.3_C1
+Stats: num_tracks: 34, active 6, terminate 28
+2.4.2_C1
+Stats: num_tracks: 39, active 6, terminate 33
+4.4.4_C1
+Stats: num_tracks: 43, active 10, terminate 33
+1.3.5_C1
+Stats: num_tracks: 67, active 7, terminate 60
+1.3.10_C1
+Stats: num_tracks: 70, active 8, terminate 62
+1.3.7_C1
+Stats: num_tracks: 48, active 10, terminate 38
+2.4.1_C1
+Stats: num_tracks: 42, active 6, terminate 36
+2.4.7_C1
+Stats: num_tracks: 34, active 4, terminate 30
+2.4.4_C1
+Stats: num_tracks: 35, active 8, terminate 27
+4.4.1_C1
+Stats: num_tracks: 27, active 11, terminate 16
+6.2.1_C1
+Stats: num_tracks: 230, active 11, terminate 219
+4.4.2_C1
+Stats: num_tracks: 28, active 8, terminate 20
+2.4.8_C1
+Stats: num_tracks: 34, active 6, terminate 28
+4.4.6_C1
+Stats: num_tracks: 18, active 5, terminate 13
+4.4.4_C1
+Stats: num_tracks: 48, active 10, terminate 38
+2.4.6_C1
+Stats: num_tracks: 129, active 8, terminate 121
+6.2.2_C1
+Stats: num_tracks: 15, active 11, terminate 4
+1.3.9_C1
+Stats: num_tracks: 83, active 13, terminate 70
+2.4.5_C1
+Stats: num_tracks: 110, active 13, terminate 97
+4.4.9_C1
+Stats: num_tracks: 21, active 6, terminate 15
+6.2.3_C1
+Stats: num_tracks: 19, active 7, terminate 12
+4.4.7_C1
+Stats: num_tracks: 26, active 5, terminate 21
+4.4.5_C1
+Stats: num_tracks: 60, active 11, terminate 49
+6.2.4_C1
+Stats: num_tracks: 28, active 10, terminate 18
+2.4.9_C1
+Stats: num_tracks: 56, active 8, terminate 48
+6.2.5_C1
+Stats: num_tracks: 216, active 11, terminate 205
+2.4.10_C1
+Stats: num_tracks: 50, active 8, terminate 42
+6.2.6_C1
+Stats: num_tracks: 20, active 8, terminate 12
+4.4.8_C1
+Stats: num_tracks: 43, active 11, terminate 32
+6.2.7_C1
+Stats: num_tracks: 287, active 12, terminate 275
+6.2.8_C1
+Stats: num_tracks: 18, active 9, terminate 9
+4.4.3_C1
+Stats: num_tracks: 54, active 12, terminate 42
+6.2.9_C1
+Stats: num_tracks: 24, active 10, terminate 14
+6.2.10_C1
+Stats: num_tracks: 16, active 11, terminate 5
+4.4.10_C1
+Stats: num_tracks: 71, active 13, terminate 58
+1.2.2_C1
+Stats: num_tracks: 91, active 9, terminate 82
+1.2.4_C1
+Stats: num_tracks: 55, active 9, terminate 46
+1.2.3_C1
+Stats: num_tracks: 68, active 13, terminate 55
+1.2.6_C1
+Stats: num_tracks: 39, active 14, terminate 25
+1.2.9_C1
+Stats: num_tracks: 118, active 11, terminate 107
+1.2.10_C1
+Stats: num_tracks: 60, active 6, terminate 54
+2.2.4_C1
+Stats: num_tracks: 106, active 10, terminate 96
+2.2.6_C1
+Stats: num_tracks: 64, active 6, terminate 58
+2.2.3_C1
+Stats: num_tracks: 133, active 11, terminate 122
+2.2.5_C1
+Stats: num_tracks: 106, active 8, terminate 98
+2.2.2_C1
+Stats: num_tracks: 112, active 11, terminate 101
+2.2.1_C1
+Stats: num_tracks: 133, active 12, terminate 121
+2.2.7_C1
+Stats: num_tracks: 73, active 10, terminate 63
+2.2.8_C1
+Stats: num_tracks: 65, active 5, terminate 60
+2.2.10_C1
+Stats: num_tracks: 109, active 8, terminate 101
+2.2.9_C1
+Stats: num_tracks: 78, active 9, terminate 69
+2.3.1_C1
+Stats: num_tracks: 146, active 13, terminate 133
+2.3.2_C1
+Stats: num_tracks: 133, active 12, terminate 121
+2.3.7_C1
+Stats: num_tracks: 76, active 6, terminate 70
+2.3.6_C1
+Stats: num_tracks: 106, active 10, terminate 96
+2.3.5_C1
+Stats: num_tracks: 140, active 14, terminate 126
+2.3.3_C1
+Stats: num_tracks: 145, active 11, terminate 134
+2.3.8_C1
+Stats: num_tracks: 113, active 10, terminate 103
+2.3.9_C1
+Stats: num_tracks: 105, active 13, terminate 92
+3.1.1_C1
+Stats: num_tracks: 61, active 6, terminate 55
+2.3.10_C1
+Stats: num_tracks: 151, active 12, terminate 139
+3.1.3_C1
+Stats: num_tracks: 80, active 13, terminate 67
+3.1.4_C1
+Stats: num_tracks: 117, active 8, terminate 109
+3.1.2_C1
+Stats: num_tracks: 117, active 18, terminate 99
+3.1.5_C1
+Stats: num_tracks: 151, active 24, terminate 127
+3.1.6_C1
+Stats: num_tracks: 76, active 7, terminate 69
+3.1.7_C1
+Stats: num_tracks: 71, active 15, terminate 56
+3.1.8_C1
+Stats: num_tracks: 118, active 18, terminate 100
+3.1.10_C1
+Stats: num_tracks: 77, active 19, terminate 58
+3.3.3_C1
+Stats: num_tracks: 172, active 9, terminate 163
+3.3.1_C1
+Stats: num_tracks: 248, active 14, terminate 234
+3.3.2_C1
+Stats: num_tracks: 218, active 13, terminate 205
+3.1.9_C1
+Stats: num_tracks: 133, active 17, terminate 116
+3.3.4_C1
+Stats: num_tracks: 176, active 11, terminate 165
+3.3.10_C1
+Stats: num_tracks: 162, active 10, terminate 152
+3.3.6_C1
+Stats: num_tracks: 273, active 14, terminate 259
+3.3.9_C1
+Stats: num_tracks: 218, active 13, terminate 205
+3.3.5_C1
+Stats: num_tracks: 322, active 15, terminate 307
+3.4.1_C1
+Stats: num_tracks: 48, active 9, terminate 39
+3.4.2_C1
+Stats: num_tracks: 52, active 1, terminate 51
+3.3.7_C1
+Stats: num_tracks: 206, active 13, terminate 193
+3.4.4_C1
+Stats: num_tracks: 41, active 7, terminate 34
+3.4.3_C1
+Stats: num_tracks: 45, active 2, terminate 43
+3.3.8_C1
+Stats: num_tracks: 297, active 16, terminate 281
+3.4.5_C1
+Stats: num_tracks: 51, active 12, terminate 39
+3.4.6_C1
+Stats: num_tracks: 45, active 9, terminate 36
+3.4.7_C1
+Stats: num_tracks: 49, active 7, terminate 42
+3.4.8_C1
+Stats: num_tracks: 43, active 14, terminate 29
+3.4.9_C1
+Stats: num_tracks: 56, active 11, terminate 45
+3.4.10_C1
+Stats: num_tracks: 71, active 8, terminate 63
+4.1.3_C1
+Stats: num_tracks: 88, active 6, terminate 82
+4.1.4_C1
+Stats: num_tracks: 95, active 9, terminate 86
+4.1.2_C1
+Stats: num_tracks: 118, active 11, terminate 107
+4.1.5_C1
+Stats: num_tracks: 129, active 15, terminate 114
+4.1.6_C1
+Stats: num_tracks: 174, active 6, terminate 168
+4.1.7_C1
+Stats: num_tracks: 223, active 25, terminate 198
+4.1.1_C1
+Stats: num_tracks: 252, active 12, terminate 240
+4.1.8_C1
+Stats: num_tracks: 278, active 25, terminate 253
+4.1.9_C1
+Stats: num_tracks: 258, active 20, terminate 238
+4.1.10_C1
+Stats: num_tracks: 293, active 28, terminate 265

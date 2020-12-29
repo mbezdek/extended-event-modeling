@@ -184,87 +184,99 @@ def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=
 
 
 def infer_on_video(args, run, tag):
-    args.run = run
-    args.tag = tag
-    logger.info(f'Config {args}')
-    end_second = int(args.end_second)
-    # FPS is used to pad prediction boundaries, should be inferred from run
-    if 'kinect' in run:
-        fps = 25
-    else:
-        fps = 30
-    movie = run + '_trim.mp4'
-    objhand_csv = os.path.join(args.objhand_csv, run + '_objhand.csv')
-    # TODO: skel for C1 and C2 videos
-    skel_csv = os.path.join(args.skel_csv, run.replace('_C1', '') + '_skel_features.csv')
-    appear_csv = os.path.join(args.appear_csv, run + '_appear.csv')
-    optical_csv = os.path.join(args.optical_csv, run + '_video_features.csv')
+    try:
+        args.run = run
+        args.tag = tag
+        logger.info(f'Config {args}')
+        end_second = int(args.end_second)
+        # FPS is used to pad prediction boundaries, should be inferred from run
+        if 'kinect' in run:
+            fps = 25
+        else:
+            fps = 30
+        movie = run + '_trim.mp4'
+        objhand_csv = os.path.join(args.objhand_csv, run + '_objhand.csv')
+        # TODO: skel for C1 and C2 videos
+        skel_csv = os.path.join(args.skel_csv, run.replace('_C1', '') + '_skel_features.csv')
+        appear_csv = os.path.join(args.appear_csv, run + '_appear.csv')
+        optical_csv = os.path.join(args.optical_csv, run + '_video_features.csv')
 
-    # Load csv files and preprocess to get a scene vector
-    appear_df = preprocess_appear(appear_csv)
-    skel_df = preprocess_skel(skel_csv, use_position=False, standardize=True)
-    optical_df = preprocess_optical(optical_csv, standardize=True)
-    scene_embs, obj_handling_embs = preprocess_objhand(objhand_csv, standardize=True)
-    # Get consistent start-end times and resampling rate for all features
-    combine_df, first_frame = combine_dataframes(
-        [appear_df, optical_df, skel_df, obj_handling_embs],
-        rate=args.rate)
-    combine_df.drop(['sync_time', 'frame'], axis=1, inplace=True, errors='ignore')
-    logger.info(f'Features: {combine_df.columns}')
-    x_train = combine_df.to_numpy()
-    end_index = math.ceil(1000 / int(args.rate[:-2]) * end_second)
-    x_train = x_train[:end_index]
+        # Load csv files and preprocess to get a scene vector
+        appear_df = preprocess_appear(appear_csv)
+        skel_df = preprocess_skel(skel_csv, use_position=False, standardize=True)
+        optical_df = preprocess_optical(optical_csv, standardize=True)
+        scene_embs, obj_handling_embs = preprocess_objhand(objhand_csv, standardize=True)
+        # Get consistent start-end times and resampling rate for all features
+        combine_df, first_frame = combine_dataframes(
+            [appear_df, optical_df, skel_df, obj_handling_embs],
+            rate=args.rate)
+        combine_df.drop(['sync_time', 'frame'], axis=1, inplace=True, errors='ignore')
+        logger.info(f'Features: {combine_df.columns}')
+        x_train = combine_df.to_numpy()
+        end_index = math.ceil(1000 / int(args.rate[:-2]) * end_second)
+        x_train = x_train[:end_index]
 
-    # VAE feature from washing dish video
-    # x_train_vae = np.load('video_color_Z_embedded_64_5epoch.npy')
-    def run_sem_and_plot(x_train, tag=''):
-        # Initialize keras model and running
-        # set the parameters for the segmentation
-        f_class = GRUEvent
-        # f_class = LinearEvent
-        # these are the parameters for the event model itself.
-        f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
-                      n_epochs=10, t=4)
-        # f_opts = dict(l2_regularization=0.5, n_epochs=10)
-        lmda = float(args.lmda)  # stickyness parameter (prior)
-        alfa = float(args.alfa)  # concentration parameter (prior)
-        sem_init_kwargs = {'lmda': lmda, 'alfa': alfa, 'f_opts': f_opts, 'f_class': f_class}
-        run_kwargs = dict()
-        sem_model = SEM(**sem_init_kwargs)
-        # sem_model.run(x_train_vae[5537 + 10071: 5537 + 10071 + 7633, :], **run_kwargs)
-        sem_model.run(x_train, **run_kwargs)
-        # Process results returned by SEM
-        # sample_per_second = 30  # washing dish video
-        sample_per_second = 3
-        second_interval = 1  # interval to group boundaries
-        pred_boundaries = get_binned_prediction(sem_model.results.post,
-                                                second_interval=second_interval,
-                                                sample_per_second=sample_per_second)
-        pred_boundaries = np.hstack(
-            [[0] * round(first_frame / fps / second_interval), pred_boundaries]).astype(bool)
-        logger.info(f'Total # of pred_boundaries: {sum(pred_boundaries)}')
-        # Process segmentation data (ground_truth)
-        data_frame = pd.read_csv(args.seg_path)
-        seg_video = SegmentationVideo(data_frame=data_frame, video_path=movie)
-        seg_video.get_segments(n_annotators=100, condition=args.grain)
-        seg_video.get_biserial_subjects(second_interval=1, end_second=end_second)
-        logger.info(f'Mean subjects biserial={np.mean(seg_video.biserials):.3f}')
-        # Compare SEM boundaries versus participant boundaries
-        gt_freqs = seg_video.gt_freqs
-        # data_old = pd.read_csv('./data/zachs2006_data021011.dat', delimiter='\t')
-        # _, _, gt_freqs = load_comparison_data(data_old)
-        bicorr = get_point_biserial(pred_boundaries[:end_second], gt_freqs[:end_second])
-        percentile = percentileofscore(seg_video.biserials, bicorr)
-        logger.info(
-            f'Tag={tag}: bicorr={bicorr:.3f} cor. percentile={percentile:.3f} population'
-            f' with mean={np.mean(seg_video.biserials):.3f}')
-        plot_subject_model_boundaries(gt_freqs, pred_boundaries,
-                                      title=os.path.basename(movie[:-4]) + tag, show=False)
-        return sem_model, bicorr, percentile
+        # VAE feature from washing dish video
+        # x_train_vae = np.load('video_color_Z_embedded_64_5epoch.npy')
+        def run_sem_and_plot(x_train, tag=''):
+            # Initialize keras model and running
+            # set the parameters for the segmentation
+            f_class = GRUEvent
+            # f_class = LinearEvent
+            # these are the parameters for the event model itself.
+            f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
+                          n_epochs=10, t=4)
+            # f_opts = dict(l2_regularization=0.5, n_epochs=10)
+            lmda = float(args.lmda)  # stickyness parameter (prior)
+            alfa = float(args.alfa)  # concentration parameter (prior)
+            sem_init_kwargs = {'lmda': lmda, 'alfa': alfa, 'f_opts': f_opts,
+                               'f_class': f_class}
+            run_kwargs = dict()
+            sem_model = SEM(**sem_init_kwargs)
+            # sem_model.run(x_train_vae[5537 + 10071: 5537 + 10071 + 7633, :], **run_kwargs)
+            sem_model.run(x_train, **run_kwargs)
+            # Process results returned by SEM
+            # sample_per_second = 30  # washing dish video
+            sample_per_second = 3
+            second_interval = 1  # interval to group boundaries
+            pred_boundaries = get_binned_prediction(sem_model.results.post,
+                                                    second_interval=second_interval,
+                                                    sample_per_second=sample_per_second)
+            pred_boundaries = np.hstack(
+                [[0] * round(first_frame / fps / second_interval), pred_boundaries]).astype(
+                bool)
+            logger.info(f'Total # of pred_boundaries: {sum(pred_boundaries)}')
+            # Process segmentation data (ground_truth)
+            data_frame = pd.read_csv(args.seg_path)
+            seg_video = SegmentationVideo(data_frame=data_frame, video_path=movie)
+            seg_video.get_segments(n_annotators=100, condition=args.grain)
+            seg_video.get_biserial_subjects(second_interval=1, end_second=end_second)
+            logger.info(f'Mean subjects biserial={np.mean(seg_video.biserials):.3f}')
+            # Compare SEM boundaries versus participant boundaries
+            gt_freqs = seg_video.gt_freqs
+            # data_old = pd.read_csv('./data/zachs2006_data021011.dat', delimiter='\t')
+            # _, _, gt_freqs = load_comparison_data(data_old)
+            last = min(len(pred_boundaries), len(gt_freqs))
+            bicorr = get_point_biserial(pred_boundaries[:last], gt_freqs[:last])
+            percentile = percentileofscore(seg_video.biserials, bicorr)
+            logger.info(
+                f'Tag={tag}: bicorr={bicorr:.3f} cor. percentile={percentile:.3f} population'
+                f' with mean={np.mean(seg_video.biserials):.3f}')
+            plot_subject_model_boundaries(gt_freqs, pred_boundaries,
+                                          title=os.path.basename(movie[:-4]) + tag, show=False)
+            return sem_model, bicorr, percentile
 
-    x_train /= np.sqrt(x_train.shape[1])
-    sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag=f'_nopos_fine{tag}')
-    return sem_model.results, bicorr, percentile
+        x_train /= np.sqrt(x_train.shape[1])
+        sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag=f'_nopos_fine{tag}')
+        logger.info(f'Done SEM {run}')
+        with open('sem_complete.txt', 'a') as f:
+            f.write(run + '\n')
+        return sem_model.results, bicorr, percentile
+    except Exception as e:
+        with open('error_sem_runs.txt', 'a') as f:
+            f.write(args.run + '\n')
+            f.write(repr(e) + '\n')
+        return None, None, None
 
 
 def resample_df(objhand_df, rate='40ms'):
@@ -279,11 +291,15 @@ def resample_df(objhand_df, rate='40ms'):
 
 if __name__ == "__main__":
     args = parse_config()
-    # infer_on_video(args, run, tag)
+    if '.txt' in args.run:
+        with open(args.run, 'r') as f:
+            runs = f.readlines()
+            runs = [run.strip() for run in runs if 'Stats' not in run]
+    else:
+        runs = [args.run]
 
-    runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
-    # runs = ['1.1.5_C1']
-    tag = '_dec_26'
+    # runs = ['1.1.5_C1', '4.4.5_C1']
+    tag = '_dec_29'
     # sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
     res = Parallel(n_jobs=8)(delayed(
         infer_on_video)(args, run, tag) for run in runs)
@@ -292,4 +308,4 @@ if __name__ == "__main__":
     for i, run in enumerate(runs):
         results[run] = dict(tag=tag, bicorr=bicorrs[i], percentile=percentiles[i])
     with open('results_run_sem.json', 'w') as f:
-        json.dump(results, f)
+        json.dump(results, f, indent=4, sort_keys=True)

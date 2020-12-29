@@ -75,32 +75,43 @@ def calc_interhand_acceleration(df):
 
 
 def gen_skel_feature(args, run, tag):
-    # FPS is used to index output and later used to concat, should be inferred from run
-    if 'kinect' in run:
-        fps = 25
-    else:
-        fps = 30
-    args.run = run
-    args.tag = tag
-    logger.info(f'Config {args}')
-    # Load skeleton dataframe
-    skel_csv_in = os.path.join(args.skel_csv_in, run.replace('_C1', '') + '_skel_clean.csv')
-    skel_csv_out = os.path.join(args.skel_csv_out,
-                                run.replace('_C1', '') + '_skel_features.csv')
-    skeldf = pd.read_csv(skel_csv_in)
-    if args.joints == "all":
-        joints = list(range(25))
-    for j in joints:
-        skeldf = calc_joint_dist(skeldf, j)
-        skeldf = calc_joint_speed(skeldf, j)
-        skeldf = calc_joint_acceleration(skeldf, j)
-    skeldf = calc_interhand_dist(skeldf)
-    skeldf = calc_interhand_speed(skeldf)
-    skeldf = calc_interhand_acceleration(skeldf)
-    skeldf['frame'] = (skeldf['sync_time'] * fps).apply(round).astype(int)
-    skeldf.to_csv(skel_csv_out, index=False)
+    try:
+        # FPS is used to index output and later used to concat, should be inferred from run
+        if 'kinect' in run:
+            fps = 25
+        else:
+            fps = 30
+        args.run = run
+        args.tag = tag
+        logger.info(f'Config {args}')
+        # Load skeleton dataframe
+        # skel_csv_in = os.path.join(args.skel_csv_in, run.replace('_C1', '') + '_skel_clean.csv')
+        skel_csv_in = os.path.join(args.skel_csv_in, run + '_skel.csv')
+        skel_csv_out = os.path.join(args.skel_csv_out,
+                                    run.replace('_C1', '') + '_skel_features.csv')
+        skeldf = pd.read_csv(skel_csv_in)
+        if args.joints == "all":
+            joints = list(range(25))
+        for j in joints:
+            skeldf = calc_joint_dist(skeldf, j)
+            skeldf = calc_joint_speed(skeldf, j)
+            skeldf = calc_joint_acceleration(skeldf, j)
+        skeldf = calc_interhand_dist(skeldf)
+        skeldf = calc_interhand_speed(skeldf)
+        skeldf = calc_interhand_acceleration(skeldf)
+        skeldf['frame'] = (skeldf['sync_time'] * fps).apply(round).astype(int)
+        skeldf = skeldf[~skeldf['frame'].duplicated(keep='first')]
+        skeldf.to_csv(skel_csv_out, index=False)
 
-    return skel_csv_in, skel_csv_out
+        logger.info(f'Done Skel {run}')
+        with open('skel_complete.txt', 'a') as f:
+            f.write(run + '\n')
+        return skel_csv_in, skel_csv_out
+    except Exception as e:
+        with open('skel_error.txt', 'a') as f:
+            f.write(run + '\n')
+            f.write(repr(e) + '\n')
+        return None, None
 
 
 if __name__ == '__main__':
@@ -113,8 +124,9 @@ if __name__ == '__main__':
     else:
         runs = [args.run]
 
-    runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
-    tag = '_dec_26'
+    # runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
+    # runs = ['1.1.5_C1', '4.4.5_C1']
+    tag = '_dec_28'
     res = Parallel(n_jobs=8)(delayed(
         gen_skel_feature)(args, run, tag) for run in runs)
     skel_in_csvs, skel_out_csvs = zip(*res)
