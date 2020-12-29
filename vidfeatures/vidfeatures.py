@@ -25,8 +25,8 @@ def gen_vid_features(args, run, tag):
         input_video_path = os.path.join(args.input_video_path, run + '_trim.mp4')
         output_csv_path = os.path.join(args.output_csv_path, run + '_video_features.csv')
         with open(output_csv_path, 'w') as g:
-                                                 writer = csv.writer(g)
-                                                 writer.writerow(csv_headers)
+            writer = csv.writer(g)
+            writer.writerow(csv_headers)
         cv2_video_reader = CV2VideoReader(input_video_path=input_video_path)
         frame_id = 0
         ret, frame = cv2_video_reader.read_frame()
@@ -35,8 +35,8 @@ def gen_vid_features(args, run, tag):
             frame_id += 1
             ret, frame = cv2_video_reader.read_frame()
             if not ret:
-                           logger.info('End of video stream, ret is False!')
-                           break
+                logger.info('End of video stream, ret is False!')
+                break
             if frame_id % int(args.skip_frame):
                 continue
 
@@ -65,6 +65,7 @@ def gen_vid_features(args, run, tag):
             f.write(run + '\n')
             f.write(repr(e) + '\n')
         return None, None
+
 
 if __name__ == '__main__':
     # Parse config file
