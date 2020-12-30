@@ -10,4 +10,4 @@ source activate tf
 #python skelfeatures/skelfeatures.py -c configs/config_skelfeatures.ini
 #python vidfeatures/vidfeatures.py -c configs/config_vidfeatures.ini
 
-python -c "import cv2" && python run_sem_with_features.py -c configs/config_run_sem.ini
+python run_sem_with_features.py -c configs/config_run_sem.ini

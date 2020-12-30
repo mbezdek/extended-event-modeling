@@ -150,7 +150,17 @@ def preprocess_objhand(objhand_csv, standardize=True):
     return scene_embs, obj_handling_embs
 
 
+def interpolate_frame(dataframe: pd.DataFrame):
+    first_frame = dataframe.index[0]
+    last_frame = dataframe.index[-1]
+    dummy_frame = pd.DataFrame(np.NaN, index=range(first_frame, last_frame), columns=dataframe.columns)
+    dummy_frame = dummy_frame.combine_first(dataframe).interpolate()
+    return dummy_frame
+
+
 def combine_dataframes(data_frames, rate='40ms'):
+    # Some features such as optical flow are calculated not for all frames, interpolate first
+    data_frames = [interpolate_frame(df) for df in data_frames]
     combine_df = pd.concat(data_frames, axis=1)
     combine_df.dropna(axis=0, inplace=True)
     first_frame = combine_df.index[0]
@@ -185,6 +195,8 @@ def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=
 
 def infer_on_video(args, run, tag):
     try:
+        # For some reason, some optical flow videos have inf value, TODO: investigate
+        pd.set_option('use_inf_as_na', True)
         args.run = run
         args.tag = tag
         logger.info(f'Config {args}')
@@ -294,18 +306,18 @@ if __name__ == "__main__":
     if '.txt' in args.run:
         with open(args.run, 'r') as f:
             runs = f.readlines()
-            runs = [run.strip() for run in runs if 'Stats' not in run]
+            runs = [run.strip() for run in runs if '_C1' in run]
     else:
         runs = [args.run]
 
     # runs = ['1.1.5_C1', '4.4.5_C1']
     tag = '_dec_29'
     # sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
-    res = Parallel(n_jobs=8)(delayed(
+    res = Parallel(n_jobs=16, backend='multiprocessing')(delayed(
         infer_on_video)(args, run, tag) for run in runs)
     sem_results, bicorrs, percentiles = zip(*res)
     results = dict()
     for i, run in enumerate(runs):
         results[run] = dict(tag=tag, bicorr=bicorrs[i], percentile=percentiles[i])
-    with open('results_run_sem.json', 'w') as f:
+    with open('results_sem_run.json', 'w') as f:
         json.dump(results, f, indent=4, sort_keys=True)
