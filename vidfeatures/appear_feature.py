@@ -103,7 +103,7 @@ def gen_appear_features(args, run, tag):
             f.write(run + '\n')
         return input_csv_tracking, output_csv_appear
     except Exception as e:
-        with open('objhand_error.txt', 'a') as f:
+        with open('appear_error.txt', 'a') as f:
             f.write(run + '\n')
             f.write(repr(e) + '\n')
         return None, None

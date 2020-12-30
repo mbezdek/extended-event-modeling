@@ -153,7 +153,8 @@ def preprocess_objhand(objhand_csv, standardize=True):
 def interpolate_frame(dataframe: pd.DataFrame):
     first_frame = dataframe.index[0]
     last_frame = dataframe.index[-1]
-    dummy_frame = pd.DataFrame(np.NaN, index=range(first_frame, last_frame), columns=dataframe.columns)
+    dummy_frame = pd.DataFrame(np.NaN, index=range(first_frame, last_frame),
+                               columns=dataframe.columns)
     dummy_frame = dummy_frame.combine_first(dataframe).interpolate()
     return dummy_frame
 
@@ -301,7 +302,27 @@ def resample_df(objhand_df, rate='40ms'):
     return outdf
 
 
+def merge_feature_lists():
+    with open('appear_complete.txt', 'r') as f:
+        appears = f.readlines()
+
+    with open('vid_complete.txt', 'r') as f:
+        vids = f.readlines()
+
+    with open('skel_complete.txt', 'r') as f:
+        skels = f.readlines()
+
+    with open('objhand_complete.txt', 'r') as f:
+        objhands = f.readlines()
+
+    sem_runs = set(appears).intersection(set(skels)).intersection(set(vids)).intersection(
+        set(objhands))
+    with open('intersect_features.txt', 'w') as f:
+        f.writelines(sem_runs)
+
+
 if __name__ == "__main__":
+    merge_feature_lists()
     args = parse_config()
     if '.txt' in args.run:
         with open(args.run, 'r') as f:
@@ -310,8 +331,8 @@ if __name__ == "__main__":
     else:
         runs = [args.run]
 
-    # runs = ['1.1.5_C1', '4.4.5_C1']
     tag = '_dec_29'
+    # Uncomment this for debugging
     # sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
     res = Parallel(n_jobs=16, backend='multiprocessing')(delayed(
         infer_on_video)(args, run, tag) for run in runs)
