@@ -1,4 +1,5 @@
 import sys
+import traceback
 
 sys.path.append('.')
 sys.path.append('../pysot')
@@ -9,7 +10,7 @@ import pandas as pd
 import csv
 import os
 import matplotlib.pyplot as plt
-from utils import logger, parse_config, SegmentationVideo, Canvas
+from utils import logger, parse_config, SegmentationVideo, Canvas, contain_substr
 
 
 def plot_appear_features(args, run, tag):
@@ -106,21 +107,25 @@ def gen_appear_features(args, run, tag):
         with open('appear_error.txt', 'a') as f:
             f.write(run + '\n')
             f.write(repr(e) + '\n')
+            f.write(traceback.format_exc() + '\n')
         return None, None
 
 
 if __name__ == '__main__':
     args = parse_config()
     if '.txt' in args.run:
+        choose = ['kinect']
+        # choose = ['C1']
         with open(args.run, 'r') as f:
             runs = f.readlines()
-            runs = [run.strip() for run in runs if 'Stats' not in run]
+            runs = [run.strip() for run in runs if contain_substr(run, choose)]
     else:
         runs = [args.run]
 
     # runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
     tag = '_dec_28'
-    res = Parallel(n_jobs=8)(delayed(
+    # input_tracking_csv, output_tracking_csv = gen_appear_features(args, runs[0], tag)
+    res = Parallel(n_jobs=16)(delayed(
         gen_appear_features)(args, run, tag) for run in runs)
     input_tracking_csvs, output_appear_csvs = zip(*res)
     results = dict()

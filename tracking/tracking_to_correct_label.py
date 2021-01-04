@@ -1,4 +1,5 @@
 from typing import Dict, Tuple
+import traceback
 
 import cv2
 import numpy as np
@@ -66,7 +67,7 @@ class TrackerWrapper:
         self.no_hit = 0
         self.no_hit_threshold = 30
         self.no_match_intervals = 0
-        self.no_match_threshold = 2
+        self.no_match_threshold = 1
 
     def __str__(self) -> str:
         return f'track_name={self.get_track_name()}, active={self.active}, ' \
@@ -540,7 +541,7 @@ if __name__ == '__main__':
         OUTPUT_VIDEO_BW = os.path.join(args.output_video_dir, args.run + f'_{args.tag}_bw.avi')
         OUTPUT_VIDEO_MERGED = os.path.join(args.output_video_dir,
                                            args.run + f'_{args.tag}_merged.avi')
-        OUTPUT_CSV_PATH = os.path.join(args.output_csv_dir, args.run + f'_{args.tag}.csv')
+        OUTPUT_CSV_PATH = os.path.join(args.output_csv_dir, args.run + f'_r50.csv')
 
         cv2_video_reader = CV2VideoReader(INPUT_VIDEO_PATH)
         cv2_video_writer_fw = CV2VideoWriter(output_video_path=OUTPUT_VIDEO_FW,
@@ -633,7 +634,7 @@ if __name__ == '__main__':
         end = perf_counter()
         logger.info(f'Running time: {end - start}')
 
-        with open('stat_runs.txt', 'a') as f:
+        with open('track_complete.txt', 'a') as f:
             index = log_str.find('Stats')
             if index != -1:
                 f.write(args.run + '\n')
@@ -641,6 +642,7 @@ if __name__ == '__main__':
 
     except Exception as error:
         error_str = repr(error)
-        with open('error_runs.txt', 'a') as f:
+        with open('track_error.txt', 'a') as f:
             f.write(args.run + '\n')
             f.write(error_str + '\n')
+            f.write(traceback.format_exc() + '\n')

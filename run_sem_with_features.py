@@ -6,16 +6,15 @@ import math
 import os
 import json
 import sys
+import traceback
 
 sys.path.append('../pysot')
 from sklearn.decomposition import PCA
-from sklearn import preprocessing
 from scipy.stats import percentileofscore
-from sem.event_models import LinearEvent, NonLinearEvent, RecurrentLinearEvent, RecurrentEvent, \
-    GRUEvent, LSTMEvent
-from sem import sem_run, SEM
+from sem.event_models import GRUEvent
+from sem import SEM
 from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, \
-    get_frequency_ground_truth, logger, parse_config, load_comparison_data
+    logger, parse_config, contain_substr
 from joblib import Parallel, delayed
 import gensim.downloader
 
@@ -47,21 +46,20 @@ def preprocess_optical(vid_csv, standardize=True):
 def preprocess_skel(skel_csv, use_position=False, standardize=True):
     skel_df = pd.read_csv(skel_csv, index_col='frame')
     skel_df.drop(['sync_time', 'raw_time', 'body', 'J1_dist_from_J1'], axis=1, inplace=True)
+    if use_position:
+        keeps = ['accel', 'speed', 'dist', 'interhand', '3D', '2D']
+    else:
+        keeps = ['accel', 'speed', 'dist', 'interhand']
     for c in skel_df.columns:
-        if use_position:
-            drop_condition = '_ID' in c or 'Tracked' in c or skel_df.loc[:, c].isnull().all()
-        else:
-            drop_condition = not (
-                    'acceleration' in c or 'speed' in c or 'dist' in c or 'interhand' in c)
-        if drop_condition:
-            skel_df.drop([c], axis=1, inplace=True)
-        else:
+        if contain_substr(c, keeps):
             if not standardize:
                 skel_df.loc[:, c] = (skel_df[c] - min(skel_df[c].dropna())) / (
                         max(skel_df[c].dropna()) - min(skel_df[c].dropna()))
             else:
                 skel_df.loc[:, c] = (skel_df[c] - skel_df[c].dropna().mean()) / skel_df[
                     c].dropna().std()
+        else:
+            skel_df.drop([c], axis=1, inplace=True)
 
     return skel_df
 
@@ -72,17 +70,20 @@ def remove_number(string):
     return string
 
 
-def get_emb_category(category, emb_dim=100):
-    r = np.zeros(shape=(1, emb_dim))
-    try:
-        r += glove_vectors[category]
-    except Exception as e:
-        words = category.split(' ')
-        for w in words:
-            w = w.replace('(', '').replace(')', '')
-            r += glove_vectors[w]
-        r /= len(words)
-    return r
+def get_emb_category(categories, emb_dim=100):
+    average = np.zeros(shape=(1, emb_dim))
+    for category in categories:
+        r = np.zeros(shape=(1, emb_dim))
+        try:
+            r += glove_vectors[category]
+        except Exception as e:
+            words = category.split(' ')
+            for w in words:
+                w = w.replace('(', '').replace(')', '')
+                r += glove_vectors[w]
+            r /= len(words)
+        average += r
+    return average / len(categories)
 
 
 def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
@@ -95,14 +96,15 @@ def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
             # averaging all objects
             scene_embedding = np.zeros(shape=(0, emb_dim))
             for category in all_categories:
-                cat_emb = get_emb_category(category, emb_dim)
+                cat_emb = get_emb_category([category], emb_dim)
                 scene_embedding = np.vstack([scene_embedding, cat_emb])
             scene_embedding = np.mean(scene_embedding, axis=0).reshape(1, emb_dim)
 
             # pick the nearest object
             nearest = row.argmin()
             assert nearest != -1
-            obj_handling_emb = get_emb_category(row.index[nearest], emb_dim)
+            # obj_handling_emb = get_emb_category(row.index[nearest], emb_dim)
+            obj_handling_emb = get_emb_category(row.dropna().sort_values().index[:3], emb_dim)
         else:
             scene_embedding = np.full(shape=(1, emb_dim), fill_value=np.nan)
             obj_handling_emb = np.full(shape=(1, emb_dim), fill_value=np.nan)
@@ -120,7 +122,7 @@ def preprocess_objhand(objhand_csv, standardize=True):
     # remove track number
     objhand_df.rename(remove_number, axis=1, inplace=True)
     all_categories = set(objhand_df.columns.values)
-    # get neareast distance for the same category
+    # get neareast distance for the same category at each row
     for category in all_categories:
         if isinstance(objhand_df[category], pd.Series):
             objhand_df[category.replace('_dist', '')] = objhand_df[category]
@@ -135,9 +137,10 @@ def preprocess_objhand(objhand_csv, standardize=True):
         if 'dist' in c:
             objhand_df.drop([c], axis=1, inplace=True)
     # normalize
-    mean = np.nanmean(objhand_df.values)
-    std = np.nanstd(objhand_df.values)
-    objhand_df = (objhand_df - mean) / std
+    # TODO: currently, many values exceed 5000, need debug in projected_skeletons
+    # mean = np.nanmean(objhand_df.values)
+    # std = np.nanstd(objhand_df.values)
+    # objhand_df = (objhand_df - mean) / std
     scene_embs, obj_handling_embs = get_embeddings(objhand_df, emb_dim=emb_dim)
     if standardize:
         scene_embs = (scene_embs - np.nanmean(scene_embs, axis=0)) / np.nanstd(scene_embs,
@@ -159,13 +162,21 @@ def interpolate_frame(dataframe: pd.DataFrame):
     return dummy_frame
 
 
-def combine_dataframes(data_frames, rate='40ms'):
+def pca_dataframe(dataframe: pd.DataFrame):
+    dataframe.dropna(axis=0, inplace=True)
+    pca = PCA(args.pca_explained, whiten=True)
+    dummy_array = pca.fit_transform(dataframe.values)
+
+    return pd.DataFrame(dummy_array)
+
+
+def combine_dataframes(data_frames, rate='40ms', fps=30):
     # Some features such as optical flow are calculated not for all frames, interpolate first
     data_frames = [interpolate_frame(df) for df in data_frames]
     combine_df = pd.concat(data_frames, axis=1)
     combine_df.dropna(axis=0, inplace=True)
     first_frame = combine_df.index[0]
-    combine_df = resample_df(combine_df, rate=rate)
+    combine_df = resample_df(combine_df, rate=rate, fps=fps)
     # because resample use mean, need to adjust categorical variables
     combine_df['appear'].apply(math.ceil).astype(float)
     combine_df['disappear'].apply(math.ceil).astype(float)
@@ -209,25 +220,31 @@ def infer_on_video(args, run, tag):
             fps = 30
         movie = run + '_trim.mp4'
         objhand_csv = os.path.join(args.objhand_csv, run + '_objhand.csv')
-        # TODO: skel for C1 and C2 videos
-        skel_csv = os.path.join(args.skel_csv, run.replace('_C1', '') + '_skel_features.csv')
+        skel_csv = os.path.join(args.skel_csv, run + '_skel_features.csv')
         appear_csv = os.path.join(args.appear_csv, run + '_appear.csv')
         optical_csv = os.path.join(args.optical_csv, run + '_video_features.csv')
 
         # Load csv files and preprocess to get a scene vector
         appear_df = preprocess_appear(appear_csv)
-        skel_df = preprocess_skel(skel_csv, use_position=False, standardize=True)
+        skel_df = preprocess_skel(skel_csv, use_position=True, standardize=True)
         optical_df = preprocess_optical(optical_csv, standardize=True)
         scene_embs, obj_handling_embs = preprocess_objhand(objhand_csv, standardize=True)
         # Get consistent start-end times and resampling rate for all features
         combine_df, first_frame = combine_dataframes(
             [appear_df, optical_df, skel_df, obj_handling_embs],
-            rate=args.rate)
+            rate=args.rate, fps=fps)
         combine_df.drop(['sync_time', 'frame'], axis=1, inplace=True, errors='ignore')
         logger.info(f'Features: {combine_df.columns}')
         x_train = combine_df.to_numpy()
         end_index = math.ceil(1000 / int(args.rate[:-2]) * end_second)
         x_train = x_train[:end_index]
+        pca = PCA(float(args.pca_explained), whiten=True)
+        try:
+            x_train_pca = pca.fit_transform(x_train[:, 2:])
+        except Exception as e:
+            print(repr(e))
+            x_train_pca = pca.fit_transform(x_train[:, 2:])
+        x_train = np.hstack([x_train[:, :2], x_train_pca])
 
         # VAE feature from washing dish video
         # x_train_vae = np.load('video_color_Z_embedded_64_5epoch.npy')
@@ -263,7 +280,8 @@ def infer_on_video(args, run, tag):
             data_frame = pd.read_csv(args.seg_path)
             seg_video = SegmentationVideo(data_frame=data_frame, video_path=movie)
             seg_video.get_segments(n_annotators=100, condition=args.grain)
-            seg_video.get_biserial_subjects(second_interval=1, end_second=end_second)
+            seg_video.get_biserial_subjects(second_interval=second_interval,
+                                            end_second=end_second)
             logger.info(f'Mean subjects biserial={np.mean(seg_video.biserials):.3f}')
             # Compare SEM boundaries versus participant boundaries
             gt_freqs = seg_video.gt_freqs
@@ -280,21 +298,22 @@ def infer_on_video(args, run, tag):
             return sem_model, bicorr, percentile
 
         x_train /= np.sqrt(x_train.shape[1])
-        sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag=f'_nopos_fine{tag}')
+        sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag=f'{tag}')
         logger.info(f'Done SEM {run}')
         with open('sem_complete.txt', 'a') as f:
             f.write(run + '\n')
         return sem_model.results, bicorr, percentile
     except Exception as e:
-        with open('error_sem_runs.txt', 'a') as f:
+        with open('sem_error.txt', 'a') as f:
             f.write(args.run + '\n')
             f.write(repr(e) + '\n')
+            f.write(traceback.format_exc() + '\n')
         return None, None, None
 
 
-def resample_df(objhand_df, rate='40ms'):
-    # fps doesn't matter hear, only need an approximate value to resample based on rate
-    outdf = objhand_df.set_index(pd.to_datetime(objhand_df.index / 30, unit='s'), drop=False,
+def resample_df(objhand_df, rate='40ms', fps=30):
+    # fps matter hear, we need feature vector at anchor timepoints to correspond to segments
+    outdf = objhand_df.set_index(pd.to_datetime(objhand_df.index / fps, unit='s'), drop=False,
                                  verify_integrity=True)
     resample_index = pd.date_range(start=outdf.index[0], end=outdf.index[-1], freq=rate)
     dummy_frame = pd.DataFrame(np.NaN, index=resample_index, columns=outdf.columns)
@@ -302,7 +321,7 @@ def resample_df(objhand_df, rate='40ms'):
     return outdf
 
 
-def merge_feature_lists():
+def merge_feature_lists(txt_out):
     with open('appear_complete.txt', 'r') as f:
         appears = f.readlines()
 
@@ -317,27 +336,39 @@ def merge_feature_lists():
 
     sem_runs = set(appears).intersection(set(skels)).intersection(set(vids)).intersection(
         set(objhands))
-    with open('intersect_features.txt', 'w') as f:
+    with open(txt_out, 'w') as f:
         f.writelines(sem_runs)
 
 
 if __name__ == "__main__":
-    merge_feature_lists()
     args = parse_config()
     if '.txt' in args.run:
+        merge_feature_lists(args.run)
+        choose = ['kinect']
+        # choose = ['C1']
         with open(args.run, 'r') as f:
             runs = f.readlines()
-            runs = [run.strip() for run in runs if '_C1' in run]
+            runs = [run.strip() for run in runs if contain_substr(run, choose)]
     else:
         runs = [args.run]
 
-    tag = '_dec_29'
+    tag = '_jan_03_use_pos_kinect'
     # Uncomment this for debugging
     # sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
     res = Parallel(n_jobs=16, backend='multiprocessing')(delayed(
         infer_on_video)(args, run, tag) for run in runs)
     sem_results, bicorrs, percentiles = zip(*res)
     results = dict()
+    # Average metric for all runs
+    bis = []
+    pers = []
+    for b, p in zip(bicorrs, percentiles):
+        if b is not None:
+            bis.append(b)
+            pers.append(p)
+    results['total_metric'] = dict()
+    results['total_metric']['bicorr'] = sum(bis) / len(bis)
+    results['total_metric']['percentile'] = sum(pers) / len(pers)
     for i, run in enumerate(runs):
         results[run] = dict(tag=tag, bicorr=bicorrs[i], percentile=percentiles[i])
     with open('results_sem_run.json', 'w') as f:

@@ -134,6 +134,7 @@ class SegmentationVideo:
     """
 
     def __init__(self, data_frame, video_path):
+        video_path = video_path.replace('kinect', 'C1').replace('C2', 'C1')
         self.data_frame = data_frame[
             data_frame['movie1'] == os.path.splitext(os.path.basename(video_path))[0]]
         self.n_participants = 0
@@ -495,3 +496,8 @@ class Canvas:
         self.axes[2].vlines(seg_points, ymin=0, ymax=1, alpha=0.05)
 
 
+def contain_substr(column: str, keeps):
+    for k in keeps:
+        if k in column:
+            return 1
+    return 0

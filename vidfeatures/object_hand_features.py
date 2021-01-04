@@ -2,10 +2,11 @@ import math
 import sys
 
 from matplotlib import animation as animation, pyplot as plt
+import traceback
 
 sys.path.append('.')
 sys.path.append('../pysot')
-from utils import logger, parse_config
+from utils import logger, parse_config, contain_substr
 import pandas as pd
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
@@ -19,14 +20,15 @@ def gen_objhand_feature(args, run, tag):
         # FPS is used to concat track_df and skel_df, should be inferred from run
         if 'kinect' in run:
             fps = 25
+            skel_csv = os.path.join(args.input_skel_csv,
+                                    run.replace('_kinect', '') + '_skel_clean.csv')
         else:
             fps = 30
+            skel_csv = os.path.join(args.input_skel_csv, run + '_skel.csv')
         args.run = run
         args.tag = tag
         logger.info(f'Config {args}')
         track_csv = os.path.join(args.input_track_csv, run + '_r50.csv')
-        # skel_csv = os.path.join(args.input_skel_csv, run.replace('_C1', '') + '_skel_clean.csv')
-        skel_csv = os.path.join(args.input_skel_csv, run + '_skel.csv')
         output_csv = os.path.join(args.output_objhand_csv, run + '_objhand.csv')
         # Read tracking result
         track_df = pd.read_csv(track_csv)
@@ -107,6 +109,7 @@ def gen_objhand_feature(args, run, tag):
         with open('objhand_error.txt', 'a') as f:
             f.write(run + '\n')
             f.write(repr(e) + '\n')
+            f.write(traceback.format_exc() + '\n')
         return None, None, None
 
 
@@ -176,9 +179,11 @@ if __name__ == '__main__':
     # Parse config file
     args = parse_config()
     if '.txt' in args.run:
+        choose = ['kinect']
+        # choose = ['C1']
         with open(args.run, 'r') as f:
             runs = f.readlines()
-            runs = [run.strip() for run in runs if 'Stats' not in run]
+            runs = [run.strip() for run in runs if contain_substr(run, choose)]
     else:
         runs = [args.run]
 
@@ -188,7 +193,7 @@ if __name__ == '__main__':
     # runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
     # runs = ['1.1.5_C1', '4.4.5_C1']
     tag = '_dec_28'
-    res = Parallel(n_jobs=8)(delayed(
+    res = Parallel(n_jobs=16)(delayed(
         gen_objhand_feature)(args, run, tag) for run in runs)
     track_csvs, skel_csvs, output_csvs = zip(*res)
     results = dict()

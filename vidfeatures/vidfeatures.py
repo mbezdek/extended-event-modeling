@@ -1,4 +1,5 @@
 import sys
+import traceback
 
 sys.path.append('.')
 sys.path.append('../pysot')
@@ -10,7 +11,7 @@ import os
 import json
 from joblib import Parallel, delayed
 from scipy.stats.stats import pearsonr
-from utils import CV2VideoReader, logger, parse_config
+from utils import CV2VideoReader, logger, parse_config, contain_substr
 
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
@@ -64,6 +65,7 @@ def gen_vid_features(args, run, tag):
         with open('vid_error.txt', 'a') as f:
             f.write(run + '\n')
             f.write(repr(e) + '\n')
+            f.write(traceback.format_exc() + '\n')
         return None, None
 
 
@@ -71,15 +73,17 @@ if __name__ == '__main__':
     # Parse config file
     args = parse_config()
     if '.txt' in args.run:
+        choose = ['kinect']
+        # choose = ['C1']
         with open(args.run, 'r') as f:
             runs = f.readlines()
-            runs = [run.strip() for run in runs if 'Stats' not in run]
+            runs = [run.strip() for run in runs if contain_substr(run, choose)]
     else:
         runs = [args.run]
 
     # runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
     tag = '_dec_28'
-    res = Parallel(n_jobs=8)(delayed(
+    res = Parallel(n_jobs=16)(delayed(
         gen_vid_features)(args, run, tag) for run in runs)
     input_video_paths, output_csv_paths = zip(*res)
     results = dict()
