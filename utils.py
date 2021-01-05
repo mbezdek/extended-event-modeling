@@ -170,7 +170,9 @@ class SegmentationVideo:
                 logger.info(f'Subject has no segments within end_second={end_second}')
                 continue
             point = get_point_biserial(participant_seg, self.gt_freqs)
-            self.biserials.append(point)
+            if point is not None:  # some participants yield null bicorr
+                self.biserials.append(point)
+        return self.biserials
 
     def preprocess_segments(self):
         average = np.mean([len(seg) for seg in self.seg_points if len(seg)])

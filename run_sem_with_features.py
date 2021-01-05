@@ -94,11 +94,12 @@ def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
         all_categories = list(row.index[row.notna()])
         if len(all_categories):
             # averaging all objects
-            scene_embedding = np.zeros(shape=(0, emb_dim))
-            for category in all_categories:
-                cat_emb = get_emb_category([category], emb_dim)
-                scene_embedding = np.vstack([scene_embedding, cat_emb])
-            scene_embedding = np.mean(scene_embedding, axis=0).reshape(1, emb_dim)
+            # scene_embedding = np.zeros(shape=(0, emb_dim))
+            # for category in all_categories:
+            #     cat_emb = get_emb_category([category], emb_dim)
+            #     scene_embedding = np.vstack([scene_embedding, cat_emb])
+            # scene_embedding = np.mean(scene_embedding, axis=0).reshape(1, emb_dim)
+            scene_embedding = get_emb_category(all_categories, emb_dim)
 
             # pick the nearest object
             nearest = row.argmin()
@@ -148,8 +149,10 @@ def preprocess_objhand(objhand_csv, standardize=True):
         obj_handling_embs = (obj_handling_embs - np.nanmean(obj_handling_embs,
                                                             axis=0)) / np.nanstd(
             obj_handling_embs, axis=0)
-    scene_embs = pd.DataFrame(scene_embs, index=objhand_df.index)
-    obj_handling_embs = pd.DataFrame(obj_handling_embs, index=objhand_df.index)
+    scene_embs = pd.DataFrame(scene_embs, index=objhand_df.index,
+                              columns=list(map(lambda x: f'scene_{x}', range(emb_dim))))
+    obj_handling_embs = pd.DataFrame(obj_handling_embs, index=objhand_df.index,
+                                     columns=list(map(lambda x: f'objhand_{x}', range(emb_dim))))
     return scene_embs, obj_handling_embs
 
 
@@ -185,7 +188,7 @@ def combine_dataframes(data_frames, rate='40ms', fps=30):
 
 
 def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=True,
-                                  show=True):
+                                  show=True, bicorr=0.0):
     plt.figure()
     plt.plot(gt_freqs, label='Subject Boundaries')
     plt.xlabel('Time (seconds)')
@@ -196,8 +199,9 @@ def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=
     for b in np.arange(len(pred_boundaries))[pred_boundaries][1:]:
         plt.plot([b, b], [0, 1], 'k:', alpha=0.75, color='b')
 
+    plt.text(0.1, 0.8, f'bicorr={bicorr:.3f}', fontsize=15)
     plt.legend(loc='upper left')
-    plt.ylim([0, 0.5])
+    plt.ylim([0, 1.0])
     sns.despine()
     if save_fig:
         plt.savefig('output/run_sem/' + title + '.png')
@@ -268,7 +272,7 @@ def infer_on_video(args, run, tag):
             # Process results returned by SEM
             # sample_per_second = 30  # washing dish video
             sample_per_second = 3
-            second_interval = 1  # interval to group boundaries
+            second_interval = 3  # interval to group boundaries
             pred_boundaries = get_binned_prediction(sem_model.results.post,
                                                     second_interval=second_interval,
                                                     sample_per_second=sample_per_second)
@@ -276,25 +280,31 @@ def infer_on_video(args, run, tag):
                 [[0] * round(first_frame / fps / second_interval), pred_boundaries]).astype(
                 bool)
             logger.info(f'Total # of pred_boundaries: {sum(pred_boundaries)}')
-            # Process segmentation data (ground_truth)
-            data_frame = pd.read_csv(args.seg_path)
-            seg_video = SegmentationVideo(data_frame=data_frame, video_path=movie)
-            seg_video.get_segments(n_annotators=100, condition=args.grain)
-            seg_video.get_biserial_subjects(second_interval=second_interval,
-                                            end_second=end_second)
-            logger.info(f'Mean subjects biserial={np.mean(seg_video.biserials):.3f}')
-            # Compare SEM boundaries versus participant boundaries
-            gt_freqs = seg_video.gt_freqs
-            # data_old = pd.read_csv('./data/zachs2006_data021011.dat', delimiter='\t')
-            # _, _, gt_freqs = load_comparison_data(data_old)
-            last = min(len(pred_boundaries), len(gt_freqs))
-            bicorr = get_point_biserial(pred_boundaries[:last], gt_freqs[:last])
-            percentile = percentileofscore(seg_video.biserials, bicorr)
-            logger.info(
-                f'Tag={tag}: bicorr={bicorr:.3f} cor. percentile={percentile:.3f} population'
-                f' with mean={np.mean(seg_video.biserials):.3f}')
-            plot_subject_model_boundaries(gt_freqs, pred_boundaries,
-                                          title=os.path.basename(movie[:-4]) + tag, show=False)
+
+            def compare_and_plot(grain='fine'):
+                # Process segmentation data (ground_truth)
+                data_frame = pd.read_csv(args.seg_path)
+                seg_video = SegmentationVideo(data_frame=data_frame, video_path=movie)
+                seg_video.get_segments(n_annotators=100, condition=grain)
+                biserials = seg_video.get_biserial_subjects(second_interval=second_interval,
+                                                            end_second=end_second)
+                logger.info(f'Subjects mean_biserial={np.nanmean(biserials):.3f}')
+                # Compare SEM boundaries versus participant boundaries
+                gt_freqs = seg_video.gt_freqs
+                # data_old = pd.read_csv('./data/zachs2006_data021011.dat', delimiter='\t')
+                # _, _, gt_freqs = load_comparison_data(data_old)
+                last = min(len(pred_boundaries), len(gt_freqs))
+                bicorr = get_point_biserial(pred_boundaries[:last], gt_freqs[:last])
+                percentile = percentileofscore(biserials, bicorr)
+                logger.info(
+                    f'Tag={tag}: Bicorr={bicorr:.3f} cor. Percentile={percentile:.3f}, '
+                    f'Subjects_mean={np.nanmean(biserials):.3f}')
+                plot_subject_model_boundaries(gt_freqs, pred_boundaries,
+                                              title=os.path.basename(movie[:-4]) + tag + f'_{grain}', show=False,
+                                              bicorr=bicorr)
+                return bicorr, percentile
+            bicorr, percentile = compare_and_plot('fine')
+            bicorr, percentile = compare_and_plot('coarse')
             return sem_model, bicorr, percentile
 
         x_train /= np.sqrt(x_train.shape[1])
@@ -343,7 +353,7 @@ def merge_feature_lists(txt_out):
 if __name__ == "__main__":
     args = parse_config()
     if '.txt' in args.run:
-        merge_feature_lists(args.run)
+        # merge_feature_lists(args.run)
         choose = ['kinect']
         # choose = ['C1']
         with open(args.run, 'r') as f:
@@ -352,7 +362,7 @@ if __name__ == "__main__":
     else:
         runs = [args.run]
 
-    tag = '_jan_03_use_pos_kinect'
+    tag = '_jan_05'
     # Uncomment this for debugging
     # sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
     res = Parallel(n_jobs=16, backend='multiprocessing')(delayed(
