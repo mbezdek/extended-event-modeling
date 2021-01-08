@@ -95,7 +95,7 @@ def get_binned_prediction(posterior, second_interval=1, sample_per_second=30) ->
     e_hat = np.argmax(posterior, axis=1)
     # TODO: change to [0] for the first frame after done modeling
     frame_boundaries = np.concatenate([[1], e_hat[1:] != e_hat[:-1]])
-    frame_interval = int(second_interval * sample_per_second)
+    frame_interval = round(second_interval * sample_per_second)
     # Sum for each interval
     time_boundaries = np.add.reduceat(frame_boundaries,
                                       range(0, len(frame_boundaries), frame_interval))
@@ -169,8 +169,8 @@ class SegmentationVideo:
             if sum(participant_seg) == 0:
                 logger.info(f'Subject has no segments within end_second={end_second}')
                 continue
-            point = get_point_biserial(participant_seg, self.gt_freqs)
-            if point is not None:  # some participants yield null bicorr
+            point = get_point_biserial(participant_seg.astype(bool), self.gt_freqs)
+            if not np.isnan(point):  # some participants yield null bicorr
                 self.biserials.append(point)
         return self.biserials
 

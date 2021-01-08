@@ -42,12 +42,12 @@ plt.legend()
 plt.title('Prior')
 plt.show()
 
-
 # Testing BERT
 from pytorch_transformers import *
 import torch
 
-model_class, tokenizer_class, pretrained_weights = (BertModel, BertTokenizer, 'bert-base-uncased')
+model_class, tokenizer_class, pretrained_weights = (
+BertModel, BertTokenizer, 'bert-base-uncased')
 
 tokenizer = tokenizer_class.from_pretrained(pretrained_weights)
 model = model_class.from_pretrained(pretrained_weights,
@@ -55,10 +55,10 @@ model = model_class.from_pretrained(pretrained_weights,
                                     output_attentions=True)
 input_ids = torch.tensor([tokenizer.encode("dumbbell")])
 with torch.no_grad():
-  all_hidden_states_db, _ = model(input_ids)[-2:]
+    all_hidden_states_db, _ = model(input_ids)[-2:]
 input_ids = torch.tensor([tokenizer.encode("kitchen")])
 with torch.no_grad():
-  all_hidden_states_kc, _ = model(input_ids)[-2:]
+    all_hidden_states_kc, _ = model(input_ids)[-2:]
 cos = torch.nn.CosineSimilarity(dim=0)
 cos(all_hidden_states_db[-2][0][0], all_hidden_states_db[-2][0][1])
 cos(all_hidden_states_kc[-2][0][0], all_hidden_states_db[-2][0][0])
@@ -114,31 +114,36 @@ plt.yticks(range(113), labels);
 fig.colorbar(cax, ticks=[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, .75, .8, .85, .90, .95, 1])
 plt.show()
 
+
 def remove_number(string):
     for i in range(100):
         string = string.replace(str(i), '')
     return string
+
+
 all_categories = list(map(remove_number, all_categories))
 
 for x in ['fasttext-wiki-news-subwords-300',
-'conceptnet-numberbatch-17-06-300',
-'word2vec-ruscorpora-300',
-'word2vec-google-news-300',
-'glove-wiki-gigaword-50',
-'glove-wiki-gigaword-100',
-'glove-wiki-gigaword-200',
-'glove-wiki-gigaword-300',
-'glove-twitter-25',
-'glove-twitter-50',
-'glove-twitter-100',
-'glove-twitter-200',
-'__testing_word2vec-matrix-synopsis']:
-    %time gensim.downloader.load(x)
+          'conceptnet-numberbatch-17-06-300',
+          'word2vec-ruscorpora-300',
+          'word2vec-google-news-300',
+          'glove-wiki-gigaword-50',
+          'glove-wiki-gigaword-100',
+          'glove-wiki-gigaword-200',
+          'glove-wiki-gigaword-300',
+          'glove-twitter-25',
+          'glove-twitter-50',
+          'glove-twitter-100',
+          'glove-twitter-200',
+          '__testing_word2vec-matrix-synopsis']:
+    % time
+    gensim.downloader.load(x)
 
 # List of successful tracking runs
 import glob
 import os
 import collections
+
 tracks = glob.glob('output/tracking/*dec*.csv')
 tag = [os.path.basename(t).split('_')[0] for t in tracks]
 dup = [item for item, count in collections.Counter(tag).items() if count > 1]
@@ -155,6 +160,7 @@ for video in videos:
 
 import os
 import glob
+
 with open('track_complete.txt', 'r') as f:
     tracks = f.readlines()
     track_tags = [t.strip() for t in tracks if 'kinect' in t]
@@ -178,11 +184,13 @@ with open('skel_complete.txt', 'r') as f:
 with open('objhand_complete.txt', 'r') as f:
     objhands = f.readlines()
 
-sem_runs = set(appears).intersection(set(skels)).intersection(set(vids)).intersection(set(objhands))
+sem_runs = set(appears).intersection(set(skels)).intersection(set(vids)).intersection(
+    set(objhands))
 with open('intersect_features.txt', 'w') as f:
     f.writelines(sem_runs)
 
 import json
+
 # Average metric for all runs
 res = json.load(open('results_sem_run.json', 'r'))
 bicorrs = []
@@ -196,7 +204,6 @@ print(sum(bicorrs) / len(bicorrs))
 print(sum(pers) / len(pers))
 sorted(res.items(), key=lambda item: item[1]['bicorr'])
 
-
 # check projected skeletons
 import glob
 import pandas as pd
@@ -205,11 +212,13 @@ ps = glob.glob('data/projected_skeletons/*.csv')
 exceed = []
 keeps = ['2D', '3D']
 
+
 def check_keep_feature(column: str, keeps):
     for k in keeps:
         if k in column:
             return 1
     return 0
+
 
 for f in ps:
     df = pd.read_csv(f)
@@ -243,6 +252,7 @@ for j in jsons:
     os.rename(j, os.path.join(dir, os.path.basename(j)))
 
 import shutil
+
 shutil.move('output/appear', f'tmp/{tag}/appear')
 shutil.move('output/objhand', f'tmp/{tag}/objhand')
 shutil.move('output/vid', f'tmp/{tag}/vid')
@@ -266,10 +276,11 @@ for k, v in res.items():
         agg['chapter'][k[2]].append((k, v['percentile'], v['bicorr']))
 
 # plot results
-colors = {'chapter 1':'red', 'chapter 2':'green', 'chapter 3':'blue', 'chapter 4':'purple'}
+colors = {'chapter 1': 'red', 'chapter 2': 'green', 'chapter 3': 'blue', 'chapter 4': 'purple'}
 fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8), sharey=True)
 for k, v in agg['chapter'].items():
-    ax[0].scatter(np.mean([x[1] for x in v])/100, np.mean([x[2] for x in v]), label=f'chapter {k}', c=colors[f'chapter {k}'])
+    ax[0].scatter(np.mean([x[1] for x in v]) / 100, np.mean([x[2] for x in v]),
+                  label=f'chapter {k}', c=colors[f'chapter {k}'])
 ax[0].set_xlabel('Percentile')
 ax[0].set_ylabel('Biserial Correlation')
 ax[0].set_title('Aggregate metrics for each Chapter')
@@ -283,3 +294,16 @@ ax[1].set_ylabel('Biserial Correlation')
 ax[1].set_title('Metrics for each Run')
 plt.savefig('jan_05_36runs_kinect.png')
 plt.show()
+fig, ax = plt.subplots()
+ax.margins(0.05)  # Optional, just adds 5% padding to the autoscaling
+for name, group in groups:
+    ax.plot(group.percentile / 100, group.bicorr, marker='o', linestyle='', ms=12, label=name)
+    ax.legend()
+    ax.set_xlabel('Biserial Correlation')
+    ax.set_ylabel('Percentile')
+    plt.show()
+
+import pandas as pd
+
+df = pd.read_csv('results_sem_run.csv')
+df[df['grain'] == 'fine']['percentile'].mean()

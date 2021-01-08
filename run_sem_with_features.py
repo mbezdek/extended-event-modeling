@@ -7,11 +7,12 @@ import os
 import json
 import sys
 import traceback
+import csv
 
 sys.path.append('../pysot')
 from sklearn.decomposition import PCA
 from scipy.stats import percentileofscore
-from sem.event_models import GRUEvent
+from sem.event_models import GRUEvent, LinearEvent
 from sem import SEM
 from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, \
     logger, parse_config, contain_substr
@@ -99,7 +100,7 @@ def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
             #     cat_emb = get_emb_category([category], emb_dim)
             #     scene_embedding = np.vstack([scene_embedding, cat_emb])
             # scene_embedding = np.mean(scene_embedding, axis=0).reshape(1, emb_dim)
-            scene_embedding = get_emb_category(all_categories, emb_dim)
+            scene_embedding = get_emb_category(row.dropna().sort_values().index[:7], emb_dim)
 
             # pick the nearest object
             nearest = row.argmin()
@@ -152,7 +153,8 @@ def preprocess_objhand(objhand_csv, standardize=True):
     scene_embs = pd.DataFrame(scene_embs, index=objhand_df.index,
                               columns=list(map(lambda x: f'scene_{x}', range(emb_dim))))
     obj_handling_embs = pd.DataFrame(obj_handling_embs, index=objhand_df.index,
-                                     columns=list(map(lambda x: f'objhand_{x}', range(emb_dim))))
+                                     columns=list(
+                                         map(lambda x: f'objhand_{x}', range(emb_dim))))
     return scene_embs, obj_handling_embs
 
 
@@ -188,7 +190,7 @@ def combine_dataframes(data_frames, rate='40ms', fps=30):
 
 
 def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=True,
-                                  show=True, bicorr=0.0):
+                                  show=True, bicorr=0.0, percentile=0.0):
     plt.figure()
     plt.plot(gt_freqs, label='Subject Boundaries')
     plt.xlabel('Time (seconds)')
@@ -199,7 +201,7 @@ def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=
     for b in np.arange(len(pred_boundaries))[pred_boundaries][1:]:
         plt.plot([b, b], [0, 1], 'k:', alpha=0.75, color='b')
 
-    plt.text(0.1, 0.8, f'bicorr={bicorr:.3f}', fontsize=15)
+    plt.text(0.1, 0.8, f'bicorr={bicorr:.3f}, perc={percentile:.3f}', fontsize=14)
     plt.legend(loc='upper left')
     plt.ylim([0, 1.0])
     sns.despine()
@@ -238,7 +240,7 @@ def infer_on_video(args, run, tag):
             [appear_df, optical_df, skel_df, obj_handling_embs],
             rate=args.rate, fps=fps)
         combine_df.drop(['sync_time', 'frame'], axis=1, inplace=True, errors='ignore')
-        logger.info(f'Features: {combine_df.columns}')
+        # logger.info(f'Features: {combine_df.columns}')
         x_train = combine_df.to_numpy()
         end_index = math.ceil(1000 / int(args.rate[:-2]) * end_second)
         x_train = x_train[:end_index]
@@ -260,6 +262,7 @@ def infer_on_video(args, run, tag):
             # these are the parameters for the event model itself.
             f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
                           n_epochs=10, t=4)
+            # f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, n_epochs=10)
             # f_opts = dict(l2_regularization=0.5, n_epochs=10)
             lmda = float(args.lmda)  # stickyness parameter (prior)
             alfa = float(args.alfa)  # concentration parameter (prior)
@@ -271,7 +274,7 @@ def infer_on_video(args, run, tag):
             sem_model.run(x_train, **run_kwargs)
             # Process results returned by SEM
             # sample_per_second = 30  # washing dish video
-            sample_per_second = 3
+            sample_per_second = 1000 / float(args.rate.replace('ms', ''))
             second_interval = 3  # interval to group boundaries
             pred_boundaries = get_binned_prediction(sem_model.results.post,
                                                     second_interval=second_interval,
@@ -288,7 +291,7 @@ def infer_on_video(args, run, tag):
                 seg_video.get_segments(n_annotators=100, condition=grain)
                 biserials = seg_video.get_biserial_subjects(second_interval=second_interval,
                                                             end_second=end_second)
-                logger.info(f'Subjects mean_biserial={np.nanmean(biserials):.3f}')
+                # logger.info(f'Subjects mean_biserial={np.nanmean(biserials):.3f}')
                 # Compare SEM boundaries versus participant boundaries
                 gt_freqs = seg_video.gt_freqs
                 # data_old = pd.read_csv('./data/zachs2006_data021011.dat', delimiter='\t')
@@ -298,11 +301,18 @@ def infer_on_video(args, run, tag):
                 percentile = percentileofscore(biserials, bicorr)
                 logger.info(
                     f'Tag={tag}: Bicorr={bicorr:.3f} cor. Percentile={percentile:.3f}, '
-                    f'Subjects_mean={np.nanmean(biserials):.3f}')
+                    f'Subjects_median={np.nanmedian(biserials):.3f}')
                 plot_subject_model_boundaries(gt_freqs, pred_boundaries,
-                                              title=os.path.basename(movie[:-4]) + tag + f'_{grain}', show=False,
-                                              bicorr=bicorr)
+                                              title=os.path.basename(
+                                                  movie[:-4]) + tag + f'_{grain}', show=False,
+                                              bicorr=bicorr, percentile=percentile)
+                with open('results_sem_run.csv', 'a') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([run, grain, bicorr, percentile, np.nanmedian(biserials),
+                                     pred_boundaries, sum(pred_boundaries),
+                                     float(args.alfa), float(args.lmda), tag])
                 return bicorr, percentile
+
             bicorr, percentile = compare_and_plot('fine')
             bicorr, percentile = compare_and_plot('coarse')
             return sem_model, bicorr, percentile
@@ -362,7 +372,12 @@ if __name__ == "__main__":
     else:
         runs = [args.run]
 
-    tag = '_jan_05'
+    tag = 'jan_07_1000ms'
+    csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'mean_subject', 'pred_boundaries',
+                   'model_boundaries', 'alfa', 'lmda', 'tag']
+    with open('results_sem_run.csv', 'w') as f:
+        writer = csv.writer(f)
+        writer.writerow(csv_headers)
     # Uncomment this for debugging
     # sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
     res = Parallel(n_jobs=16, backend='multiprocessing')(delayed(
