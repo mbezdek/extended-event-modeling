@@ -8,6 +8,7 @@ import json
 import sys
 import traceback
 import csv
+import pickle as pkl
 
 sys.path.append('../pysot')
 from sklearn.decomposition import PCA
@@ -90,6 +91,7 @@ def get_emb_category(categories, emb_dim=100):
 def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
     scene_embs = np.zeros(shape=(0, emb_dim))
     obj_handling_embs = np.zeros(shape=(0, emb_dim))
+    categories = pd.DataFrame()
 
     for index, row in objhand_df.iterrows():
         all_categories = list(row.index[row.notna()])
@@ -106,13 +108,15 @@ def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
             nearest = row.argmin()
             assert nearest != -1
             # obj_handling_emb = get_emb_category(row.index[nearest], emb_dim)
+            new_row = pd.Series(data=row.dropna().sort_values().index[:3], name=row.name)
+            categories = categories.append(new_row)
             obj_handling_emb = get_emb_category(row.dropna().sort_values().index[:3], emb_dim)
         else:
             scene_embedding = np.full(shape=(1, emb_dim), fill_value=np.nan)
             obj_handling_emb = np.full(shape=(1, emb_dim), fill_value=np.nan)
         scene_embs = np.vstack([scene_embs, scene_embedding])
         obj_handling_embs = np.vstack([obj_handling_embs, obj_handling_emb])
-    return scene_embs, obj_handling_embs
+    return scene_embs, obj_handling_embs, categories
 
 
 def preprocess_objhand(objhand_csv, standardize=True):
@@ -143,7 +147,7 @@ def preprocess_objhand(objhand_csv, standardize=True):
     # mean = np.nanmean(objhand_df.values)
     # std = np.nanstd(objhand_df.values)
     # objhand_df = (objhand_df - mean) / std
-    scene_embs, obj_handling_embs = get_embeddings(objhand_df, emb_dim=emb_dim)
+    scene_embs, obj_handling_embs, categories = get_embeddings(objhand_df, emb_dim=emb_dim)
     if standardize:
         scene_embs = (scene_embs - np.nanmean(scene_embs, axis=0)) / np.nanstd(scene_embs,
                                                                                axis=0)
@@ -155,7 +159,7 @@ def preprocess_objhand(objhand_csv, standardize=True):
     obj_handling_embs = pd.DataFrame(obj_handling_embs, index=objhand_df.index,
                                      columns=list(
                                          map(lambda x: f'objhand_{x}', range(emb_dim))))
-    return scene_embs, obj_handling_embs
+    return scene_embs, obj_handling_embs, categories
 
 
 def interpolate_frame(dataframe: pd.DataFrame):
@@ -181,12 +185,19 @@ def combine_dataframes(data_frames, rate='40ms', fps=30):
     combine_df = pd.concat(data_frames, axis=1)
     combine_df.dropna(axis=0, inplace=True)
     first_frame = combine_df.index[0]
+    combine_df['frame'] = combine_df.index
     combine_df = resample_df(combine_df, rate=rate, fps=fps)
     # because resample use mean, need to adjust categorical variables
-    combine_df['appear'].apply(math.ceil).astype(float)
-    combine_df['disappear'].apply(math.ceil).astype(float)
+    combine_df['appear'] = combine_df['appear'].apply(math.ceil).astype(float)
+    combine_df['disappear'] = combine_df['disappear'].apply(math.ceil).astype(float)
+    # Add readout to visualize
+    data_frames = [combine_df[df.columns] for df in data_frames]
+    for df in data_frames:
+        df.index = combine_df['frame'].apply(round)
+
     assert combine_df.isna().sum().sum() == 0
-    return combine_df, first_frame
+    combine_df.drop(['sync_time', 'frame'], axis=1, inplace=True, errors='ignore')
+    return combine_df, first_frame, data_frames
 
 
 def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=True,
@@ -205,6 +216,39 @@ def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=
     plt.legend(loc='upper left')
     plt.ylim([0, 1.0])
     sns.despine()
+    if save_fig:
+        plt.savefig('output/run_sem/' + title + '.png')
+    if show:
+        plt.show()
+
+
+def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=0.0, title='', show=False, save_fig=True):
+    plt.figure()
+    plt.plot(gt_freqs, label='Subject Boundaries')
+    plt.xlabel('Time (seconds)')
+    plt.ylabel('Boundary Probability')
+    plt.title(title)
+    colors = {'new': 'red', 'old': 'green', 'restart': 'blue', 'repeat': 'purple'}
+    sem_readouts.frame_dynamics['old_lik'] = list(map(np.max, sem_readouts.frame_dynamics['old_lik']))
+    sem_readouts.frame_dynamics['old_prior'] = list(map(np.max, sem_readouts.frame_dynamics['old_prior']))
+    df = pd.DataFrame(sem_readouts.frame_dynamics)
+    df['new_post'] = df.filter(regex='new_').sum(axis=1)
+    df['old_post'] = df.filter(regex='old_').sum(axis=1)
+    df['repeat_post'] = df.filter(regex='repeat_').sum(axis=1)
+    df['restart_post'] = df.filter(regex='restart_').sum(axis=1)
+    df['switch'] = df.filter(regex='_post').idxmax(axis=1)
+    plt.vlines(df[df['switch'] == 'new_post'].index / frame_interval + offset, ymin=0, ymax=1, alpha=0.5, label='Switch to New '
+                                                                                                                 'Event',
+               color=colors['new'], linestyles='dotted')
+    plt.vlines(df[df['switch'] == 'old_post'].index / frame_interval + offset, ymin=0, ymax=1, alpha=0.5, label='Switch to Old '
+                                                                                                                 'Event',
+               color=colors['old'], linestyles='dotted')
+    # plt.vlines(df[df['switch'] == 'repeat_post'].index, ymin=0, ymax=1, alpha=0.5, label='Repeat Event', color=colors['repeat'],
+    #            linestyles='dotted')
+    # plt.vlines(df[df['switch'] == 'restart_post'].index, ymin=0, ymax=1, alpha=0.5, label='Restart Event', color=colors['restart'],
+    #            linestyles='dotted')
+    plt.legend()
+    plt.ylim([0, 1.0])
     if save_fig:
         plt.savefig('output/run_sem/' + title + '.png')
     if show:
@@ -234,12 +278,33 @@ def infer_on_video(args, run, tag):
         appear_df = preprocess_appear(appear_csv)
         skel_df = preprocess_skel(skel_csv, use_position=True, standardize=True)
         optical_df = preprocess_optical(optical_csv, standardize=True)
-        scene_embs, obj_handling_embs = preprocess_objhand(objhand_csv, standardize=True)
+        scene_embs, obj_handling_embs, categories = preprocess_objhand(objhand_csv, standardize=True)
         # Get consistent start-end times and resampling rate for all features
-        combine_df, first_frame = combine_dataframes(
-            [appear_df, optical_df, skel_df, obj_handling_embs],
-            rate=args.rate, fps=fps)
-        combine_df.drop(['sync_time', 'frame'], axis=1, inplace=True, errors='ignore')
+        combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
+                                                                  rate=args.rate, fps=fps)
+        # Readout to visualize object-hand features
+        categories = categories.ffill()
+        categories = categories.loc[data_frames[0].index, :]
+        data_frames.append(categories)
+        coordinates = pd.DataFrame()
+        objhand_df = pd.read_csv(objhand_csv)
+        objhand_df = objhand_df.loc[data_frames[0].index, :]
+        for index, r in categories.iterrows():
+            frame_series = pd.Series(dtype=float)
+            all_categories = r.values
+            for c in list(all_categories):
+                # Filter by category name and select distance
+                # Note: paper towel and towel causes duplicated columns in series, need to assert anchor by regex
+                df = objhand_df.loc[index, :].filter(regex=f'^{c}').filter(like='_dist')
+                # select nearest object's coordinates
+                s = objhand_df.loc[index, :].filter(regex=f"^{df.index[df.argmin()].replace('_dist', '')}")
+                frame_series = frame_series.append(s)
+            frame_series.name = index
+            coordinates = coordinates.append(frame_series)
+        data_frames.append(coordinates)
+        title = os.path.basename(movie[:-4]) + tag
+        with open('output/run_sem/' + title + '_inputdf.pkl', 'wb') as f:
+            pkl.dump(data_frames, f)
         # logger.info(f'Features: {combine_df.columns}')
         x_train = combine_df.to_numpy()
         end_index = math.ceil(1000 / int(args.rate[:-2]) * end_second)
@@ -276,21 +341,19 @@ def infer_on_video(args, run, tag):
             # sample_per_second = 30  # washing dish video
             sample_per_second = 1000 / float(args.rate.replace('ms', ''))
             second_interval = 3  # interval to group boundaries
-            pred_boundaries = get_binned_prediction(sem_model.results.post,
-                                                    second_interval=second_interval,
+            pred_boundaries = get_binned_prediction(sem_model.results.post, second_interval=second_interval,
                                                     sample_per_second=sample_per_second)
-            pred_boundaries = np.hstack(
-                [[0] * round(first_frame / fps / second_interval), pred_boundaries]).astype(
-                bool)
+            pred_boundaries = np.hstack([[0] * round(first_frame / fps / second_interval), pred_boundaries]).astype(bool)
             logger.info(f'Total # of pred_boundaries: {sum(pred_boundaries)}')
+            with open('output/run_sem/' + title + '_diagnostic.pkl', 'wb') as f:
+                pkl.dump(sem_model.results, f)
 
-            def compare_and_plot(grain='fine'):
+            def evaluate_and_plot(grain='fine'):
                 # Process segmentation data (ground_truth)
                 data_frame = pd.read_csv(args.seg_path)
                 seg_video = SegmentationVideo(data_frame=data_frame, video_path=movie)
                 seg_video.get_segments(n_annotators=100, condition=grain)
-                biserials = seg_video.get_biserial_subjects(second_interval=second_interval,
-                                                            end_second=end_second)
+                biserials = seg_video.get_biserial_subjects(second_interval=second_interval, end_second=end_second)
                 # logger.info(f'Subjects mean_biserial={np.nanmean(biserials):.3f}')
                 # Compare SEM boundaries versus participant boundaries
                 gt_freqs = seg_video.gt_freqs
@@ -299,22 +362,22 @@ def infer_on_video(args, run, tag):
                 last = min(len(pred_boundaries), len(gt_freqs))
                 bicorr = get_point_biserial(pred_boundaries[:last], gt_freqs[:last])
                 percentile = percentileofscore(biserials, bicorr)
-                logger.info(
-                    f'Tag={tag}: Bicorr={bicorr:.3f} cor. Percentile={percentile:.3f}, '
-                    f'Subjects_median={np.nanmedian(biserials):.3f}')
-                plot_subject_model_boundaries(gt_freqs, pred_boundaries,
-                                              title=os.path.basename(
-                                                  movie[:-4]) + tag + f'_{grain}', show=False,
-                                              bicorr=bicorr, percentile=percentile)
+                logger.info(f'Tag={tag}: Bicorr={bicorr:.3f} cor. Percentile={percentile:.3f}, '
+                            f'Subjects_median={np.nanmedian(biserials):.3f}')
+                plot_subject_model_boundaries(gt_freqs, pred_boundaries, title=title + f'_{grain}',
+                                              show=False, bicorr=bicorr, percentile=percentile)
+                with open('output/run_sem/' + title + '_gtfreqs.pkl', 'wb') as f:
+                    pkl.dump(gt_freqs, f)
+                plot_diagnostic_readouts(gt_freqs, sem_model.results, frame_interval=second_interval*sample_per_second,
+                                         offset=first_frame / fps / second_interval, title=title + f'_diagnostic_{grain}')
                 with open('results_sem_run.csv', 'a') as f:
                     writer = csv.writer(f)
-                    writer.writerow([run, grain, bicorr, percentile, np.nanmedian(biserials),
-                                     pred_boundaries, sum(pred_boundaries),
-                                     float(args.alfa), float(args.lmda), tag])
+                    writer.writerow([run, grain, bicorr, percentile, np.nanmedian(biserials), pred_boundaries,
+                                     sum(pred_boundaries), float(args.alfa), float(args.lmda), tag])
                 return bicorr, percentile
 
-            bicorr, percentile = compare_and_plot('fine')
-            bicorr, percentile = compare_and_plot('coarse')
+            # bicorr, percentile = evaluate_and_plot('fine')
+            bicorr, percentile = evaluate_and_plot('coarse')
             return sem_model, bicorr, percentile
 
         x_train /= np.sqrt(x_train.shape[1])
@@ -363,7 +426,7 @@ def merge_feature_lists(txt_out):
 if __name__ == "__main__":
     args = parse_config()
     if '.txt' in args.run:
-        # merge_feature_lists(args.run)
+        merge_feature_lists(args.run)
         choose = ['kinect']
         # choose = ['C1']
         with open(args.run, 'r') as f:
@@ -372,7 +435,7 @@ if __name__ == "__main__":
     else:
         runs = [args.run]
 
-    tag = 'jan_07_1000ms'
+    tag = 'jan_09_333_less_boundaries'
     csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'mean_subject', 'pred_boundaries',
                    'model_boundaries', 'alfa', 'lmda', 'tag']
     with open('results_sem_run.csv', 'w') as f:

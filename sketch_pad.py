@@ -25,18 +25,44 @@ plt.title('dishes')
 plt.savefig('output/run_sem/dishes_diff.png')
 plt.show()
 
+with open('sem_readouts.pkl', 'rb') as f:
+    sem_readouts = pkl.load(f)
+
+colors = {'new': 'red', 'old': 'green', 'restart': 'blue', 'repeat': 'purple'}
+sem_readouts.frame_dynamics['old_lik'] = list(map(np.max, sem_readouts.frame_dynamics['old_lik']))
+sem_readouts.frame_dynamics['old_prior'] = list(map(np.max, sem_readouts.frame_dynamics['old_prior']))
+df = pd.DataFrame(sem_readouts.frame_dynamics)
+df['new_post'] = df.filter(regex='new_').sum(axis=1)
+df['old_post'] = df.filter(regex='old_').sum(axis=1)
+df['repeat_post'] = df.filter(regex='repeat_').sum(axis=1)
+df['restart_post'] = df.filter(regex='restart_').sum(axis=1)
+df['switch'] = df.filter(regex='_post').idxmax(axis=1)
+plt.vlines(df[df['switch'] == 'new_post'].index, ymin=0, ymax=1, alpha=0.5, label='Switch to New Event', color=colors['new'],
+           linestyles='dotted')
+plt.vlines(df[df['switch'] == 'old_post'].index, ymin=0, ymax=1, alpha=0.5, label='Switch to Old Event', color=colors['old'],
+           linestyles='dotted')
+# plt.vlines(df[df['switch'] == 'repeat_post'].index, ymin=0, ymax=1, alpha=0.5, label='Repeat Event', color=colors['repeat'],
+#            linestyles='dotted')
+# plt.vlines(df[df['switch'] == 'restart_post'].index, ymin=0, ymax=1, alpha=0.5, label='Restart Event', color=colors['restart'],
+#            linestyles='dotted')
+plt.legend()
+plt.show()
 # Plot numerical values to debug SEM
-plt.plot(sem_model.results.frame_dynamics['new_lik'], alpha=0.4, label='new_lik')
-plt.plot(sem_model.results.frame_dynamics['repeat_lik'], alpha=0.4, label='repeat_lik')
-plt.plot(sem_model.results.frame_dynamics['restart_lik'], alpha=0.4, label='restart_lik')
+sem_readouts.frame_dynamics['old_lik'] = list(map(np.max, sem_readouts.frame_dynamics['old_lik']))
+plt.plot(sem_readouts.frame_dynamics['new_lik'], alpha=0.4, label='new_lik')
+plt.plot(sem_readouts.frame_dynamics['repeat_lik'], alpha=0.4, label='repeat_lik')
+plt.plot(sem_readouts.frame_dynamics['restart_lik'], alpha=0.4, label='restart_lik')
+plt.plot(sem_readouts.frame_dynamics['old_lik'], alpha=0.4, label='old_lik')
 plt.ylim([-5 * 1, 5 * 1])
 plt.legend()
 plt.title('Likelihood')
 plt.show()
 
-plt.plot(sem_model.results.frame_dynamics['new_prior'], alpha=0.4, label='new_prior')
-plt.plot(sem_model.results.frame_dynamics['repeat_prior'], alpha=0.4, label='repeat_prior')
-plt.plot(sem_model.results.frame_dynamics['restart_prior'], alpha=0.4, label='restart_prior')
+sem_readouts.frame_dynamics['old_prior'] = list(map(np.max, sem_readouts.frame_dynamics['old_prior']))
+plt.plot(sem_readouts.frame_dynamics['new_prior'], alpha=0.4, label='new_prior')
+plt.plot(sem_readouts.frame_dynamics['repeat_prior'], alpha=0.4, label='current_repeat_prior')
+plt.plot(sem_readouts.frame_dynamics['restart_prior'], alpha=0.4, label='current_restart_prior')
+plt.plot(sem_readouts.frame_dynamics['old_prior'], alpha=0.4, label='old_prior')
 plt.ylim([-1 * 1, 1 * 1])
 plt.legend()
 plt.title('Prior')
@@ -47,7 +73,7 @@ from pytorch_transformers import *
 import torch
 
 model_class, tokenizer_class, pretrained_weights = (
-BertModel, BertTokenizer, 'bert-base-uncased')
+    BertModel, BertTokenizer, 'bert-base-uncased')
 
 tokenizer = tokenizer_class.from_pretrained(pretrained_weights)
 model = model_class.from_pretrained(pretrained_weights,
@@ -307,3 +333,8 @@ import pandas as pd
 
 df = pd.read_csv('results_sem_run.csv')
 df[df['grain'] == 'fine']['percentile'].mean()
+
+with open('output/run_sem/1.3.9_kinect_trimjan_07_1000ms_gtfreqs.pkl', 'rb') as f:
+    gt_freqs = pkl.load(f)
+with open('output/run_sem/1.3.9_kinect_trimjan_07_1000ms_diagnostic.pkl', 'rb') as f:
+    sem_readouts = pkl.load(f)
