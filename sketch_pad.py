@@ -338,3 +338,83 @@ with open('output/run_sem/1.3.9_kinect_trimjan_07_1000ms_gtfreqs.pkl', 'rb') as 
     gt_freqs = pkl.load(f)
 with open('output/run_sem/1.3.9_kinect_trimjan_07_1000ms_diagnostic.pkl', 'rb') as f:
     sem_readouts = pkl.load(f)
+
+    ax.plot(gt_freqs, label='Subject Boundaries')
+    ax.set_xlabel('Time (seconds)')
+    ax.set_ylabel('Boundary Probability')
+    ax.set_title(title)
+    colors = {'new': 'red', 'old': 'green', 'restart': 'blue', 'repeat': 'purple'}
+    sem_readouts.frame_dynamics['old_lik'] = list(map(np.max, sem_readouts.frame_dynamics['old_lik']))
+    sem_readouts.frame_dynamics['old_prior'] = list(map(np.max, sem_readouts.frame_dynamics['old_prior']))
+    df = pd.DataFrame(sem_readouts.frame_dynamics)
+    df['new_post'] = df.filter(regex='new_').sum(axis=1)
+    df['old_post'] = df.filter(regex='old_').sum(axis=1)
+    df['repeat_post'] = df.filter(regex='repeat_').sum(axis=1)
+    df['restart_post'] = df.filter(regex='restart_').sum(axis=1)
+    df['switch'] = df.filter(regex='_post').idxmax(axis=1)
+    ax.vlines(df[df['switch'] == 'new_post'].index / frame_interval + offset, ymin=0, ymax=1, alpha=0.5, label='Switch to New '
+                                                                                                                 'Event',
+               color=colors['new'], linestyles='dotted')
+    ax.vlines(df[df['switch'] == 'old_post'].index / frame_interval + offset, ymin=0, ymax=1, alpha=0.5, label='Switch to Old '
+                                                                                                                 'Event',
+               color=colors['old'], linestyles='dotted')
+    # ax.vlines(df[df['switch'] == 'repeat_post'].index, ymin=0, ymax=1, alpha=0.5, label='Repeat Event', color=colors['repeat'],
+    #            linestyles='dotted')
+    # ax.vlines(df[df['switch'] == 'restart_post'].index, ymin=0, ymax=1, alpha=0.5, label='Restart Event', color=colors['restart'],
+    #            linestyles='dotted')
+    ax.legend()
+    ax.set_ylim([0, 1.0])
+
+# save frames
+import glob
+import os
+import cv2
+import pickle as pkl
+
+kinects = glob.glob('output/run_sem/*inputdf.pkl')
+kinects = [os.path.basename(k).split('_')[0] for k in kinects]
+for run_select in kinects:
+    with open(f'output/run_sem/{run_select}_kinect_trimjan_09_333_less_boundaries_inputdf.pkl', 'rb') as f:
+        inputdfs = pkl.load(f)
+    vidfile=f'data/small_videos/{run_select}_kinect_trim.mp4'
+
+    appear = inputdfs[0]
+    frames = appear.index
+    video_capture = cv2.VideoCapture()
+    cached_videos = dict()
+    if video_capture.open(vidfile):
+        frame_id = 0
+        while video_capture.isOpened():
+            frame_id += 1
+            ret, frame = video_capture.read()
+            if not ret:
+                print('End of video stream, ret is False!')
+                break
+            if frame_id in frames:
+                cached_videos[frame_id] = cv2.resize(frame, None, fx=0.5, fy=0.5)
+        with open(f'output/run_sem/{run_select}_kinect_trimjan_09_333_less_boundaries_frames.pkl', 'wb') as f:
+                pkl.dump(cached_videos, f)
+
+import pickle as pkl
+import glob
+
+class DiagnosticResults:
+    def __init__(self):
+        pass
+
+diagnostics = glob.glob('output/run_sem/*diagnostic.pkl')
+for d in diagnostics:
+    with open(f'{d}', 'rb') as f:
+        sem_readouts = pkl.load(f)
+    with open(f'{d}', 'wb') as f:
+        diag = DiagnosticResults()
+        diag.__dict__ = sem_readouts.__dict__
+        pkl.dump(diag, f)
+
+for all_lik, new_lik, repeat_lik in zip(sem_readouts['frame_dynamics']['old_lik'], sem_readouts['frame_dynamics']['new_lik'], sem_readouts['frame_dynamics']['repeat_lik']):
+    print(all_lik, new_lik, repeat_lik)
+    break
+
+sem_readouts['frame_dynamics']['old_lik'] = [[l for l in all_lik if not(np.isclose(l, new_lik, rtol=1e-2) or np.isclose(l, repeat_lik, rtol=1e-2))]
+ for all_lik, new_lik, repeat_lik in zip(sem_readouts['frame_dynamics']['old_lik'], sem_readouts['frame_dynamics']['new_lik'], sem_readouts['frame_dynamics']['repeat_lik'])]
+sem_readouts['frame_dynamics']['old_lik']  = [l if len(l) else [-5000] for l in sem_readouts['frame_dynamics']['old_lik']]

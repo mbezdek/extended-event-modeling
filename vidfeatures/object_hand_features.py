@@ -60,18 +60,17 @@ def gen_objhand_feature(args, run, tag):
         objhand_df = hand_df.combine_first(objs_df)
         objhand_df = objhand_df.sort_index()
         # Process null entry by interpolation
-        logger.info('Interpolate')
-        for obj in objs:
-            objhand_df[obj + '_x_cent'] = objhand_df[obj + '_x_cent'].interpolate(
-                method='linear')
-            objhand_df[obj + '_y_cent'] = objhand_df[obj + '_y_cent'].interpolate(
-                method='linear')
-            objhand_df[obj + '_x'] = objhand_df[obj + '_x'].interpolate(method='linear')
-            objhand_df[obj + '_y'] = objhand_df[obj + '_y'].interpolate(method='linear')
-            objhand_df[obj + '_w'] = objhand_df[obj + '_w'].interpolate(method='linear')
-            objhand_df[obj + '_h'] = objhand_df[obj + '_h'].interpolate(method='linear')
-        objhand_df['J11_2D_X'] = objhand_df['J11_2D_X'].interpolate(method='linear')
-        objhand_df['J11_2D_Y'] = objhand_df['J11_2D_Y'].interpolate(method='linear')
+        logger.info('Interpolate only Joints')
+        # for obj in objs:
+        #     objhand_df[obj + '_x_cent'] = objhand_df[obj + '_x_cent'].interpolate(limit_area='inside')
+        #     objhand_df[obj + '_y_cent'] = objhand_df[obj + '_y_cent'].interpolate(limit_area='inside')
+        #     objhand_df[obj + '_x'] = objhand_df[obj + '_x'].interpolate(limit_area='inside')
+        #     objhand_df[obj + '_y'] = objhand_df[obj + '_y'].interpolate(limit_area='inside')
+        #     objhand_df[obj + '_w'] = objhand_df[obj + '_w'].interpolate(limit_area='inside')
+        #     objhand_df[obj + '_h'] = objhand_df[obj + '_h'].interpolate(limit_area='inside')
+        #     objhand_df[obj + '_confidence'] = objhand_df[obj + '_confidence'].interpolate(limit_area='inside')
+        objhand_df['J11_2D_X'] = objhand_df['J11_2D_X'].interpolate(limit_area='inside')
+        objhand_df['J11_2D_Y'] = objhand_df['J11_2D_Y'].interpolate(limit_area='inside')
         objhand_df['J11_2D_X'] = objhand_df['J11_2D_X'] / 2
         objhand_df['J11_2D_Y'] = objhand_df['J11_2D_Y'] / 2
         # Smooth movements
@@ -193,6 +192,7 @@ if __name__ == '__main__':
     # runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
     # runs = ['1.1.5_C1', '4.4.5_C1']
     tag = '_dec_28'
+    # gen_objhand_feature(args, runs[0], tag)
     res = Parallel(n_jobs=16)(delayed(
         gen_objhand_feature)(args, run, tag) for run in runs)
     track_csvs, skel_csvs, output_csvs = zip(*res)

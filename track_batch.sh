@@ -21,11 +21,12 @@
 #for run in 2.2.1_C1 2.2.2_C1 2.2.3_C1 2.3.4_C1 2.3.5_C1 2.3.6_C1 2.4.7_C1 2.4.8_C1 2.4.9_C1 2.4.10_C1; do
 #for run in 3.1.1_C1 3.1.2_C1 3.1.3_C1 3.3.4_C1 3.3.5_C1 3.3.6_C1 3.4.7_C1 3.4.8_C1 3.4.9_C1 3.4.10_C1; do
 #for run in 4.3.1_C1 4.3.2_C1 4.3.3_C1 4.4.4_C1 4.4.5_C1 4.4.6_C1 6.1.7_C1 6.1.8_C1 6.1.9_C1 6.1.10_C1; do
-for run in 6.2.1_C1 6.2.2_C1 6.2.3_C1 6.3.4_C1 6.3.5_C1 6.3.6_C1; do
-  tag=" _jan_05"
+#for run in 6.2.1_C1 6.2.2_C1 6.2.3_C1 6.3.4_C1 6.3.5_C1 6.3.6_C1; do
+while read run; do
+  tag=" _jan_12"
   echo ${run}
   qsub \
     -l nodes=1:ppn=4:gpus=1:V100_32,mem=8gbs,walltime=24:00:00 \
     -N ${tag}_${run} \
     track_v100.sh -F "$run$tag"
-done
+done <remained_runs.txt

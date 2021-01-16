@@ -9,6 +9,8 @@ import sys
 import traceback
 import csv
 import pickle as pkl
+import re
+from scipy.ndimage import gaussian_filter1d
 
 sys.path.append('../pysot')
 from sklearn.decomposition import PCA
@@ -133,9 +135,8 @@ def preprocess_objhand(objhand_csv, standardize=True):
         if isinstance(objhand_df[category], pd.Series):
             objhand_df[category.replace('_dist', '')] = objhand_df[category]
         else:
-            objhand_df[category.replace('_dist', '')] = objhand_df[category].apply(
-                lambda x: min(x),
-                axis=1)
+            # For some strange reason, min(89, NaN) could be 89 or NaN
+            objhand_df[category.replace('_dist', '')] = objhand_df[category].apply(lambda x: np.min(x), axis=1)
             # objhand_df.loc[:, c] = (objhand_df[c] - min(objhand_df[c].dropna())) / (
             #         max(objhand_df[c].dropna()) - min(objhand_df[c].dropna()))
     # remove redundant columns
@@ -167,7 +168,7 @@ def interpolate_frame(dataframe: pd.DataFrame):
     last_frame = dataframe.index[-1]
     dummy_frame = pd.DataFrame(np.NaN, index=range(first_frame, last_frame),
                                columns=dataframe.columns)
-    dummy_frame = dummy_frame.combine_first(dataframe).interpolate()
+    dummy_frame = dummy_frame.combine_first(dataframe).interpolate(limit_area='inside')
     return dummy_frame
 
 
@@ -229,6 +230,13 @@ def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=
     plt.ylabel('Boundary Probability')
     plt.title(title)
     colors = {'new': 'red', 'old': 'green', 'restart': 'blue', 'repeat': 'purple'}
+    sem_readouts.frame_dynamics['old_lik'] = [[l for l in all_lik if
+                                               not (np.isclose(l, new_lik, rtol=1e-2) or np.isclose(l, repeat_lik, rtol=1e-2))]
+                                              for all_lik, new_lik, repeat_lik in
+                                              zip(sem_readouts.frame_dynamics['old_lik'], sem_readouts.frame_dynamics['new_lik'],
+                                                  sem_readouts.frame_dynamics['repeat_lik'])]
+    sem_readouts.frame_dynamics['old_lik'] = [l if len(l) else [-5000] for l in sem_readouts.frame_dynamics['old_lik']]
+
     sem_readouts.frame_dynamics['old_lik'] = list(map(np.max, sem_readouts.frame_dynamics['old_lik']))
     sem_readouts.frame_dynamics['old_prior'] = list(map(np.max, sem_readouts.frame_dynamics['old_prior']))
     df = pd.DataFrame(sem_readouts.frame_dynamics)
@@ -238,10 +246,10 @@ def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=
     df['restart_post'] = df.filter(regex='restart_').sum(axis=1)
     df['switch'] = df.filter(regex='_post').idxmax(axis=1)
     plt.vlines(df[df['switch'] == 'new_post'].index / frame_interval + offset, ymin=0, ymax=1, alpha=0.5, label='Switch to New '
-                                                                                                                 'Event',
+                                                                                                                'Event',
                color=colors['new'], linestyles='dotted')
     plt.vlines(df[df['switch'] == 'old_post'].index / frame_interval + offset, ymin=0, ymax=1, alpha=0.5, label='Switch to Old '
-                                                                                                                 'Event',
+                                                                                                                'Event',
                color=colors['old'], linestyles='dotted')
     # plt.vlines(df[df['switch'] == 'repeat_post'].index, ymin=0, ymax=1, alpha=0.5, label='Repeat Event', color=colors['repeat'],
     #            linestyles='dotted')
@@ -262,7 +270,6 @@ def infer_on_video(args, run, tag):
         args.run = run
         args.tag = tag
         logger.info(f'Config {args}')
-        end_second = int(args.end_second)
         # FPS is used to pad prediction boundaries, should be inferred from run
         if 'kinect' in run:
             fps = 25
@@ -282,7 +289,12 @@ def infer_on_video(args, run, tag):
         # Get consistent start-end times and resampling rate for all features
         combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
                                                                   rate=args.rate, fps=fps)
+        last_frame = data_frames[0].index[-1]
+        # This parameter is used to limit the time of ground truth video
+        end_second = math.ceil(last_frame / fps)
         # Readout to visualize object-hand features
+        # Re-index: some frames there are no objects near hand (which is not possible, this bug is due to min(89, NaN)=NaN
+        # categories = categories.reindex(range(categories.index[-1])).ffill()
         categories = categories.ffill()
         categories = categories.loc[data_frames[0].index, :]
         data_frames.append(categories)
@@ -291,13 +303,20 @@ def infer_on_video(args, run, tag):
         objhand_df = objhand_df.loc[data_frames[0].index, :]
         for index, r in categories.iterrows():
             frame_series = pd.Series(dtype=float)
-            all_categories = r.values
+            # There could be a case where there are two spray bottles near the hand: 6.3.6
+            # TODO: filter seen instances
+            all_categories = set(r.values)
             for c in list(all_categories):
                 # Filter by category name and select distance
-                # Note: paper towel and towel causes duplicated columns in series, need to assert anchor by regex
-                df = objhand_df.loc[index, :].filter(regex=f'^{c}').filter(like='_dist')
+                # Note: paper towel and towel causes duplicated columns in series,
+                # Need anchor ^ to distinguish towel and paper towel (2.4.7),
+                # need digit \d to distinguish pillow0 and pillowcase0 (3.3.5)
+                # Need to escape character ( and ) in aloe (green bottle) (4.4.5)
+                df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(like='_dist')
                 # select nearest object's coordinates
-                s = objhand_df.loc[index, :].filter(regex=f"^{df.index[df.argmin()].replace('_dist', '')}")
+                nearest_name = df.index[df.argmin()].replace('_dist', '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
+                # need anchor ^ to distinguish between towel0 and paper towel0
+                s = objhand_df.loc[index, :].filter(regex=f"^{re.escape(nearest_name)}")
                 frame_series = frame_series.append(s)
             frame_series.name = index
             coordinates = coordinates.append(frame_series)
@@ -307,8 +326,8 @@ def infer_on_video(args, run, tag):
             pkl.dump(data_frames, f)
         # logger.info(f'Features: {combine_df.columns}')
         x_train = combine_df.to_numpy()
-        end_index = math.ceil(1000 / int(args.rate[:-2]) * end_second)
-        x_train = x_train[:end_index]
+        # end_index = math.ceil(1000 / int(args.rate[:-2]) * end_second)
+        # x_train = x_train[:end_index]
         pca = PCA(float(args.pca_explained), whiten=True)
         try:
             x_train_pca = pca.fit_transform(x_train[:, 2:])
@@ -340,13 +359,14 @@ def infer_on_video(args, run, tag):
             # Process results returned by SEM
             # sample_per_second = 30  # washing dish video
             sample_per_second = 1000 / float(args.rate.replace('ms', ''))
-            second_interval = 3  # interval to group boundaries
+            second_interval = 1  # interval to group boundaries
             pred_boundaries = get_binned_prediction(sem_model.results.post, second_interval=second_interval,
                                                     sample_per_second=sample_per_second)
+            # Padding prediction boundaries, could be changed to have higher resolution but not necessary
             pred_boundaries = np.hstack([[0] * round(first_frame / fps / second_interval), pred_boundaries]).astype(bool)
             logger.info(f'Total # of pred_boundaries: {sum(pred_boundaries)}')
             with open('output/run_sem/' + title + '_diagnostic.pkl', 'wb') as f:
-                pkl.dump(sem_model.results, f)
+                pkl.dump(sem_model.results.__dict__, f)
 
             def evaluate_and_plot(grain='fine'):
                 # Process segmentation data (ground_truth)
@@ -357,6 +377,7 @@ def infer_on_video(args, run, tag):
                 # logger.info(f'Subjects mean_biserial={np.nanmean(biserials):.3f}')
                 # Compare SEM boundaries versus participant boundaries
                 gt_freqs = seg_video.gt_freqs
+                gt_freqs = gaussian_filter1d(gt_freqs, 2)
                 # data_old = pd.read_csv('./data/zachs2006_data021011.dat', delimiter='\t')
                 # _, _, gt_freqs = load_comparison_data(data_old)
                 last = min(len(pred_boundaries), len(gt_freqs))
@@ -368,7 +389,7 @@ def infer_on_video(args, run, tag):
                                               show=False, bicorr=bicorr, percentile=percentile)
                 with open('output/run_sem/' + title + '_gtfreqs.pkl', 'wb') as f:
                     pkl.dump(gt_freqs, f)
-                plot_diagnostic_readouts(gt_freqs, sem_model.results, frame_interval=second_interval*sample_per_second,
+                plot_diagnostic_readouts(gt_freqs, sem_model.results, frame_interval=second_interval * sample_per_second,
                                          offset=first_frame / fps / second_interval, title=title + f'_diagnostic_{grain}')
                 with open('results_sem_run.csv', 'a') as f:
                     writer = csv.writer(f)
@@ -389,7 +410,7 @@ def infer_on_video(args, run, tag):
     except Exception as e:
         with open('sem_error.txt', 'a') as f:
             f.write(args.run + '\n')
-            f.write(repr(e) + '\n')
+            # f.write(repr(e) + '\n')
             f.write(traceback.format_exc() + '\n')
         return None, None, None
 
@@ -400,7 +421,7 @@ def resample_df(objhand_df, rate='40ms', fps=30):
                                  verify_integrity=True)
     resample_index = pd.date_range(start=outdf.index[0], end=outdf.index[-1], freq=rate)
     dummy_frame = pd.DataFrame(np.NaN, index=resample_index, columns=outdf.columns)
-    outdf = outdf.combine_first(dummy_frame).interpolate('time').resample(rate).mean()
+    outdf = outdf.combine_first(dummy_frame).interpolate(method='time', limit_area='inside').resample(rate).mean()
     return outdf
 
 
@@ -426,7 +447,7 @@ def merge_feature_lists(txt_out):
 if __name__ == "__main__":
     args = parse_config()
     if '.txt' in args.run:
-        merge_feature_lists(args.run)
+        # merge_feature_lists(args.run)
         choose = ['kinect']
         # choose = ['C1']
         with open(args.run, 'r') as f:

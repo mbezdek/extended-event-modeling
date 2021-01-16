@@ -1,4 +1,4 @@
-name: sem-37
+name: pt-tf-37
 channels:
   - defaults
   - conda-forge
@@ -31,3 +31,4 @@ dependencies:
   - colorlog
   - gensim
   - opencv
+  - panel
