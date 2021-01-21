@@ -36,7 +36,7 @@ def preprocess_appear(appear_csv):
 
 def preprocess_optical(vid_csv, standardize=True):
     vid_df = pd.read_csv(vid_csv, index_col='frame')
-    vid_df.drop(['pixel_correlation'], axis=1, inplace=True)
+    # vid_df.drop(['pixel_correlation'], axis=1, inplace=True)
     for c in vid_df.columns:
         if not standardize:
             vid_df.loc[:, c] = (vid_df[c] - min(vid_df[c].dropna())) / (
@@ -230,31 +230,29 @@ def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=
     plt.ylabel('Boundary Probability')
     plt.title(title)
     colors = {'new': 'red', 'old': 'green', 'restart': 'blue', 'repeat': 'purple'}
-    sem_readouts.frame_dynamics['old_lik'] = [[l for l in all_lik if
-                                               not (np.isclose(l, new_lik, rtol=1e-2) or np.isclose(l, repeat_lik, rtol=1e-2))]
-                                              for all_lik, new_lik, repeat_lik in
-                                              zip(sem_readouts.frame_dynamics['old_lik'], sem_readouts.frame_dynamics['new_lik'],
-                                                  sem_readouts.frame_dynamics['repeat_lik'])]
-    sem_readouts.frame_dynamics['old_lik'] = [l if len(l) else [-5000] for l in sem_readouts.frame_dynamics['old_lik']]
 
-    sem_readouts.frame_dynamics['old_lik'] = list(map(np.max, sem_readouts.frame_dynamics['old_lik']))
-    sem_readouts.frame_dynamics['old_prior'] = list(map(np.max, sem_readouts.frame_dynamics['old_prior']))
-    df = pd.DataFrame(sem_readouts.frame_dynamics)
-    df['new_post'] = df.filter(regex='new_').sum(axis=1)
-    df['old_post'] = df.filter(regex='old_').sum(axis=1)
-    df['repeat_post'] = df.filter(regex='repeat_').sum(axis=1)
-    df['restart_post'] = df.filter(regex='restart_').sum(axis=1)
-    df['switch'] = df.filter(regex='_post').idxmax(axis=1)
+    latest = 0
+    current = 0
+    post = sem_readouts.e_hat
+    switch = []
+    for i in post:
+        if i != current:
+            if i > latest:
+                switch.append('new_post')
+                latest = i
+            else:
+                switch.append('old_post')
+            current = i
+        else:
+            switch.append('current_post')
+
+    df = pd.DataFrame(switch, columns=['switch'])
     plt.vlines(df[df['switch'] == 'new_post'].index / frame_interval + offset, ymin=0, ymax=1, alpha=0.5, label='Switch to New '
                                                                                                                 'Event',
                color=colors['new'], linestyles='dotted')
     plt.vlines(df[df['switch'] == 'old_post'].index / frame_interval + offset, ymin=0, ymax=1, alpha=0.5, label='Switch to Old '
                                                                                                                 'Event',
                color=colors['old'], linestyles='dotted')
-    # plt.vlines(df[df['switch'] == 'repeat_post'].index, ymin=0, ymax=1, alpha=0.5, label='Repeat Event', color=colors['repeat'],
-    #            linestyles='dotted')
-    # plt.vlines(df[df['switch'] == 'restart_post'].index, ymin=0, ymax=1, alpha=0.5, label='Restart Event', color=colors['restart'],
-    #            linestyles='dotted')
     plt.legend()
     plt.ylim([0, 1.0])
     if save_fig:
@@ -372,7 +370,7 @@ def infer_on_video(args, run, tag):
                 # Process segmentation data (ground_truth)
                 data_frame = pd.read_csv(args.seg_path)
                 seg_video = SegmentationVideo(data_frame=data_frame, video_path=movie)
-                seg_video.get_segments(n_annotators=100, condition=grain)
+                seg_video.get_segments(n_annotators=100, condition=grain, second_interval=second_interval)
                 biserials = seg_video.get_biserial_subjects(second_interval=second_interval, end_second=end_second)
                 # logger.info(f'Subjects mean_biserial={np.nanmean(biserials):.3f}')
                 # Compare SEM boundaries versus participant boundaries
@@ -391,7 +389,7 @@ def infer_on_video(args, run, tag):
                     pkl.dump(gt_freqs, f)
                 plot_diagnostic_readouts(gt_freqs, sem_model.results, frame_interval=second_interval * sample_per_second,
                                          offset=first_frame / fps / second_interval, title=title + f'_diagnostic_{grain}')
-                with open('results_sem_run.csv', 'a') as f:
+                with open('output/run_sem/results_sem_run.csv', 'a') as f:
                     writer = csv.writer(f)
                     writer.writerow([run, grain, bicorr, percentile, np.nanmedian(biserials), pred_boundaries,
                                      sum(pred_boundaries), float(args.alfa), float(args.lmda), tag])
@@ -404,11 +402,11 @@ def infer_on_video(args, run, tag):
         x_train /= np.sqrt(x_train.shape[1])
         sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag=f'{tag}')
         logger.info(f'Done SEM {run}')
-        with open('sem_complete.txt', 'a') as f:
+        with open('output/run_sem/sem_complete.txt', 'a') as f:
             f.write(run + '\n')
         return sem_model.results, bicorr, percentile
     except Exception as e:
-        with open('sem_error.txt', 'a') as f:
+        with open('output/run_sem/sem_error.txt', 'a') as f:
             f.write(args.run + '\n')
             # f.write(repr(e) + '\n')
             f.write(traceback.format_exc() + '\n')
@@ -457,14 +455,15 @@ if __name__ == "__main__":
         runs = [args.run]
 
     tag = 'jan_09_333_less_boundaries'
-    csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'mean_subject', 'pred_boundaries',
-                   'model_boundaries', 'alfa', 'lmda', 'tag']
-    with open('results_sem_run.csv', 'w') as f:
-        writer = csv.writer(f)
-        writer.writerow(csv_headers)
+    if not os.path.exists('output/run_sem/results_sem_run.csv'):
+        csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'mean_subject', 'pred_boundaries',
+                           'model_boundaries', 'alfa', 'lmda', 'tag']
+        with open('output/run_sem/results_sem_run.csv', 'w') as f:
+            writer = csv.writer(f)
+            writer.writerow(csv_headers)
     # Uncomment this for debugging
     # sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
-    res = Parallel(n_jobs=16, backend='multiprocessing')(delayed(
+    res = Parallel(n_jobs=8, backend='multiprocessing')(delayed(
         infer_on_video)(args, run, tag) for run in runs)
     sem_results, bicorrs, percentiles = zip(*res)
     results = dict()
@@ -480,5 +479,5 @@ if __name__ == "__main__":
     results['total_metric']['percentile'] = sum(pers) / len(pers)
     for i, run in enumerate(runs):
         results[run] = dict(tag=tag, bicorr=bicorrs[i], percentile=percentiles[i])
-    with open('results_sem_run.json', 'w') as f:
+    with open('output/run_sem/results_sem_run.json', 'w') as f:
         json.dump(results, f, indent=4, sort_keys=True)

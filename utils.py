@@ -174,7 +174,21 @@ class SegmentationVideo:
                 self.biserials.append(point)
         return self.biserials
 
-    def preprocess_segments(self):
+    def preprocess_segments(self, second_interval=1):
+        # Preprocess individual segmentation to avoid undue influence
+        new_seg_points = []
+        for seg in self.seg_points:
+            if len(seg) > 0:
+                new_seg = np.array([])
+                # For an interval, each participant have at most one vote
+                for i in range(0, round(max(seg))+1, second_interval):
+                    if seg[(seg > i) & (seg < i+1)].shape[0]:
+                        new_seg = np.hstack([new_seg, seg[(seg > i) & (seg < i+1)].mean()])
+            else:
+                new_seg = seg
+            new_seg_points.append(new_seg)
+        self.seg_points = new_seg_points
+
         average = np.mean([len(seg) for seg in self.seg_points if len(seg)])
         std = np.std([len(seg) for seg in self.seg_points if len(seg)])
         empty = 0
@@ -193,11 +207,12 @@ class SegmentationVideo:
         self.seg_points = new_seg_points
         self.n_participants = len(self.seg_points)
 
-    def get_segments(self, n_annotators=100, condition='coarse') -> List:
+    def get_segments(self, n_annotators=100, condition='coarse', second_interval=1) -> List:
         """
         This method extract a list of segmentations, each according to an annotator
         :param n_annotators: number of annotators to return
         :param condition: coarse or fine grains
+        :param second_interval: interval to bin segmentations
         :return:
         """
         seg = self.data_frame[self.data_frame['condition'] == condition]
@@ -205,7 +220,7 @@ class SegmentationVideo:
         # parse annotations, from string to a list of breakpoints for each annotation
         seg_processed = seg['segment1'].apply(SegmentationVideo.string_to_segments)
         self.seg_points = seg_processed.values[:n_annotators]
-        self.preprocess_segments()
+        self.preprocess_segments(second_interval=second_interval)
         return self.seg_points
 
 
