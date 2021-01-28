@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #PBS -N extract_features_and_run_sem
-#PBS -l nodes=1:ppn=16:gpus=1,mem=16gbs,walltime=8:00:00
+#PBS -l nodes=1:ppn=16,mem=16gbs,walltime=24:00:00
 
 cd /scratch/tantan132/extended-event-modeling/
 source activate tf
