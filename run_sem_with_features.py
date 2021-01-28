@@ -22,7 +22,9 @@ from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, 
 from joblib import Parallel, delayed
 import gensim.downloader
 
-glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
+# glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
+with open('gen_sim_glove_50.pkl', 'rb') as f:
+    glove_vectors = pkl.load(f)
 # glove_vectors = gensim.downloader.load('word2vec-ruscorpora-300')
 emb_dim = glove_vectors['apple'].size
 
@@ -74,9 +76,15 @@ def remove_number(string):
     return string
 
 
-def get_emb_category(categories, emb_dim=100):
+def get_emb_category(category_distances, emb_dim=100):
+    # Add 1 to avoid 3 objects with 0 distances (rare but might happen), then calculate inversed weights
+    category_distances = category_distances + 1
+    # Add 1 to avoid cases there is only one object
+    category_weights = 1 - category_distances / (category_distances.sum() + 1)
+    if category_weights.sum() == 0:
+        logger.error('Sum of probabilities is zero')
     average = np.zeros(shape=(1, emb_dim))
-    for category in categories:
+    for category, prob in category_weights.iteritems():
         r = np.zeros(shape=(1, emb_dim))
         try:
             r += glove_vectors[category]
@@ -86,8 +94,8 @@ def get_emb_category(categories, emb_dim=100):
                 w = w.replace('(', '').replace(')', '')
                 r += glove_vectors[w]
             r /= len(words)
-        average += r
-    return average / len(categories)
+        average += r * prob
+    return average / category_weights.sum()
 
 
 def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
@@ -104,7 +112,7 @@ def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
             #     cat_emb = get_emb_category([category], emb_dim)
             #     scene_embedding = np.vstack([scene_embedding, cat_emb])
             # scene_embedding = np.mean(scene_embedding, axis=0).reshape(1, emb_dim)
-            scene_embedding = get_emb_category(row.dropna().sort_values().index[:7], emb_dim)
+            scene_embedding = get_emb_category(row.dropna().sort_values()[:7], emb_dim)
 
             # pick the nearest object
             nearest = row.argmin()
@@ -112,7 +120,7 @@ def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
             # obj_handling_emb = get_emb_category(row.index[nearest], emb_dim)
             new_row = pd.Series(data=row.dropna().sort_values().index[:3], name=row.name)
             categories = categories.append(new_row)
-            obj_handling_emb = get_emb_category(row.dropna().sort_values().index[:3], emb_dim)
+            obj_handling_emb = get_emb_category(row.dropna().sort_values()[:3], emb_dim)
         else:
             scene_embedding = np.full(shape=(1, emb_dim), fill_value=np.nan)
             obj_handling_emb = np.full(shape=(1, emb_dim), fill_value=np.nan)
@@ -221,6 +229,7 @@ def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=
         plt.savefig('output/run_sem/' + title + '.png')
     if show:
         plt.show()
+    plt.close()
 
 
 def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=0.0, title='', show=False, save_fig=True):
@@ -319,20 +328,28 @@ def infer_on_video(args, run, tag):
             frame_series.name = index
             coordinates = coordinates.append(frame_series)
         data_frames.append(coordinates)
+
         title = os.path.basename(movie[:-4]) + tag
-        with open('output/run_sem/' + title + '_inputdf.pkl', 'wb') as f:
-            pkl.dump(data_frames, f)
         # logger.info(f'Features: {combine_df.columns}')
-        x_train = combine_df.to_numpy()
-        # end_index = math.ceil(1000 / int(args.rate[:-2]) * end_second)
-        # x_train = x_train[:end_index]
-        pca = PCA(float(args.pca_explained), whiten=True)
-        try:
-            x_train_pca = pca.fit_transform(x_train[:, 2:])
-        except Exception as e:
-            print(repr(e))
-            x_train_pca = pca.fit_transform(x_train[:, 2:])
-        x_train = np.hstack([x_train[:, :2], x_train_pca])
+        # Note that without copy=True, this code will return a view and subsequent changes to x_train will change combine_df
+        # e.g. x_train /= np.sqrt(x_train.shape[1]) or x_train[2] = ...
+        x_train = combine_df.to_numpy(copy=True)
+        if int(args.pca):
+            pca = PCA(float(args.pca_explained), whiten=True)
+            try:
+                x_train_pca = pca.fit_transform(x_train[:, 2:])
+                x_train_inversed = pca.inverse_transform(x_train_pca)
+            except Exception as e:
+                print(repr(e))
+                x_train_pca = pca.fit_transform(x_train[:, 2:])
+            x_train = np.hstack([x_train[:, :2], x_train_pca])
+            x_train_inversed = np.hstack([x_train[:, :2], x_train_inversed])
+            df_x_train_inversed = pd.DataFrame(data=x_train_inversed, index=data_frames[0].index, columns=combine_df.columns)
+            data_frames.append(df_x_train_inversed)
+        else:
+            df_x_train = pd.DataFrame(data=x_train, index=data_frames[0].index, columns=combine_df.columns)
+            data_frames.append(df_x_train)
+
 
         # VAE feature from washing dish video
         # x_train_vae = np.load('video_color_Z_embedded_64_5epoch.npy')
@@ -343,7 +360,7 @@ def infer_on_video(args, run, tag):
             # f_class = LinearEvent
             # these are the parameters for the event model itself.
             f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
-                          n_epochs=10, t=4)
+                          n_epochs=10, t=4, batch_update=True)
             # f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, n_epochs=10)
             # f_opts = dict(l2_regularization=0.5, n_epochs=10)
             lmda = float(args.lmda)  # stickyness parameter (prior)
@@ -381,7 +398,7 @@ def infer_on_video(args, run, tag):
                 last = min(len(pred_boundaries), len(gt_freqs))
                 bicorr = get_point_biserial(pred_boundaries[:last], gt_freqs[:last])
                 percentile = percentileofscore(biserials, bicorr)
-                logger.info(f'Tag={tag}: Bicorr={bicorr:.3f} cor. Percentile={percentile:.3f}, '
+                logger.info(f'Tag={tag}: Bicorr={bicorr:.3f} cor. Percentile={percentile:.3f},  '
                             f'Subjects_median={np.nanmedian(biserials):.3f}')
                 plot_subject_model_boundaries(gt_freqs, pred_boundaries, title=title + f'_{grain}',
                                               show=False, bicorr=bicorr, percentile=percentile)
@@ -392,15 +409,33 @@ def infer_on_video(args, run, tag):
                 with open('output/run_sem/results_sem_run.csv', 'a') as f:
                     writer = csv.writer(f)
                     writer.writerow([run, grain, bicorr, percentile, np.nanmedian(biserials), pred_boundaries,
-                                     sum(pred_boundaries), float(args.alfa), float(args.lmda), tag])
+                                     sum(pred_boundaries), sem_init_kwargs, tag])
                 return bicorr, percentile
 
             # bicorr, percentile = evaluate_and_plot('fine')
             bicorr, percentile = evaluate_and_plot('coarse')
             return sem_model, bicorr, percentile
 
-        x_train /= np.sqrt(x_train.shape[1])
+        # Note that this is different from x_train = x_train / np.sqrt(x_train.shape[1]), the below code will change values of
+        # the memory allocation, change to be safer
+        # x_train /= np.sqrt(x_train.shape[1])
+        x_train = x_train / np.sqrt(x_train.shape[1])
         sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag=f'{tag}')
+        if int(args.pca):
+            x_infered_inversed = sem_model.results.x_hat
+            x_infered_inversed = x_infered_inversed * np.sqrt(x_train.shape[1])
+            x_infered_inversed = pca.inverse_transform(x_infered_inversed[:, 2:])
+            x_infered_inversed = np.hstack([x_infered_inversed[:, :2], x_infered_inversed])
+            df_x_infered_inversed = pd.DataFrame(data=x_infered_inversed, index=data_frames[0].index, columns=combine_df.columns)
+            data_frames.append(df_x_infered_inversed)
+        else:
+            x_infered_ori = sem_model.results.x_hat * np.sqrt(x_train.shape[1])
+            df_x_infered_ori = pd.DataFrame(data=x_infered_ori, index=data_frames[0].index, columns=combine_df.columns)
+            data_frames.append(df_x_infered_ori)
+
+        with open('output/run_sem/' + title + '_inputdf.pkl', 'wb') as f:
+            pkl.dump(data_frames, f)
+
         logger.info(f'Done SEM {run}')
         with open('output/run_sem/sem_complete.txt', 'a') as f:
             f.write(run + '\n')
@@ -454,19 +489,17 @@ if __name__ == "__main__":
     else:
         runs = [args.run]
 
-    tag = 'jan_09_333_less_boundaries'
+    tag = 'jan_27_nopca'
     if not os.path.exists('output/run_sem/results_sem_run.csv'):
         csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'mean_subject', 'pred_boundaries',
-                           'model_boundaries', 'alfa', 'lmda', 'tag']
+                       'model_boundaries', 'sem_params', 'tag']
         with open('output/run_sem/results_sem_run.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
     # Uncomment this for debugging
     # sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
-    res = Parallel(n_jobs=8, backend='multiprocessing')(delayed(
-        infer_on_video)(args, run, tag) for run in runs)
+    res = Parallel(n_jobs=8)(delayed(infer_on_video)(args, run, tag) for run in runs)
     sem_results, bicorrs, percentiles = zip(*res)
-    results = dict()
     # Average metric for all runs
     bis = []
     pers = []
@@ -474,10 +507,11 @@ if __name__ == "__main__":
         if b is not None:
             bis.append(b)
             pers.append(p)
-    results['total_metric'] = dict()
-    results['total_metric']['bicorr'] = sum(bis) / len(bis)
-    results['total_metric']['percentile'] = sum(pers) / len(pers)
-    for i, run in enumerate(runs):
-        results[run] = dict(tag=tag, bicorr=bicorrs[i], percentile=percentiles[i])
-    with open('output/run_sem/results_sem_run.json', 'w') as f:
-        json.dump(results, f, indent=4, sort_keys=True)
+    if not os.path.exists('output/run_sem/results_sem_agg.csv'):
+        csv_headers = ['bicorr', 'percentile', 'alfa', 'lmda', 'tag']
+        with open('output/run_sem/results_sem_agg.csv', 'w') as f:
+            writer = csv.writer(f)
+            writer.writerow(csv_headers)
+    with open('output/run_sem/results_sem_agg.csv', 'a') as f:
+        writer = csv.writer(f)
+        writer.writerow([sum(bis) / len(bis), sum(pers) / len(pers), float(args.alfa), float(args.lmda), tag])

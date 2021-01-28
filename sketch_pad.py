@@ -374,7 +374,7 @@ import pickle as pkl
 kinects = glob.glob('output/run_sem/*inputdf.pkl')
 kinects = [os.path.basename(k).split('_')[0] for k in kinects]
 for run_select in kinects:
-    with open(f'output/run_sem/{run_select}_kinect_trimjan_09_333_less_boundaries_inputdf.pkl', 'rb') as f:
+    with open(f'output/run_sem/{run_select}_kinect_trimjan_23_weighted_distance_inputdf.pkl', 'rb') as f:
         inputdfs = pkl.load(f)
     vidfile=f'data/small_videos/{run_select}_kinect_trim.mp4'
 
@@ -392,7 +392,7 @@ for run_select in kinects:
                 break
             if frame_id in frames:
                 cached_videos[frame_id] = cv2.resize(frame, None, fx=0.5, fy=0.5)
-        with open(f'output/run_sem/{run_select}_kinect_trimjan_09_333_less_boundaries_frames.pkl', 'wb') as f:
+        with open(f'output/run_sem/{run_select}_kinect_trimjan_23_weighted_distance_frames.pkl', 'wb') as f:
                 pkl.dump(cached_videos, f)
 
 import pickle as pkl
@@ -418,3 +418,12 @@ for all_lik, new_lik, repeat_lik in zip(sem_readouts['frame_dynamics']['old_lik'
 sem_readouts['frame_dynamics']['old_lik'] = [[l for l in all_lik if not(np.isclose(l, new_lik, rtol=1e-2) or np.isclose(l, repeat_lik, rtol=1e-2))]
  for all_lik, new_lik, repeat_lik in zip(sem_readouts['frame_dynamics']['old_lik'], sem_readouts['frame_dynamics']['new_lik'], sem_readouts['frame_dynamics']['repeat_lik'])]
 sem_readouts['frame_dynamics']['old_lik']  = [l if len(l) else [-5000] for l in sem_readouts['frame_dynamics']['old_lik']]
+
+import pandas as pd
+df = pd.read_csv('output/run_sem/results_sem_run.csv')
+grouped = df.groupby('tag')
+agg = grouped[['bicorr', 'percentile']].describe()
+agg.to_csv('output/run_sem/results_sem_agg.csv')
+# grouped[['bicorr', 'percentile']].describe()[('bicorr', 'mean'), ('bicorr', 'std')]
+# grouped[['bicorr', 'percentile']].describe()[[('bicorr', 'mean'), ('bicorr', 'std')]]
+# grouped[['bicorr', 'percentile']].describe()[[('bicorr', 'mean'), ('bicorr', 'std'), ('percentile', 'mean'), ('percentile', 'std')]]
