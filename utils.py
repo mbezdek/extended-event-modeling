@@ -278,13 +278,14 @@ class CV2VideoWriter:
     variables and implements some commonly used method
     """
 
-    def __init__(self, output_video_path, fps=30, height=740, width=960):
+    def __init__(self, output_video_path, fps=30, height=740, width=960, is_color=True):
         """
 
         :param output_video_path: path to output video
         :param fps: fps of the video
         :param height: height of output video
         :param width: width of output video
+        :param is_color: if writing a color or grayscale video
         """
         logger.debug('Creating an instance of CV2VideoWriter')
         if os.path.splitext(output_video_path)[1] == '.avi':
@@ -295,7 +296,7 @@ class CV2VideoWriter:
             logger.error(f'Error opening video stream for writing \n'
                          f'Incorrect output format: {os.path.splitext(output_video_path)[1]}')
         self.writer = cv2.VideoWriter(output_video_path, fourcc=self.fourcc, fps=fps,
-                                      frameSize=(width, height))
+                                      frameSize=(width, height), isColor=int(is_color))
         self.fps = fps
         self.height = height
         self.width = width
