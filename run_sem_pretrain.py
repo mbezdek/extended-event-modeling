@@ -11,11 +11,12 @@ import csv
 import pickle as pkl
 import re
 from scipy.ndimage import gaussian_filter1d
+import scipy.stats as stats
 
 sys.path.append('../pysot')
 from sklearn.decomposition import PCA
 from scipy.stats import percentileofscore
-from sem.event_models import GRUEvent, LinearEvent
+from sem.event_models import GRUEvent, LinearEvent, LSTMEvent
 from sem import SEM
 from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, \
     logger, parse_config, contain_substr
@@ -98,7 +99,7 @@ def get_emb_category(category_distances, emb_dim=100):
     return average / category_weights.sum()
 
 
-def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
+def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100, num_objects=3):
     scene_embs = np.zeros(shape=(0, emb_dim))
     obj_handling_embs = np.zeros(shape=(0, emb_dim))
     categories = pd.DataFrame()
@@ -118,9 +119,9 @@ def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
             nearest = row.argmin()
             assert nearest != -1
             # obj_handling_emb = get_emb_category(row.index[nearest], emb_dim)
-            new_row = pd.Series(data=row.dropna().sort_values().index[:3], name=row.name)
+            new_row = pd.Series(data=row.dropna().sort_values().index[:num_objects], name=row.name)
             categories = categories.append(new_row)
-            obj_handling_emb = get_emb_category(row.dropna().sort_values()[:3], emb_dim)
+            obj_handling_emb = get_emb_category(row.dropna().sort_values()[:num_objects], emb_dim)
         else:
             scene_embedding = np.full(shape=(1, emb_dim), fill_value=np.nan)
             obj_handling_emb = np.full(shape=(1, emb_dim), fill_value=np.nan)
@@ -156,7 +157,7 @@ def preprocess_objhand(objhand_csv, standardize=True):
     # mean = np.nanmean(objhand_df.values)
     # std = np.nanstd(objhand_df.values)
     # objhand_df = (objhand_df - mean) / std
-    scene_embs, obj_handling_embs, categories = get_embeddings(objhand_df, emb_dim=emb_dim)
+    scene_embs, obj_handling_embs, categories = get_embeddings(objhand_df, emb_dim=emb_dim, num_objects=3)
     if standardize:
         scene_embs = (scene_embs - np.nanmean(scene_embs, axis=0)) / np.nanstd(scene_embs,
                                                                                axis=0)
@@ -192,9 +193,11 @@ def combine_dataframes(data_frames, rate='40ms', fps=30):
     # Some features such as optical flow are calculated not for all frames, interpolate first
     data_frames = [interpolate_frame(df) for df in data_frames]
     combine_df = pd.concat(data_frames, axis=1)
+    # After dropping null values, variances are not unit anymore, some are around 0.8.
     combine_df.dropna(axis=0, inplace=True)
     first_frame = combine_df.index[0]
     combine_df['frame'] = combine_df.index
+    # After resampling, some variances drop to 0.3 or 0.4
     combine_df = resample_df(combine_df, rate=rate, fps=fps)
     # because resample use mean, need to adjust categorical variables
     combine_df['appear'] = combine_df['appear'].apply(math.ceil).astype(float)
@@ -221,9 +224,9 @@ def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=
     for b in np.arange(len(pred_boundaries))[pred_boundaries][1:]:
         plt.plot([b, b], [0, 1], 'k:', alpha=0.75, color='b')
 
-    plt.text(0.1, 0.8, f'bicorr={bicorr:.3f}, perc={percentile:.3f}', fontsize=14)
+    plt.text(0.1, 0.3, f'bicorr={bicorr:.3f}, perc={percentile:.3f}', fontsize=14)
     plt.legend(loc='upper left')
-    plt.ylim([0, 1.0])
+    plt.ylim([0, 0.4])
     sns.despine()
     if save_fig:
         plt.savefig('output/run_sem/' + title + '.png')
@@ -232,12 +235,15 @@ def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=
     plt.close()
 
 
-def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=0.0, title='', show=False, save_fig=True):
+def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=0.0, title='', show=False, save_fig=True,
+                             bicorr=0.0, percentile=0.0, pearson_r=0.0):
     plt.figure()
     plt.plot(gt_freqs, label='Subject Boundaries')
     plt.xlabel('Time (seconds)')
     plt.ylabel('Boundary Probability')
+    plt.ylim([0, 0.4])
     plt.title(title)
+    plt.text(0.1, 0.3, f'bicorr={bicorr:.3f}, perc={percentile:.3f}, pearson={pearson_r:.3f}', fontsize=14)
     colors = {'new': 'red', 'old': 'green', 'restart': 'blue', 'repeat': 'purple'}
 
     latest = 0
@@ -263,14 +269,21 @@ def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=
                                                                                                                 'Event',
                color=colors['old'], linestyles='dotted')
     plt.legend()
-    plt.ylim([0, 1.0])
     if save_fig:
         plt.savefig('output/run_sem/' + title + '.png')
     if show:
         plt.show()
 
 
-def infer_on_video(args, run, tag):
+def plot_pe(sem_readouts, frame_interval, offset, title):
+    fig, ax = plt.subplots()
+    df = pd.DataFrame({'prediction_error': sem_readouts.pe}, index=range(len(sem_readouts.pe)))
+    df['second'] = df.index / frame_interval + offset
+    df.plot(kind='line', x='second', y='prediction_error', alpha=1.00, ax=ax)
+    plt.savefig('output/run_sem/' + title + '.png')
+
+
+def infer_on_video(args, run, tag, sem_model=None, train=True, store_dataframes=True, epoch=0):
     try:
         # For some reason, some optical flow videos have inf value, TODO: investigate
         pd.set_option('use_inf_as_na', True)
@@ -299,35 +312,48 @@ def infer_on_video(args, run, tag):
         last_frame = data_frames[0].index[-1]
         # This parameter is used to limit the time of ground truth video
         end_second = math.ceil(last_frame / fps)
-        # Readout to visualize object-hand features
-        # Re-index: some frames there are no objects near hand (which is not possible, this bug is due to min(89, NaN)=NaN
-        # categories = categories.reindex(range(categories.index[-1])).ffill()
-        categories = categories.ffill()
-        categories = categories.loc[data_frames[0].index, :]
-        data_frames.append(categories)
-        coordinates = pd.DataFrame()
-        objhand_df = pd.read_csv(objhand_csv)
-        objhand_df = objhand_df.loc[data_frames[0].index, :]
-        for index, r in categories.iterrows():
-            frame_series = pd.Series(dtype=float)
-            # There could be a case where there are two spray bottles near the hand: 6.3.6
-            # TODO: filter seen instances
-            all_categories = set(r.values)
-            for c in list(all_categories):
-                # Filter by category name and select distance
-                # Note: paper towel and towel causes duplicated columns in series,
-                # Need anchor ^ to distinguish towel and paper towel (2.4.7),
-                # need digit \d to distinguish pillow0 and pillowcase0 (3.3.5)
-                # Need to escape character ( and ) in aloe (green bottle) (4.4.5)
-                df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(like='_dist')
-                # select nearest object's coordinates
-                nearest_name = df.index[df.argmin()].replace('_dist', '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
-                # need anchor ^ to distinguish between towel0 and paper towel0
-                s = objhand_df.loc[index, :].filter(regex=f"^{re.escape(nearest_name)}")
-                frame_series = frame_series.append(s)
-            frame_series.name = index
-            coordinates = coordinates.append(frame_series)
-        data_frames.append(coordinates)
+
+        if store_dataframes:
+            objhand_df = pd.read_csv(objhand_csv)
+            objhand_df = objhand_df.loc[data_frames[0].index, :]
+
+            def add_category_and_coordinates(categories: pd.DataFrame, use_depth=False):
+                # Readout to visualize object-hand features
+                # Re-index: some frames there are no objects near hand (which is not possible, this bug is due to min(89, NaN)=NaN
+                # categories = categories.reindex(range(categories.index[-1])).ffill()
+                categories = categories.ffill()
+                categories = categories.loc[data_frames[0].index, :]
+                data_frames.append(categories)
+                coordinates = pd.DataFrame()
+                for index, r in categories.iterrows():
+                    frame_series = pd.Series(dtype=float)
+                    # There could be a case where there are two spray bottles near the hand: 6.3.6
+                    # TODO: filter seen instances
+                    all_categories = set(r.values)
+                    for c in list(all_categories):
+                        # Filter by category name and select distance
+                        # Note: paper towel and towel causes duplicated columns in series,
+                        # Need anchor ^ to distinguish towel and paper towel (2.4.7),
+                        # need digit \d to distinguish pillow0 and pillowcase0 (3.3.5)
+                        # Need to escape character ( and ) in aloe (green bottle) (4.4.5)
+                        # Either use xy or depth (z) distance to get nearest object names
+                        if use_depth:
+                            df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(regex='_dist_z$')
+                            nearest_name = df.index[df.argmin()].replace('_dist_z',
+                                                                         '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
+                        else:
+                            df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(regex='_dist$')
+                            nearest_name = df.index[df.argmin()].replace('_dist',
+                                                                         '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
+                        # select nearest object's coordinates
+                        # need anchor ^ to distinguish between towel0 and paper towel0
+                        s = objhand_df.loc[index, :].filter(regex=f"^{re.escape(nearest_name)}")
+                        frame_series = frame_series.append(s)
+                    frame_series.name = index
+                    coordinates = coordinates.append(frame_series)
+                data_frames.append(coordinates)
+
+            add_category_and_coordinates(categories, use_depth=False)
 
         title = os.path.basename(movie[:-4]) + tag
         # logger.info(f'Features: {combine_df.columns}')
@@ -335,7 +361,8 @@ def infer_on_video(args, run, tag):
         # e.g. x_train /= np.sqrt(x_train.shape[1]) or x_train[2] = ...
         x_train = combine_df.to_numpy(copy=True)
         if int(args.pca):
-            pca = PCA(float(args.pca_explained), whiten=True)
+            # pca = PCA(float(args.pca_explained), whiten=True)
+            pca = PCA(int(args.pca_dim), whiten=True)
             try:
                 x_train_pca = pca.fit_transform(x_train[:, 2:])
                 x_train_inversed = pca.inverse_transform(x_train_pca)
@@ -350,29 +377,9 @@ def infer_on_video(args, run, tag):
             df_x_train = pd.DataFrame(data=x_train, index=data_frames[0].index, columns=combine_df.columns)
             data_frames.append(df_x_train)
 
-
-        # VAE feature from washing dish video
-        # x_train_vae = np.load('video_color_Z_embedded_64_5epoch.npy')
-        def run_sem_and_plot(x_train, tag=''):
-            # Initialize keras model and running
-            # set the parameters for the segmentation
-            f_class = GRUEvent
-            # f_class = LinearEvent
-            # these are the parameters for the event model itself.
-            f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
-                          n_epochs=10, t=4, batch_update=True)
-            # f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, n_epochs=10)
-            # f_opts = dict(l2_regularization=0.5, n_epochs=10)
-            lmda = float(args.lmda)  # stickyness parameter (prior)
-            alfa = float(args.alfa)  # concentration parameter (prior)
-            sem_init_kwargs = {'lmda': lmda, 'alfa': alfa, 'f_opts': f_opts,
-                               'f_class': f_class}
-            run_kwargs = dict()
-            sem_model = SEM(**sem_init_kwargs)
-            # sem_model.run(x_train_vae[5537 + 10071: 5537 + 10071 + 7633, :], **run_kwargs)
-            sem_model.run(x_train, **run_kwargs)
+        def run_sem_and_plot(x_train, tag='', sem_model=None, epoch=0):
+            sem_model.run(x_train, train=train, **run_kwargs)
             # Process results returned by SEM
-            # sample_per_second = 30  # washing dish video
             sample_per_second = 1000 / float(args.rate.replace('ms', ''))
             second_interval = 1  # interval to group boundaries
             pred_boundaries = get_binned_prediction(sem_model.results.post, second_interval=second_interval,
@@ -380,7 +387,7 @@ def infer_on_video(args, run, tag):
             # Padding prediction boundaries, could be changed to have higher resolution but not necessary
             pred_boundaries = np.hstack([[0] * round(first_frame / fps / second_interval), pred_boundaries]).astype(bool)
             logger.info(f'Total # of pred_boundaries: {sum(pred_boundaries)}')
-            with open('output/run_sem/' + title + '_diagnostic.pkl', 'wb') as f:
+            with open('output/run_sem/' + title + f'_diagnostic_{epoch}.pkl', 'wb') as f:
                 pkl.dump(sem_model.results.__dict__, f)
 
             def evaluate_and_plot(grain='fine'):
@@ -393,10 +400,10 @@ def infer_on_video(args, run, tag):
                 # Compare SEM boundaries versus participant boundaries
                 gt_freqs = seg_video.gt_freqs
                 gt_freqs = gaussian_filter1d(gt_freqs, 2)
-                # data_old = pd.read_csv('./data/zachs2006_data021011.dat', delimiter='\t')
-                # _, _, gt_freqs = load_comparison_data(data_old)
                 last = min(len(pred_boundaries), len(gt_freqs))
                 bicorr = get_point_biserial(pred_boundaries[:last], gt_freqs[:last])
+                pred_boundaries_gaussed = gaussian_filter1d(pred_boundaries.astype(float), 1)
+                pearson_r, p = stats.pearsonr(pred_boundaries_gaussed[:last], gt_freqs[:last])
                 percentile = percentileofscore(biserials, bicorr)
                 logger.info(f'Tag={tag}: Bicorr={bicorr:.3f} cor. Percentile={percentile:.3f},  '
                             f'Subjects_median={np.nanmedian(biserials):.3f}')
@@ -405,49 +412,65 @@ def infer_on_video(args, run, tag):
                 with open('output/run_sem/' + title + '_gtfreqs.pkl', 'wb') as f:
                     pkl.dump(gt_freqs, f)
                 plot_diagnostic_readouts(gt_freqs, sem_model.results, frame_interval=second_interval * sample_per_second,
-                                         offset=first_frame / fps / second_interval, title=title + f'_diagnostic_{grain}')
-                with open('output/run_sem/results_sem_run.csv', 'a') as f:
+                                         offset=first_frame / fps / second_interval, title=title + f'_diagnostic_{grain}_{epoch}',
+                                         bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
+
+                plot_pe(sem_model.results, frame_interval=second_interval * sample_per_second,
+                        offset=first_frame / fps / second_interval, title=title + f'_PE_{grain}_{epoch}')
+                mean_pe = sem_model.results.pe.mean()
+                std_pe = sem_model.results.pe.std()
+                with open('output/run_sem/results_sem_run_pearson.csv', 'a') as f:
                     writer = csv.writer(f)
-                    writer.writerow([run, grain, bicorr, percentile, np.nanmedian(biserials), pred_boundaries,
-                                     sum(pred_boundaries), sem_init_kwargs, tag])
+                    writer.writerow([run, grain, bicorr, percentile, len(sem_model.event_models), epoch,
+                                     sum(pred_boundaries), sem_init_kwargs, tag, mean_pe, std_pe, pearson_r])
                 return bicorr, percentile
 
             # bicorr, percentile = evaluate_and_plot('fine')
             bicorr, percentile = evaluate_and_plot('coarse')
-            return sem_model, bicorr, percentile
+            return bicorr, percentile
 
         # Note that this is different from x_train = x_train / np.sqrt(x_train.shape[1]), the below code will change values of
         # the memory allocation, change to be safer
         # x_train /= np.sqrt(x_train.shape[1])
+        # x_train is already has unit variance for all features (pca whitening) -> scale to have unit length.
+        # I read in SEM's comment that it should be useful to have unit length stimulus.
         x_train = x_train / np.sqrt(x_train.shape[1])
         # appear, x_train = np.split(x_train, [2], axis=1)  # remove appear features
-        sem_model, bicorr, percentile = run_sem_and_plot(x_train, tag=f'{tag}')
-        if int(args.pca):
-            x_infered_inversed = sem_model.results.x_hat
-            # x_infered_inversed = np.hstack([appear, x_infered_inversed])  # concat appear feature as if it's used for consistency
-            x_infered_inversed = x_infered_inversed * np.sqrt(x_train.shape[1])
-            x_infered_inversed = pca.inverse_transform(x_infered_inversed[:, 2:])
-            x_infered_inversed = np.hstack([x_infered_inversed[:, :2], x_infered_inversed])
-            df_x_infered_inversed = pd.DataFrame(data=x_infered_inversed, index=data_frames[0].index, columns=combine_df.columns)
-            data_frames.append(df_x_infered_inversed)
-        else:
-            x_infered_ori = sem_model.results.x_hat * np.sqrt(x_train.shape[1])
-            df_x_infered_ori = pd.DataFrame(data=x_infered_ori, index=data_frames[0].index, columns=combine_df.columns)
-            data_frames.append(df_x_infered_ori)
+        # This function train and change sem event models
+        bicorr, percentile = run_sem_and_plot(x_train, tag=f'{tag}', sem_model=sem_model, epoch=epoch)
+        if store_dataframes:
+            if int(args.pca):
+                x_infered_inversed = sem_model.results.x_hat
+                # x_infered_inversed = np.hstack([appear, x_infered_inversed])  # concat appear feature as if it's used for consistency
+                x_infered_inversed = x_infered_inversed * np.sqrt(x_train.shape[1])
+                x_infered_inversed = pca.inverse_transform(x_infered_inversed[:, 2:])
+                x_infered_inversed = np.hstack([x_infered_inversed[:, :2], x_infered_inversed])
+                df_x_infered_inversed = pd.DataFrame(data=x_infered_inversed, index=data_frames[0].index,
+                                                     columns=combine_df.columns)
+                data_frames.append(df_x_infered_inversed)
+            else:
+                x_infered_ori = sem_model.results.x_hat * np.sqrt(x_train.shape[1])
+                df_x_infered_ori = pd.DataFrame(data=x_infered_ori, index=data_frames[0].index, columns=combine_df.columns)
+                data_frames.append(df_x_infered_ori)
 
-        with open('output/run_sem/' + title + '_inputdf.pkl', 'wb') as f:
-            pkl.dump(data_frames, f)
+            # Adding categories_z and coordinates_z to data_frame
+            # after training to avoid messing up with indexing in input_viz_refactored.ipynb
+            # TODO: uncomment this line after getting objhand features with depth
+            # add_category_and_coordinates(categories_z, use_depth=True)
+            with open('output/run_sem/' + title + f'_inputdf_{epoch}.pkl', 'wb') as f:
+                pkl.dump(data_frames, f)
 
         logger.info(f'Done SEM {run}')
         with open('output/run_sem/sem_complete.txt', 'a') as f:
-            f.write(run + '\n')
-        return sem_model.results, bicorr, percentile
+            f.write(run + f'_{tag}' + '\n')
+        # sem's Results() is initialized and different for each run
+        return bicorr, percentile
     except Exception as e:
         with open('output/run_sem/sem_error.txt', 'a') as f:
-            f.write(args.run + '\n')
+            f.write(run + f'_{tag}' + '\n')
             # f.write(repr(e) + '\n')
             f.write(traceback.format_exc() + '\n')
-        return None, None, None
+        return None, None
 
 
 def resample_df(objhand_df, rate='40ms', fps=30):
@@ -487,33 +510,63 @@ if __name__ == "__main__":
         # choose = ['C1']
         with open(args.run, 'r') as f:
             runs = f.readlines()
-            runs = [run.strip() for run in runs if contain_substr(run, choose)]
+            for c in choose:
+                runs = [run.strip() for run in runs if contain_substr(run, [c])]
     else:
         runs = [args.run]
 
-    tag = 'feb_02_train_multiple'
-    if not os.path.exists('output/run_sem/results_sem_run.csv'):
-        csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'mean_subject', 'pred_boundaries',
-                       'model_boundaries', 'sem_params', 'tag']
-        with open('output/run_sem/results_sem_run.csv', 'w') as f:
+    tag = 'mar_06_individual_3_alfa1e-7'
+    if not os.path.exists('output/run_sem/results_sem_run_pearson.csv'):
+        csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'epoch',
+                       'model_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r']
+        with open('output/run_sem/results_sem_run_pearson.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
-    # Uncomment this for debugging
-    # sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
-    res = Parallel(n_jobs=8)(delayed(infer_on_video)(args, run, tag) for run in runs)
-    sem_results, bicorrs, percentiles = zip(*res)
-    # Average metric for all runs
-    bis = []
-    pers = []
-    for b, p in zip(bicorrs, percentiles):
-        if b is not None:
-            bis.append(b)
-            pers.append(p)
-    if not os.path.exists('output/run_sem/results_sem_agg.csv'):
-        csv_headers = ['bicorr', 'percentile', 'alfa', 'lmda', 'tag']
-        with open('output/run_sem/results_sem_agg.csv', 'w') as f:
-            writer = csv.writer(f)
-            writer.writerow(csv_headers)
-    with open('output/run_sem/results_sem_agg.csv', 'a') as f:
-        writer = csv.writer(f)
-        writer.writerow([sum(bis) / len(bis), sum(pers) / len(pers), float(args.alfa), float(args.lmda), tag])
+    # Initialize keras model and running
+    # set the parameters for the segmentation
+    f_class = GRUEvent
+    # f_class = LSTMEvent
+    optimizer_kwargs = dict(lr=1e-2, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0, amsgrad=False)
+    # these are the parameters for the event model itself.
+    f_opts = dict(var_df0=50., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
+                  n_epochs=10, t=4, batch_update=True, n_hidden=32, variance_window=None, optimizer_kwargs=optimizer_kwargs)
+    lmda = float(args.lmda)  # stickyness parameter (prior)
+    alfa = float(args.alfa)  # concentration parameter (prior)
+    sem_init_kwargs = {'lmda': lmda, 'alfa': alfa, 'f_opts': f_opts,
+                       'f_class': f_class}
+    # run_kwargs = dict(k=60)
+    run_kwargs = dict(count=1)
+    sem_model = SEM(**sem_init_kwargs)
+    logger.info(f'Total runs = {len(runs)}')
+    bicorrs = []
+    percentiles = []
+    epochs = int(args.epochs)
+    train_log = f'log_training.txt'
+    with open(f'{train_log}', 'a') as f:
+        f.write(f'Train with {epochs} epochs\n')
+    # Run ten epochs
+    for e in range(epochs):
+        res_dict = dict()
+        for index, run in enumerate(runs):
+            # Only train on good runs
+            # if index > len(runs) // 2:
+            #     is_train = False
+            # else:
+            #     is_train = True
+            is_train = True
+            bicorr, percentile = infer_on_video(args, run, tag, sem_model, train=is_train, epoch=e, store_dataframes=True)
+            bicorrs.append(bicorr)
+            percentiles.append(percentile)
+            res_dict[run] = bicorr
+
+        import random
+
+        random.shuffle(runs)
+
+        res_dict = sorted(res_dict.items(), key=lambda kv: kv[1], reverse=True)
+        print(f'Ordered runs: {res_dict}')
+        print(f'Total number of event models after {e} epochs: {len(sem_model.event_models)}')
+        with open(f'{train_log}', 'a') as f:
+            f.write(f'Ordered runs after   {e} epochs: \n{res_dict}\n')
+            f.write(f'Average bicorr after {e} epochs: {sum([r[1] for r in res_dict]) / len(res_dict)}\n')
+            f.write(f'# event_models after {e} epochs: {len(sem_model.event_models)}\n')

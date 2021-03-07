@@ -162,7 +162,6 @@ for x in ['fasttext-wiki-news-subwords-300',
           'glove-twitter-100',
           'glove-twitter-200',
           '__testing_word2vec-matrix-synopsis']:
-    % time
     gensim.downloader.load(x)
 
 # List of successful tracking runs
@@ -221,7 +220,7 @@ import json
 res = json.load(open('results_sem_run.json', 'r'))
 bicorrs = []
 pers = []
-for k, v in res.items():
+for xy, v in res.items():
     if v['bicorr'] is not None:
         bicorrs.append(v['bicorr'])
         pers.append(v['percentile'])
@@ -289,32 +288,32 @@ import json
 
 res = json.load(open('tmp/jan_04_3sec/results_sem_run.json', 'r'))
 agg = dict(actor=dict(), chapter=dict())
-for k, v in res.items():
-    if k[0] == 't':
+for xy, v in res.items():
+    if xy[0] == 't':
         continue
-    if k[0] not in agg['actor']:
-        agg['actor'][k[0]] = []
+    if xy[0] not in agg['actor']:
+        agg['actor'][xy[0]] = []
     else:
-        agg['actor'][k[0]].append((k, v['percentile'], v['bicorr']))
-    if k[2] not in agg['chapter']:
-        agg['chapter'][k[2]] = []
+        agg['actor'][xy[0]].append((xy, v['percentile'], v['bicorr']))
+    if xy[2] not in agg['chapter']:
+        agg['chapter'][xy[2]] = []
     else:
-        agg['chapter'][k[2]].append((k, v['percentile'], v['bicorr']))
+        agg['chapter'][xy[2]].append((xy, v['percentile'], v['bicorr']))
 
 # plot results
 colors = {'chapter 1': 'red', 'chapter 2': 'green', 'chapter 3': 'blue', 'chapter 4': 'purple'}
 fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(16, 8), sharey=True)
-for k, v in agg['chapter'].items():
+for xy, v in agg['chapter'].items():
     ax[0].scatter(np.mean([x[1] for x in v]) / 100, np.mean([x[2] for x in v]),
-                  label=f'chapter {k}', c=colors[f'chapter {k}'])
+                  label=f'chapter {xy}', c=colors[f'chapter {xy}'])
 ax[0].set_xlabel('Percentile')
 ax[0].set_ylabel('Biserial Correlation')
 ax[0].set_title('Aggregate metrics for each Chapter')
 ax[0].legend()
 
-for k, v in res.items():
-    ax[1].scatter(v['percentile'], v['bicorr'], c=colors[f'chapter {k[2]}'])
-    ax[1].annotate(k[:5], (v['percentile'], v['bicorr']))
+for xy, v in res.items():
+    ax[1].scatter(v['percentile'], v['bicorr'], c=colors[f'chapter {xy[2]}'])
+    ax[1].annotate(xy[:5], (v['percentile'], v['bicorr']))
 ax[1].set_xlabel('Percentile')
 ax[1].set_ylabel('Biserial Correlation')
 ax[1].set_title('Metrics for each Run')
@@ -372,9 +371,13 @@ import cv2
 import pickle as pkl
 
 kinects = glob.glob('output/run_sem/*inputdf.pkl')
-kinects = [os.path.basename(k).split('_')[0] for k in kinects]
+kinects = list(set([os.path.basename(k).split('_')[0] for k in kinects]))
+print(len(kinects))
 for run_select in kinects:
-    with open(f'output/run_sem/{run_select}_kinect_trimjan_23_weighted_distance_inputdf.pkl', 'rb') as f:
+    if os.path.exists(f'output/run_sem/{run_select}_kinect_trimjan_27_pca_frames.joblib'):
+        print(f'Already generated {run_select}')
+        continue
+    with open(f'output/run_sem/{run_select}_kinect_trimjan_27_pca_inputdf.pkl', 'rb') as f:
         inputdfs = pkl.load(f)
     vidfile=f'data/small_videos/{run_select}_kinect_trim.mp4'
 
@@ -392,8 +395,10 @@ for run_select in kinects:
                 break
             if frame_id in frames:
                 cached_videos[frame_id] = cv2.resize(frame, None, fx=0.5, fy=0.5)
-        with open(f'output/run_sem/{run_select}_kinect_trimjan_23_weighted_distance_frames.pkl', 'wb') as f:
-                pkl.dump(cached_videos, f)
+        joblib.dump(cached_videos, f'output/run_sem/{run_select}_kinect_trimjan_27_pca_frames.joblib',
+                    compress=True)
+        # with open(f'output/run_sem/{run_select}_kinect_trimjan_27_pca_frames.pkl', 'wb') as f:
+        #         pkl.dump(cached_videos, f)
 
 import pickle as pkl
 import glob
@@ -419,11 +424,114 @@ sem_readouts['frame_dynamics']['old_lik'] = [[l for l in all_lik if not(np.isclo
  for all_lik, new_lik, repeat_lik in zip(sem_readouts['frame_dynamics']['old_lik'], sem_readouts['frame_dynamics']['new_lik'], sem_readouts['frame_dynamics']['repeat_lik'])]
 sem_readouts['frame_dynamics']['old_lik']  = [l if len(l) else [-5000] for l in sem_readouts['frame_dynamics']['old_lik']]
 
+
+
+# draw all interested metrics against epoch, not necessary anymore because we have scatter matrix.
 import pandas as pd
 df = pd.read_csv('output/run_sem/results_sem_run.csv')
 grouped = df.groupby('tag')
 agg = grouped[['bicorr', 'percentile']].describe()
-agg.to_csv('output/run_sem/results_sem_agg.csv')
-# grouped[['bicorr', 'percentile']].describe()[('bicorr', 'mean'), ('bicorr', 'std')]
-# grouped[['bicorr', 'percentile']].describe()[[('bicorr', 'mean'), ('bicorr', 'std')]]
-# grouped[['bicorr', 'percentile']].describe()[[('bicorr', 'mean'), ('bicorr', 'std'), ('percentile', 'mean'), ('percentile', 'std')]]
+grouped[['bicorr', 'percentile']].describe()[[('bicorr', 'mean'), ('bicorr', 'std'), ('percentile', 'mean'), ('percentile', 'std')]]
+
+import matplotlib.pyplot as plt
+y_interesteds = ['bicorr', 'percentile', 'model_boundaries', 'n_event_models', 'mean_pe', 'std_pe']
+for y_interested in y_interesteds:
+
+    tags = ['mar_01_like_21', 'mar_01_like_21_alfa100_lmda1e6', 'mar_01_like_21_gru']
+    fig, ax = plt.subplots()
+    for tag in tags:
+        li = []
+        for i in range(30):
+            sr = df[(df['epoch'] == i) & (df['tag'] == f'{tag}')]
+            if sr.shape[0] == 148:
+                li.append(sr.mean())
+        dump_df = pd.concat(li, axis=1).T
+        dump_df.plot(kind='line', x='epoch', y=f'{y_interested}', ax=ax)
+    ax.legend(tags)
+    if y_interested == 'bicorr':
+        ax.set_ylim((-0.1, 0.3))
+    ax.set_ylabel(f'{y_interested}')
+    plt.savefig(f'compare_{y_interested}.png')
+    plt.close(fig)
+
+
+#
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import statsmodels.api as sm
+# load data frame
+df = pd.read_csv('output/run_sem/results_sem_run_new.csv')
+df['chapter'] = df['run'].apply(lambda x: int(x[2]))
+# indices_sorted = df[df['chapter'] == 2]['bicorr'].sort_values().index
+# df.drop(indices_sorted[:30], inplace=True)
+# Sometimes all runs haven't finished, filter epochs having all runs
+li = []
+for i in range(30):
+    sr = df[(df['epoch'] == i)]
+    if sr.shape[0] == 148:
+        li.append(sr.mean())
+dump_df = pd.concat(li, axis=1).T
+df = df[df['epoch'] < dump_df.index[-1]]
+# Define interested metrics
+numerics = ['mean_pe', 'bicorr', 'epoch', 'n_event_models', 'model_boundaries']
+sns.pairplot(df[numerics + ['chapter']], hue='chapter', palette='bright',
+             markers=['o', 'v', 's', 'D'], kind='reg', plot_kws={'scatter_kws': {'alpha': 0.3}})
+plt.savefig('scatter_matrix_chapter.png')
+plt.show()
+sns.pairplot(df[numerics], hue='epoch', palette='viridis', vars=numerics)
+plt.savefig('scatter_matrix_epoch.png')
+plt.show()
+# Run regression model, accounting for chapter
+chapter = pd.get_dummies(df['chapter'], prefix='chapter')
+df_std = (df - df.mean()) / df.std()
+df_std = pd.concat([df_std, chapter], axis=1)
+# df = sm.add_constant(df)
+# pe_model = sm.OLS(df_std['mean_pe'], df_std[['n_event_models', 'model_boundaries', 'epoch']]).fit()
+b_model = sm.OLS(df_std['bicorr'], df_std[['n_event_models', 'epoch', 'chapter_1', 'chapter_2', 'chapter_3', 'chapter_4']]).fit()
+b_model.summary()
+# Run regression model, accounting for each run.
+runs = pd.get_dummies(df['run'])
+df_std = (df - df.mean()) / df.std()
+df_std = (df - df.mean()) / df.std()
+df_std = pd.concat([df_std, runs], axis=1)
+# drop columns that I don't want to include in the model
+df_run = df_std.drop(['chapter', 'mean_pe', 'std_pe', 'n_event_models', 'percentile'], axis=1)
+b_model = sm.OLS(df_run['bicorr'], df_run.drop(['bicorr', 'model_boundaries'], axis=1)).fit()
+b_model.summary()
+# add pearson_r column
+import pickle as pkl
+import pandas as np
+import numpy as np
+import scipy.stats as stats
+from scipy.ndimage import gaussian_filter1d
+from utils import get_point_biserial, get_binned_prediction
+
+def get_pearson_r(run, tag, epoch):
+    sem_readouts = pkl.load(
+        open(f"output/run_sem/{run}_trim{tag}_diagnostic_{epoch}.pkl", 'rb'))
+    inputdf = pkl.load(
+        open(f"output/run_sem/{run}_trim{tag}_inputdf_{epoch}.pkl", 'rb'))
+    # offset to align prediction boundaries with exact video timepoint
+    first_frame = inputdf[0].index[0]
+    fps = 25
+    second_interval = 1
+    pred_boundaries = get_binned_prediction(sem_readouts['post'], second_interval=second_interval,
+                                            sample_per_second=3)
+    pred_boundaries = np.hstack([[0] * round(first_frame / fps / second_interval), pred_boundaries])
+    gt_freqs = pkl.load(open(f"output/run_sem/{run}_trim{tag}_gtfreqs.pkl", 'rb'))
+    last = min(len(pred_boundaries), len(gt_freqs))
+    bicorr = get_point_biserial(pred_boundaries[:last].astype(int), gt_freqs[:last])
+    pred_boundaries_gaussed = gaussian_filter1d(pred_boundaries.astype(float), 1)
+    r, p = stats.pearsonr(pred_boundaries_gaussed[:last], gt_freqs[:last])
+    return r
+
+df['pearson_r'] = df.apply(lambda x: get_pearson_r(x.run, x.tag, x.epoch), axis=1)
+# Showing that conditioning on n_event_models is a bad idea
+agg = df.groupby('chapter').mean()
+fig, axs = plt.subplots(ncols=2)
+sns.scatterplot(x=df['epoch'], y=df['n_event_models'], hue=df['chapter'], palette='bright', ax=axs[0])
+sns.scatterplot(x=agg.index, y=agg['bicorr'], hue=agg.index, palette='bright', ax=axs[1])
+plt.show()
+# just a handy line
+df[df['tag'] == 'mar_04_individual_3'][select_columns].sort_values('pearson_r')

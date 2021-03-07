@@ -103,10 +103,10 @@ def get_binned_prediction(posterior, second_interval=1, sample_per_second=30) ->
 
 
 def get_point_biserial(boundaries_binned, binned_comp) -> float:
-    M_1 = np.mean(binned_comp[boundaries_binned == 1])
+    M_1 = np.mean(binned_comp[boundaries_binned != 0])
     M_0 = np.mean(binned_comp[boundaries_binned == 0])
 
-    n_1 = np.sum(boundaries_binned == 1)
+    n_1 = np.sum(boundaries_binned != 0)
     n_0 = np.sum(boundaries_binned == 0)
     n = n_1 + n_0
 
