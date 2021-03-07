@@ -17,9 +17,12 @@
 #srun --nodes 1 --ntasks 1 python -c 'import time; print(5); time.sleep(1)' &
 #srun --nodes 1 --ntasks 1 python -c 'import time; print(5); time.sleep(1)' &
 #wait
-python -c 'import numpy as np; print(np.random.randint(5))'
-input=`head -n $SLURM_ARRAY_TASK_ID job_input.txt| tail -n 1`
-srun python -c 'import time; time.sleep(10)' & echo $input
+#python -c 'import numpy as np; print(np.random.randint(5))'
+#input=`head -n $SLURM_ARRAY_TASK_ID job_input.txt| tail -n 1`
+#srun python -c 'import time; time.sleep(10)' & echo $input
+input=`head -n $SLURM_ARRAY_TASK_ID $1 | tail -n 1`
+#srun python -c 'import time; time.sleep(10)' & echo $input
+srun echo $input
 
 #for i in {1..10}; do
 #  srun --ntasks 1 python -c 'import time; print(10); time.sleep(1)' &

@@ -1,8 +1,7 @@
 #!/bin/bash
 
-#SBATCH --array 1-10
-#SBATCH --ntasks 1
-#SBATCH --cpus-per-task 16
+#SBATCH --array 1-148
+#SBATCH --cpus-per-task 1
 #SBATCH --mem-per-cpu 4G
 #SBATCH --time 24:00:00
 
@@ -19,9 +18,10 @@ source activate tf
 #srun --exclusive --ntasks 1 python vidfeatures/vidfeatures.py -c configs/config_vidfeatures.ini &
 #wait
 
-#python merge_and_split.py 10
-input=`head -n $SLURM_ARRAY_TASK_ID job_input.txt| tail -n 1`
-#srun python -c 'import time; time.sleep(10)' & echo $input
+#python job_split.py 10
+input=`head -n $SLURM_ARRAY_TASK_ID $1 | tail -n 1`
+echo $input
+export OMP_NUM_THREADS=1
 srun python run_sem_with_features.py -c configs/config_run_sem.ini --run $input
 #for i in {1..10}; do
 #  run="intersect_features_$i.txt"
@@ -29,3 +29,5 @@ srun python run_sem_with_features.py -c configs/config_run_sem.ini --run $input
 #  srun --nodes 1 --ntasks 1 python run_sem_with_features.py -c configs/config_run_sem.ini --run $run &
 #done
 #wait
+# sbatch --array 1-10 --job-name individual individual_train.sh job_input.txt
+# sbatch --array 1-148 --cpus-per-task 1 --job-name individual individual_train.sh intersect_features_1.txt
