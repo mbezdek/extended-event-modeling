@@ -15,7 +15,7 @@ from scipy.ndimage import gaussian_filter1d
 sys.path.append('../pysot')
 from sklearn.decomposition import PCA
 from scipy.stats import percentileofscore
-from sem.event_models import GRUEvent, LinearEvent
+from sem.event_models import GRUEvent, LinearEvent, LSTMEvent
 from sem import SEM
 from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, \
     logger, parse_config, contain_substr
@@ -123,28 +123,42 @@ def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100):
             obj_handling_emb = get_emb_category(row.dropna().sort_values()[:3], emb_dim)
         else:
             scene_embedding = np.full(shape=(1, emb_dim), fill_value=np.nan)
+            # There's no need for this one. There shouldn't be a frame where there is no objects and hand (except initial frames)
+            # because they are all interpolated in object_hand_features.py
+            # new_row = pd.Series(data=[np.nan, np.nan, np.nan], name=row.name)
+            # categories = categories.append(new_row)
             obj_handling_emb = np.full(shape=(1, emb_dim), fill_value=np.nan)
         scene_embs = np.vstack([scene_embs, scene_embedding])
         obj_handling_embs = np.vstack([obj_handling_embs, obj_handling_emb])
     return scene_embs, obj_handling_embs, categories
 
 
-def preprocess_objhand(objhand_csv, standardize=True):
+def preprocess_objhand(objhand_csv, standardize=True, use_depth=False):
     objhand_df = pd.read_csv(objhand_csv, index_col='frame')
     # Drop non-distance columns
     for c in objhand_df.columns:
         if 'dist' not in c:
             objhand_df.drop([c], axis=1, inplace=True)
+    if use_depth:
+        objhand_df = objhand_df.filter(regex=f'_dist_z$')
+    else:
+        objhand_df = objhand_df.filter(regex=f'_dist$')
     # remove track number
     objhand_df.rename(remove_number, axis=1, inplace=True)
     all_categories = set(objhand_df.columns.values)
     # get neareast distance for the same category at each row
     for category in all_categories:
         if isinstance(objhand_df[category], pd.Series):
-            objhand_df[category.replace('_dist', '')] = objhand_df[category]
+            if use_depth:
+                objhand_df[category.replace('_dist_z', '')] = objhand_df[category]
+            else:
+                objhand_df[category.replace('_dist', '')] = objhand_df[category]
         else:
-            # For some strange reason, min(89, NaN) could be 89 or NaN
-            objhand_df[category.replace('_dist', '')] = objhand_df[category].apply(lambda x: np.min(x), axis=1)
+            if use_depth:
+                objhand_df[category.replace('_dist_z', '')] = objhand_df[category].apply(lambda x: np.min(x), axis=1)
+            else:
+                # For some strange reason, min(89, NaN) could be 89 or NaN
+                objhand_df[category.replace('_dist', '')] = objhand_df[category].apply(lambda x: np.min(x), axis=1)
             # objhand_df.loc[:, c] = (objhand_df[c] - min(objhand_df[c].dropna())) / (
             #         max(objhand_df[c].dropna()) - min(objhand_df[c].dropna()))
     # remove redundant columns
@@ -292,42 +306,52 @@ def infer_on_video(args, run, tag):
         appear_df = preprocess_appear(appear_csv)
         skel_df = preprocess_skel(skel_csv, use_position=True, standardize=True)
         optical_df = preprocess_optical(optical_csv, standardize=True)
-        scene_embs, obj_handling_embs, categories = preprocess_objhand(objhand_csv, standardize=True)
+        scene_embs, obj_handling_embs, categories = preprocess_objhand(objhand_csv, standardize=True, use_depth=False)
+        # _, _, categories_z = preprocess_objhand(objhand_csv, standardize=True, use_depth=True)
         # Get consistent start-end times and resampling rate for all features
         combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
                                                                   rate=args.rate, fps=fps)
         last_frame = data_frames[0].index[-1]
         # This parameter is used to limit the time of ground truth video
         end_second = math.ceil(last_frame / fps)
-        # Readout to visualize object-hand features
-        # Re-index: some frames there are no objects near hand (which is not possible, this bug is due to min(89, NaN)=NaN
-        # categories = categories.reindex(range(categories.index[-1])).ffill()
-        categories = categories.ffill()
-        categories = categories.loc[data_frames[0].index, :]
-        data_frames.append(categories)
-        coordinates = pd.DataFrame()
+
         objhand_df = pd.read_csv(objhand_csv)
         objhand_df = objhand_df.loc[data_frames[0].index, :]
-        for index, r in categories.iterrows():
-            frame_series = pd.Series(dtype=float)
-            # There could be a case where there are two spray bottles near the hand: 6.3.6
-            # TODO: filter seen instances
-            all_categories = set(r.values)
-            for c in list(all_categories):
-                # Filter by category name and select distance
-                # Note: paper towel and towel causes duplicated columns in series,
-                # Need anchor ^ to distinguish towel and paper towel (2.4.7),
-                # need digit \d to distinguish pillow0 and pillowcase0 (3.3.5)
-                # Need to escape character ( and ) in aloe (green bottle) (4.4.5)
-                df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(like='_dist')
-                # select nearest object's coordinates
-                nearest_name = df.index[df.argmin()].replace('_dist', '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
-                # need anchor ^ to distinguish between towel0 and paper towel0
-                s = objhand_df.loc[index, :].filter(regex=f"^{re.escape(nearest_name)}")
-                frame_series = frame_series.append(s)
-            frame_series.name = index
-            coordinates = coordinates.append(frame_series)
-        data_frames.append(coordinates)
+        def add_category_and_coordinates(categories: pd.DataFrame, use_depth=False):
+            # Readout to visualize object-hand features
+            # Re-index: some frames there are no objects near hand (which is not possible, this bug is due to min(89, NaN)=NaN
+            # categories = categories.reindex(range(categories.index[-1])).ffill()
+            categories = categories.ffill()
+            categories = categories.loc[data_frames[0].index, :]
+            data_frames.append(categories)
+            coordinates = pd.DataFrame()
+            for index, r in categories.iterrows():
+                frame_series = pd.Series(dtype=float)
+                # There could be a case where there are two spray bottles near the hand: 6.3.6
+                # TODO: filter seen instances
+                all_categories = set(r.values)
+                for c in list(all_categories):
+                    # Filter by category name and select distance
+                    # Note: paper towel and towel causes duplicated columns in series,
+                    # Need anchor ^ to distinguish towel and paper towel (2.4.7),
+                    # need digit \d to distinguish pillow0 and pillowcase0 (3.3.5)
+                    # Need to escape character ( and ) in aloe (green bottle) (4.4.5)
+                    # Either use xy or depth (z) distance to get nearest object names
+                    if use_depth:
+                        df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(regex='_dist_z$')
+                        nearest_name = df.index[df.argmin()].replace('_dist_z', '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
+                    else:
+                        df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(regex='_dist$')
+                        nearest_name = df.index[df.argmin()].replace('_dist', '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
+                    # select nearest object's coordinates
+                    # need anchor ^ to distinguish between towel0 and paper towel0
+                    s = objhand_df.loc[index, :].filter(regex=f"^{re.escape(nearest_name)}")
+                    frame_series = frame_series.append(s)
+                frame_series.name = index
+                coordinates = coordinates.append(frame_series)
+            data_frames.append(coordinates)
+
+        add_category_and_coordinates(categories, use_depth=False)
 
         title = os.path.basename(movie[:-4]) + tag
         # logger.info(f'Features: {combine_df.columns}')
@@ -356,11 +380,13 @@ def infer_on_video(args, run, tag):
         def run_sem_and_plot(x_train, tag=''):
             # Initialize keras model and running
             # set the parameters for the segmentation
-            f_class = GRUEvent
+            # f_class = GRUEvent
+            f_class = LSTMEvent
             # f_class = LinearEvent
             # these are the parameters for the event model itself.
+            # tested, hidden unit is used.
             f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
-                          n_epochs=10, t=4, batch_update=True)
+                          n_epochs=10, t=4, batch_update=True, n_hidden=256)
             # f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, n_epochs=10)
             # f_opts = dict(l2_regularization=0.5, n_epochs=10)
             lmda = float(args.lmda)  # stickyness parameter (prior)
@@ -408,7 +434,7 @@ def infer_on_video(args, run, tag):
                                          offset=first_frame / fps / second_interval, title=title + f'_diagnostic_{grain}')
                 with open('output/run_sem/results_sem_run.csv', 'a') as f:
                     writer = csv.writer(f)
-                    writer.writerow([run, grain, bicorr, percentile, np.nanmedian(biserials), pred_boundaries,
+                    writer.writerow([run, grain, bicorr, percentile, np.nanmedian(biserials), sum(pred_boundaries),
                                      sum(pred_boundaries), sem_init_kwargs, tag])
                 return bicorr, percentile
 
@@ -435,12 +461,17 @@ def infer_on_video(args, run, tag):
             df_x_infered_ori = pd.DataFrame(data=x_infered_ori, index=data_frames[0].index, columns=combine_df.columns)
             data_frames.append(df_x_infered_ori)
 
+        # Adding categories_z and coordinates_z to data_frame
+        # after training to avoid messing up with indexing in input_viz_refactored.ipynb
+        # TODO: uncomment this line after getting objhand features with depth
+        # add_category_and_coordinates(categories_z, use_depth=True)
+
         with open('output/run_sem/' + title + '_inputdf.pkl', 'wb') as f:
             pkl.dump(data_frames, f)
 
         logger.info(f'Done SEM {run}')
         with open('output/run_sem/sem_complete.txt', 'a') as f:
-            f.write(run + '\n')
+            f.write(run + f'_{tag}' + '\n')
         return sem_model.results, bicorr, percentile
     except Exception as e:
         with open('output/run_sem/sem_error.txt', 'a') as f:
@@ -491,7 +522,7 @@ if __name__ == "__main__":
     else:
         runs = [args.run]
 
-    tag = 'feb_02_train_multiple'
+    tag = 'feb_13_h_256_lstm'
     if not os.path.exists('output/run_sem/results_sem_run.csv'):
         csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'mean_subject', 'pred_boundaries',
                        'model_boundaries', 'sem_params', 'tag']
@@ -499,21 +530,24 @@ if __name__ == "__main__":
             writer = csv.writer(f)
             writer.writerow(csv_headers)
     # Uncomment this for debugging
-    # sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
-    res = Parallel(n_jobs=8)(delayed(infer_on_video)(args, run, tag) for run in runs)
-    sem_results, bicorrs, percentiles = zip(*res)
-    # Average metric for all runs
-    bis = []
-    pers = []
-    for b, p in zip(bicorrs, percentiles):
-        if b is not None:
-            bis.append(b)
-            pers.append(p)
-    if not os.path.exists('output/run_sem/results_sem_agg.csv'):
-        csv_headers = ['bicorr', 'percentile', 'alfa', 'lmda', 'tag']
-        with open('output/run_sem/results_sem_agg.csv', 'w') as f:
+    if '.txt' not in args.run:
+        sem_model, bicorr, percentile = infer_on_video(args, runs[0], tag)
+    else:
+        res = Parallel(n_jobs=4)(delayed(infer_on_video)(args, run, tag) for run in runs)
+        sem_results, bicorrs, percentiles = zip(*res)
+        # Average metric for all runs
+        bis = []
+        pers = []
+        for b, p in zip(bicorrs, percentiles):
+            if b is not None:
+                bis.append(b)
+                pers.append(p)
+        if not os.path.exists('output/run_sem/results_sem_agg.csv'):
+            csv_headers = ['bicorr', 'percentile', 'alfa', 'lmda', 'tag']
+            with open('output/run_sem/results_sem_agg.csv', 'w') as f:
+                writer = csv.writer(f)
+                writer.writerow(csv_headers)
+        with open('output/run_sem/results_sem_agg.csv', 'a') as f:
             writer = csv.writer(f)
-            writer.writerow(csv_headers)
-    with open('output/run_sem/results_sem_agg.csv', 'a') as f:
-        writer = csv.writer(f)
-        writer.writerow([sum(bis) / len(bis), sum(pers) / len(pers), float(args.alfa), float(args.lmda), tag])
+            writer.writerow([sum(bis) / len(bis), sum(pers) / len(pers), float(args.alfa), float(args.lmda), tag])
+        logger.info(f'Done running for {tag}!!! ')
