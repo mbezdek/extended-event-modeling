@@ -398,6 +398,7 @@ class SEMContext:
             self.process_features()
 
             if store_dataframes:
+                # Infer coordinates from nearest categories and add both to data_frame for visualization
                 objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
                 objhand_df = pd.read_csv(objhand_csv)
                 objhand_df = objhand_df.loc[self.data_frames[0].index, :]
@@ -478,8 +479,9 @@ class SEMContext:
             # This function train and change sem event models
             self.run_sem_and_plot(x_train)
             if store_dataframes:
+                # Transform predicted vectors to the original vector space for visualization
                 if int(self.configs.pca):
-                    x_inferred_inverted = sem_model.results.x_hat
+                    x_inferred_inverted = self.sem_model.results.x_hat
                     # x_inferred_inverted = np.hstack([appear, x_inferred_inverted])  # concat appear feature as if it's used for consistency
                     # Scale back to PCA whitening results
                     x_inferred_inverted = x_inferred_inverted * np.sqrt(x_train.shape[1])
@@ -489,7 +491,7 @@ class SEMContext:
                                                           columns=self.combine_df.columns)
                     self.data_frames.append(df_x_inferred_inverted)
                 else:
-                    x_inferred_ori = sem_model.results.x_hat * np.sqrt(x_train.shape[1])
+                    x_inferred_ori = self.sem_model.results.x_hat * np.sqrt(x_train.shape[1])
                     df_x_inferred_ori = pd.DataFrame(data=x_inferred_ori, index=self.data_frames[0].index,
                                                      columns=self.combine_df.columns)
                     self.data_frames.append(df_x_inferred_ori)
