@@ -32,3 +32,4 @@ dependencies:
   - gensim
   - opencv
   - panel
+  - statsmodels
