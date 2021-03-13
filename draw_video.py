@@ -188,24 +188,27 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
     else:
         outframe = anchored_frames[frame_slider]
     if obj_checkbox:
-        # Draw ground truth objects
-        outframe = drawobj(frame_slider, outframe, objdf)
-        # TODO: uncomment to test depth
-        # outframe_z = drawobj_z(frame_slider, outframe_z, objdf_z, color=(0, 255, 0))
-        # Draw nearest objects (in the video)
-        nearest_objects = get_nearest(pred_objhand.loc[frame_slider, :].values)
-        for index, instance in enumerate(nearest_objects[:3]):
-            cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 140, 20 + 20 * index),
-                        fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
-                        color=(0, 255, 0))
-        # Draw nearest objects (Glove corpus)
-        #         glove_nearest_objects = glove_vectors.most_similar([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)])
-        #         glove_nearest_objects = [obj_score[0] for obj_score in glove_nearest_objects]
-        glove_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)], glove=True)
-        for index, instance in enumerate(glove_nearest_objects[:3]):
-            cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 280, 20 + 20 * index),
-                        fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
-                        color=(0, 255, 255))
+        try:
+            # Draw ground truth objects
+            outframe = drawobj(frame_slider, outframe, objdf)
+            # TODO: uncomment to test depth
+                # outframe_z = drawobj_z(frame_slider, outframe_z, objdf_z, color=(0, 255, 0))
+                # Draw nearest objects (in the video)
+            nearest_objects = get_nearest(pred_objhand.loc[frame_slider, :].values)
+            for index, instance in enumerate(nearest_objects[:3]):
+                                                                      cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 140, 20 + 20 * index),
+                                                                      fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                                                                      color=(0, 255, 0))
+            # Draw nearest objects (Glove corpus)
+                #         glove_nearest_objects = glove_vectors.most_similar([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)])
+                #         glove_nearest_objects = [obj_score[0] for obj_score in glove_nearest_objects]
+            glove_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)], glove=True)
+            for index, instance in enumerate(glove_nearest_objects[:3]):
+                cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 280, 20 + 20 * index),
+                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                            color=(0, 255, 255))
+        except Exception as e:
+            print(e)
     # add frameID
     cv2.putText(outframe, text=f'FrameID: {frame_slider}', org=(10, 100),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
@@ -311,9 +314,15 @@ def draw_video():
 
 import sys
 
-run_select = sys.argv[1]
-tag = sys.argv[2]
-epoch = sys.argv[3]
+if len(sys.argv) == 2:
+    with open('runs_to_draw.txt', 'r') as f:
+        lines = f.readlines()
+    for line in lines:
+        run_select, tag, epoch = [x.strip() for x in line.split(' ')]
+else:
+    run_select = sys.argv[1]
+    tag = sys.argv[2]
+    epoch = sys.argv[3]
 second_interval = 1  # interval to group boundaries
 frame_per_second = 3  # sampling rate to input to SEM
 fps = 25.0  # kinect videos
