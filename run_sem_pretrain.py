@@ -25,6 +25,7 @@ from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, 
 from joblib import Parallel, delayed
 import gensim.downloader
 import random
+from typing import List, Dict
 
 # glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
 with open('gen_sim_glove_50.pkl', 'rb') as f:
@@ -36,7 +37,7 @@ emb_dim = glove_vectors['apple'].size
 def preprocess_appear(appear_csv):
     appear_df = pd.read_csv(appear_csv, index_col='frame')
     for c in appear_df.columns:
-        appear_df.loc[:, c] = appear_df[c].astype(bool).astype(int)
+        appear_df.loc[:, c] = appear_df[c].astype(int).astype(int)
     return appear_df
 
 
@@ -133,22 +134,32 @@ def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100, num_objects=3):
     return scene_embs, obj_handling_embs, categories
 
 
-def preprocess_objhand(objhand_csv, standardize=True):
+def preprocess_objhand(objhand_csv, standardize=True, use_depth=False, num_objects=3):
     objhand_df = pd.read_csv(objhand_csv, index_col='frame')
     # Drop non-distance columns
     for c in objhand_df.columns:
         if 'dist' not in c:
             objhand_df.drop([c], axis=1, inplace=True)
+    if use_depth:
+        objhand_df = objhand_df.filter(regex=f'_dist_z$')
+    else:
+        objhand_df = objhand_df.filter(regex=f'_dist$')
     # remove track number
     objhand_df.rename(remove_number, axis=1, inplace=True)
     all_categories = set(objhand_df.columns.values)
     # get neareast distance for the same category at each row
     for category in all_categories:
         if isinstance(objhand_df[category], pd.Series):
-            objhand_df[category.replace('_dist', '')] = objhand_df[category]
+            if use_depth:
+                objhand_df[category.replace('_dist_z', '')] = objhand_df[category]
+            else:
+                objhand_df[category.replace('_dist', '')] = objhand_df[category]
         else:
-            # For some strange reason, min(89, NaN) could be 89 or NaN
-            objhand_df[category.replace('_dist', '')] = objhand_df[category].apply(lambda x: np.min(x), axis=1)
+            if use_depth:
+                objhand_df[category.replace('_dist_z', '')] = objhand_df[category].apply(lambda x: np.min(x), axis=1)
+            else:
+                # For some strange reason, min(89, NaN) could be 89 or NaN
+                objhand_df[category.replace('_dist', '')] = objhand_df[category].apply(lambda x: np.min(x), axis=1)
             # objhand_df.loc[:, c] = (objhand_df[c] - min(objhand_df[c].dropna())) / (
             #         max(objhand_df[c].dropna()) - min(objhand_df[c].dropna()))
     # remove redundant columns
@@ -160,7 +171,7 @@ def preprocess_objhand(objhand_csv, standardize=True):
     # mean = np.nanmean(objhand_df.values)
     # std = np.nanstd(objhand_df.values)
     # objhand_df = (objhand_df - mean) / std
-    scene_embs, obj_handling_embs, categories = get_embeddings(objhand_df, emb_dim=emb_dim, num_objects=3)
+    scene_embs, obj_handling_embs, categories = get_embeddings(objhand_df, emb_dim=emb_dim, num_objects=num_objects)
     if standardize:
         scene_embs = (scene_embs - np.nanmean(scene_embs, axis=0)) / np.nanstd(scene_embs,
                                                                                axis=0)
@@ -332,66 +343,101 @@ class SEMContext:
     This class maintain global variables for SEM training and inference
     """
 
-    def __init__(self, sem_model=None, run_kwargs=None, tag='', epochs=1, runs=[], configs=None):
+    def __init__(self, sem_model=None, run_kwargs=None, tag='', configs=None):
         self.sem_model = sem_model
         self.run_kwargs = run_kwargs
         self.tag = tag
-        self.epochs = epochs
-        self.runs = runs
+        if not os.path.exists(f'output/run_sem/{self.tag}'):
+            os.makedirs(f'output/run_sem/{self.tag}')
         self.configs = configs
+        self.epochs = int(self.configs.epochs)
+        self.train_stratified = int(self.configs.train_stratified)
         self.second_interval = 1
         self.sample_per_second = 1000 / float(self.configs.rate.replace('ms', ''))
 
-    def training(self):
-        # Train in multiple epochs
+        self.current_epoch = None
+        # These variables will be set based on each run
+        self.run = None
+        self.movie = None
+        self.title = None
+        self.grain = None
+        # FPS is used to pad prediction boundaries, should be inferred from run
+        self.fps = None
+        self.is_train = None  # this variable is set depending on mode
+        # These variables will be set by read_train_valid_list
+        self.train_list = None
+        self.train_dataset = None
+        self.valid_dataset = None
+        # These variables will bet set after processing features
+        self.first_frame = None
+        self.last_frame = None
+        self.end_second = None
+        self.data_frames = None
+        self.combine_df = None
+        self.categories = None
+        self.categories_z = None
+
+    def iterate(self, is_eval=True):
         for e in range(self.epochs):
-            for index, run in enumerate(self.runs):
-                self.is_train = True
-                self.run = run
-                self.epoch = e
-                self.movie = run + '_trim.mp4'
-                self.title = os.path.basename(self.movie[:-4]) + tag
-                self.grain = 'coarse'
-                # FPS is used to pad prediction boundaries, should be inferred from run
-                if 'kinect' in run:
-                    self.fps = 25
-                else:
-                    self.fps = 30
-                self.infer_on_video(store_dataframes=True)
-            # Randomize order of video
-            random.shuffle(runs)
+            self.current_epoch = e
+            logger.info('Training')
+            if self.train_stratified:
+                self.train_dataset = self.train_list[e % 8]
+            else:
+                self.train_dataset = self.train_list
+            self.training()
+            if is_eval:
+                logger.info('Evaluating')
+                self.evaluating()
 
-    def process_features(self):
-        """
-        This method load pre-processed features then combine and align them temporally
-        :return:
-        """
-        # For some reason, some optical flow videos have inf value, TODO: investigate
-        pd.set_option('use_inf_as_na', True)
-        logger.info(f'Config {self.configs}')
+    def training(self):
+        # Randomize order of video
+        random.shuffle(self.train_dataset)
+        for index, run in enumerate(self.train_dataset):
+            self.is_train = True
+            logger.info(f'Training video {run}')
+            self.set_epoch_variables(run)
+            self.infer_on_video(store_dataframes=True)
 
-        objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
-        skel_csv = os.path.join(self.configs.skel_csv, self.run + '_skel_features.csv')
-        appear_csv = os.path.join(self.configs.appear_csv, self.run + '_appear.csv')
-        optical_csv = os.path.join(self.configs.optical_csv, self.run + '_video_features.csv')
+    def evaluating(self):
+        # Randomize order of video
+        random.shuffle(self.valid_dataset)
+        for index, run in enumerate(self.valid_dataset):
+            self.is_train = False
+            logger.info(f'Evaluating video {run}')
+            self.set_epoch_variables(run)
+            self.infer_on_video(store_dataframes=True)
 
-        # Load csv files and preprocess to get a scene vector
-        appear_df = preprocess_appear(appear_csv)
-        skel_df = preprocess_skel(skel_csv, use_position=False, standardize=True)
-        optical_df = preprocess_optical(optical_csv, standardize=True)
-        scene_embs, obj_handling_embs, categories = preprocess_objhand(objhand_csv, standardize=True)
-        # _, _, categories_z = preprocess_objhand(objhand_csv, standardize=True, use_depth=True)
-        # Get consistent start-end times and resampling rate for all features
-        combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
-                                                                  rate=self.configs.rate, fps=self.fps)
-        self.first_frame = first_frame
-        self.last_frame = data_frames[0].index[-1]
-        # This parameter is used to limit the time of ground truth video according to feature data
-        self.end_second = math.ceil(self.last_frame / self.fps)
-        self.data_frames = data_frames
-        self.combine_df = combine_df
-        self.categories = categories
-        # self.categories_z = categories_z
+    def parse_input(self, token, is_stratified=0) -> List:
+        # Whether the train.txt or 4.4.4_kinect
+        if '.txt' in token:
+            with open(token, 'r') as f:
+                list_input = f.readlines()
+                list_input = [x.strip() for x in list_input]
+            if is_stratified:
+                assert '.txt' in list_input[0], f"Attempting to stratify individual {list_input}"
+                return [self.parse_input(i) for i in list_input]
+            else:
+                # sum(list, []) to remove nested list
+                return sum([self.parse_input(i) for i in list_input], [])
+        else:
+            # degenerate case, e.g. 4.4.4_kinect
+            return [token]
+
+    def read_train_valid_list(self):
+        self.valid_dataset = self.parse_input(self.configs.valid)
+        self.train_list = self.parse_input(self.configs.train, is_stratified=self.train_stratified)
+
+    def set_epoch_variables(self, run):
+        self.run = run
+        self.movie = run + '_trim.mp4'
+        self.title = os.path.join(self.tag, os.path.basename(self.movie[:-4]) + self.tag)
+        self.grain = 'coarse'
+        # FPS is used to pad prediction boundaries, should be inferred from run
+        if 'kinect' in run:
+            self.fps = 25
+        else:
+            self.fps = 30
 
     def infer_on_video(self, store_dataframes=True):
         try:
@@ -410,12 +456,14 @@ class SEMContext:
                     categories = categories.ffill()
                     categories = categories.loc[self.data_frames[0].index, :]
                     self.data_frames.append(categories)
+                    # coordinates variable is determined by categories variable, thus having only 3 objects
                     coordinates = pd.DataFrame()
                     for index, r in categories.iterrows():
                         frame_series = pd.Series(dtype=float)
                         # There could be a case where there are two spray bottles near the hand: 6.3.6
+                        # When num_objects is large, there are nan in categories -> filter
                         # TODO: filter seen instances
-                        all_categories = set(r.values)
+                        all_categories = set(r.dropna().values)
                         for c in list(all_categories):
                             # Filter by category name and select distance
                             # Note: paper towel and towel causes duplicated columns in series,
@@ -440,10 +488,6 @@ class SEMContext:
                     self.data_frames.append(coordinates)
 
                 add_category_and_coordinates(self.categories, use_depth=False)
-                # Adding categories_z and coordinates_z to data_frame
-                # after training to avoid messing up with indexing in input_viz_refactored.ipynb
-                # TODO: uncomment this line after getting objhand features with depth
-                # add_category_and_coordinates(self.categories_z, use_depth=True)
 
             # logger.info(f'Features: {self.combine_df.columns}')
             # Note that without copy=True, this code will return a view and subsequent changes to x_train will change self.combine_df
@@ -496,7 +540,12 @@ class SEMContext:
                                                      columns=self.combine_df.columns)
                     self.data_frames.append(df_x_inferred_ori)
 
-                with open('output/run_sem/' + self.title + f'_inputdf_{self.epoch}.pkl', 'wb') as f:
+                # Adding categories_z and coordinates_z to data_frame
+                # after training to avoid messing up with indexing in input_viz_refactored.ipynb
+                # adding categories_z here instead of above to avoid messing up with indexing of inputdf
+                # TODO: uncomment this line after getting objhand features with depth
+                add_category_and_coordinates(self.categories_z, use_depth=True)
+                with open('output/run_sem/' + self.title + f'_inputdf_{self.current_epoch}.pkl', 'wb') as f:
                     pkl.dump(self.data_frames, f)
 
             logger.info(f'Done SEM {self.run}')
@@ -508,6 +557,43 @@ class SEMContext:
                 f.write(self.run + f'_{tag}' + '\n')
                 f.write(traceback.format_exc() + '\n')
             print(traceback.format_exc())
+
+    def process_features(self):
+        """
+        This method load pre-processed features then combine and align them temporally
+        :return:
+        """
+        # For some reason, some optical flow videos have inf value, TODO: investigate
+        pd.set_option('use_inf_as_na', True)
+        logger.info(f'Config {self.configs}')
+
+        objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
+        skel_csv = os.path.join(self.configs.skel_csv, self.run + '_skel_features.csv')
+        appear_csv = os.path.join(self.configs.appear_csv, self.run + '_appear.csv')
+        optical_csv = os.path.join(self.configs.optical_csv, self.run + '_video_features.csv')
+
+        # Load csv files and preprocess to get a scene vector
+        appear_df = preprocess_appear(appear_csv)
+        skel_df = preprocess_skel(skel_csv, use_position=int(self.configs.use_position), standardize=True)
+        optical_df = preprocess_optical(optical_csv, standardize=True)
+        # _, obj_handling_embs, categories = preprocess_objhand(objhand_csv, standardize=True, use_depth=False)
+        _, _, categories = preprocess_objhand(objhand_csv, standardize=True, use_depth=False,
+                                              num_objects=int(self.configs.num_objects))
+        # TODO: uncomment to test depth
+        # _, _, categories_z = preprocess_objhand(objhand_csv, standardize=True, use_depth=True)
+        _, obj_handling_embs, categories_z = preprocess_objhand(objhand_csv, standardize=True, use_depth=True,
+                                                                num_objects=int(self.configs.num_objects))
+        # Get consistent start-end times and resampling rate for all features
+        combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
+                                                                  rate=self.configs.rate, fps=self.fps)
+        self.first_frame = first_frame
+        self.last_frame = data_frames[0].index[-1]
+        # This parameter is used to limit the time of ground truth video according to feature data
+        self.end_second = math.ceil(self.last_frame / self.fps)
+        self.data_frames = data_frames
+        self.combine_df = combine_df
+        self.categories = categories
+        self.categories_z = categories_z
 
     def run_sem_and_plot(self, x_train):
         """
@@ -521,9 +607,9 @@ class SEMContext:
                                                 sample_per_second=self.sample_per_second)
         # Padding prediction boundaries, could be changed to have higher resolution but not necessary
         pred_boundaries = np.hstack([[0] * round(self.first_frame / self.fps / self.second_interval), pred_boundaries]).astype(
-            bool)
+            int)
         logger.info(f'Total # of pred_boundaries: {sum(pred_boundaries)}')
-        with open('output/run_sem/' + self.title + f'_diagnostic_{self.epoch}.pkl', 'wb') as f:
+        with open('output/run_sem/' + self.title + f'_diagnostic_{self.current_epoch}.pkl', 'wb') as f:
             pkl.dump(self.sem_model.results.__dict__, f)
 
         # Process segmentation data (ground_truth)
@@ -547,37 +633,27 @@ class SEMContext:
             pkl.dump(gt_freqs, f)
         plot_diagnostic_readouts(gt_freqs, self.sem_model.results, frame_interval=self.second_interval * self.sample_per_second,
                                  offset=self.first_frame / self.fps / self.second_interval,
-                                 title=self.title + f'_diagnostic_{self.grain}_{self.epoch}',
+                                 title=self.title + f'_diagnostic_{self.grain}_{self.current_epoch}',
                                  bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
 
         plot_pe(self.sem_model.results, frame_interval=self.second_interval * self.sample_per_second,
-                offset=self.first_frame / self.fps / self.second_interval, title=self.title + f'_PE_{self.grain}_{self.epoch}')
+                offset=self.first_frame / self.fps / self.second_interval,
+                title=self.title + f'_PE_{self.grain}_{self.current_epoch}')
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
-        with open('output/run_sem/results_sem_run_pearson.csv', 'a') as f:
+        with open('output/run_sem/results_sem_corpus.csv', 'a') as f:
             writer = csv.writer(f)
-            writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models), self.epoch,
-                             sum(pred_boundaries), sem_init_kwargs, tag, mean_pe, std_pe, pearson_r])
+            writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models), self.current_epoch,
+                             sum(pred_boundaries), sem_init_kwargs, tag, mean_pe, std_pe, pearson_r, self.is_train])
 
 
 if __name__ == "__main__":
     args = parse_config()
-    # run could be a list of videos to run or just a video name
-    if '.txt' in args.run:
-        # merge_feature_lists(args.run)
-        choose = ['kinect']
-        # choose = ['C1']
-        with open(args.run, 'r') as f:
-            runs = f.readlines()
-            for c in choose:
-                runs = [run.strip() for run in runs if contain_substr(run, [c])]
-    else:
-        runs = [args.run]
 
-    if not os.path.exists('output/run_sem/results_sem_run_pearson.csv'):
-        csv_headers = ['run', 'self.grain', 'bicorr', 'percentile', 'n_event_models', 'epoch',
-                       'model_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r']
-        with open('output/run_sem/results_sem_run_pearson.csv', 'w') as f:
+    if not os.path.exists('output/run_sem/results_sem_corpus.csv'):
+        csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'epoch',
+                       'model_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train']
+        with open('output/run_sem/results_sem_corpus.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
 
@@ -598,7 +674,12 @@ if __name__ == "__main__":
     # set default hyper parameters for each run, can be overridden later
     run_kwargs = dict()
     sem_model = SEM(**sem_init_kwargs)
-    tag = 'mar_11_like_09_lr_1e-2_nh16_pair_nopos'
-    context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, tag=tag, epochs=int(args.epochs), configs=args,
-                             runs=runs)
-    context_sem.training()
+    tag = 'mar_21_depth_pos_3'
+    context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, tag=tag, configs=args)
+    try:
+        context_sem.read_train_valid_list()
+        context_sem.iterate(is_eval=True)
+    except Exception as e:
+        with open('output/run_sem/sem_error.txt', 'a') as f:
+            f.write(traceback.format_exc() + '\n')
+            print(traceback.format_exc(e))

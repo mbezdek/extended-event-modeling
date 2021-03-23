@@ -49,6 +49,8 @@ def parse_config():
     # These arguments can be overridden by command line
     parser.add_argument("--run")
     parser.add_argument("--tag")
+    parser.add_argument("--train")
+    parser.add_argument("--valid")
     args = parser.parse_args(remaining_argv)
 
     return args
