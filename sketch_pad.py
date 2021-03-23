@@ -461,22 +461,26 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import statsmodels.api as sm
 # load data frame
-df = pd.read_csv('output/run_sem/results_sem_run_new.csv')
+df = pd.read_csv('output/run_sem/results_sem_run_pearson.csv')
 df['chapter'] = df['run'].apply(lambda x: int(x[2]))
 # indices_sorted = df[df['chapter'] == 2]['bicorr'].sort_values().index
 # df.drop(indices_sorted[:30], inplace=True)
 # Sometimes all runs haven't finished, filter epochs having all runs
-li = []
-for i in range(30):
-    sr = df[(df['epoch'] == i)]
-    if sr.shape[0] == 148:
-        li.append(sr.mean())
-dump_df = pd.concat(li, axis=1).T
-df = df[df['epoch'] < dump_df.index[-1]]
+# li = []
+# for i in range(30):
+#     sr = df[(df['epoch'] == i)]
+#     if sr.shape[0] == 148:
+#         li.append(sr.mean())
+# dump_df = pd.concat(li, axis=1).T
+# df = df[df['epoch'] < dump_df.index[-1]]
 # Define interested metrics
-numerics = ['mean_pe', 'bicorr', 'epoch', 'n_event_models', 'model_boundaries']
-sns.pairplot(df[numerics + ['chapter']], hue='chapter', palette='bright',
-             markers=['o', 'v', 's', 'D'], kind='reg', plot_kws={'scatter_kws': {'alpha': 0.3}})
+
+numerics = ['mean_pe', 'pearson_r', 'epoch', 'n_event_models', 'model_boundaries']
+df_select = df[df['tag'].isin(['mar_11_like_09_lr_1e-2_nh16', 'mar_09_ind_alfa1e-9_lmda1e9'])]
+df_select['nh'] = np.select([df_select['tag'].str.contains('nh16'), ~df_select['tag'].str.contains('nh16')], [16, 32])
+sns.pairplot(df_select[numerics + ['tag']], hue='tag', palette='bright',
+             markers=['o', 'v', 'D'], kind='reg', plot_kws={'scatter_kws': {'alpha': 0.3}})
+sns.pairplot(df_select[numerics], palette='bright', kind='reg', plot_kws={'scatter_kws': {'alpha': 0.3}})
 plt.savefig('scatter_matrix_chapter.png')
 plt.show()
 sns.pairplot(df[numerics], hue='epoch', palette='viridis', vars=numerics)
@@ -493,7 +497,7 @@ b_model.summary()
 # Run regression model, accounting for each run.
 runs = pd.get_dummies(df['run'])
 df_std = (df - df.mean()) / df.std()
-df_std = (df - df.mean()) / df.std()
+df_std = (df_select - df_select.mean()) / df_select.std()
 df_std = pd.concat([df_std, runs], axis=1)
 # drop columns that I don't want to include in the model
 df_run = df_std.drop(['chapter', 'mean_pe', 'std_pe', 'n_event_models', 'percentile'], axis=1)
@@ -526,7 +530,7 @@ def get_pearson_r(run, tag, epoch):
     r, p = stats.pearsonr(pred_boundaries_gaussed[:last], gt_freqs[:last])
     return r
 
-df['pearson_r'] = df.apply(lambda x: get_pearson_r(x.run, x.tag, x.epoch), axis=1)
+df['pearson_r'] = df.apply(lambda x: get_pearson_r(x.run, x.tag, x.current_epoch), axis=1)
 # Showing that conditioning on n_event_models is a bad idea
 agg = df.groupby('chapter').mean()
 fig, axs = plt.subplots(ncols=2)

@@ -8,7 +8,7 @@
 
 
 cd /scratch/n.tan/extended-event-modeling/
-source activate tf
+source activate pt-tf-37
 
 #rm intersect_features.txt appear_complete.txt objhand_complete.txt skel_complete.txt vid_complete.txt
 #rm output/run_sem/* output/vid/* output/objhand/* output/appear/* output/skel/*
@@ -23,5 +23,5 @@ source activate tf
 input=`head -n $SLURM_ARRAY_TASK_ID $1 | tail -n 1`
 echo $input
 export OMP_NUM_THREADS=1
-srun python run_sem_pretrain.py -c configs/config_run_sem.ini --run $input
-# sbatch --array 1-4 --cpus-per-task 4 --job-name individual model_individual.sh chapter_1_sorted.txt
+srun python run_sem_pretrain.py -c configs/config_run_sem.ini --train $input --valid $input
+# sbatch --array 1-10 --cpus-per-task 4 --job-name individual model_individual.sh intersect_features_1.txt
