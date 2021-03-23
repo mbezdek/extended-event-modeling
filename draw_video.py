@@ -21,6 +21,7 @@ import joblib
 from utils import get_point_biserial, get_binned_prediction
 import scipy.stats as stats
 
+
 def remove_number(string):
     for i in range(100):
         string = string.replace(str(i), '')
@@ -84,7 +85,10 @@ def drawskel(frame_number, frame, skel_df, color=(255, 0, 0), thickness=2):
         jy = int(r['J' + str(joint) + '_2D_Y'].values[0] * s)
         jtrack = r['J' + str(joint) + '_Tracked'].values[0]
         if (all(x > 0 for x in [jx, jy])):
-            cv2.circle(frame, (jx, jy), 4, color, -1)
+            if joint == 11:
+                cv2.circle(frame, (jx, jy), 4, (0, 255, 255), -1)
+            else:
+                cv2.circle(frame, (jx, jy), 2, color, -1)
     #             if jtrack=='Tracked':
     #                 #draw tracked joint
     #                 cv2.circle(frame,(jx,jy),4,(0,255,0),-1)
@@ -108,48 +112,11 @@ def get_nearest(emb_vector: np.ndarray, glove=False):
     return res
 
 
-def drawobj(frame_number, frame, objdf, color=(255, 0, 0), thickness=1):
-    odf = objdf[objdf.index == frame_number]
-    odf = odf[odf.columns[~odf.isna().any()].tolist()]
-    instances = set([x.split('_')[0] for x in odf.columns])
+def drawobj(instances, frame, odf, color=(255, 0, 0), thickness=1):
+    # odf = objdf[objdf.index == frame_number]
+    # odf = odf[odf.columns[~odf.isna().any()].tolist()]
+    # instances = set([x.split('_')[0] for x in odf.columns])
     # TODO: change to 1080 when testing depth
-    s = frame.shape[0] / 540
-    for i in instances:
-        xmin = odf[i + '_x'] * s
-        ymin = odf[i + '_y'] * s
-        xmax = xmin + (odf[i + '_w'] * s)
-        ymax = ymin + (odf[i + '_h'] * s)
-        try:
-            conf_score = float(odf[i + '_confidence'])
-            color = tuple(map(int, np.array(color) * conf_score))
-        except:
-            color = (0, 0, 255)
-        cv2.rectangle(frame, pt1=(int(xmin), int(ymin)),
-                      pt2=(int(xmax), int(ymax)),
-                      color=color, thickness=thickness)
-        cv2.putText(frame, text=i,
-                    org=(int(xmin), int(ymax - 5)),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.4,
-                    color=color)
-    # Code to also get nearest objects in Glove for input categories
-    try:
-        sr = objdf.loc[frame_number].dropna().filter(regex='_dist$').rename(lambda x: remove_number(x).replace('_dist', ''))
-        arr = get_emb_category(sr, emb_dim=50)
-        nearest_objects = get_nearest(arr, glove=True)
-        for index, instance in enumerate(nearest_objects[:3]):
-            cv2.putText(frame, text=str(instance), org=(frame.shape[1] - 420, 20 + 20 * index),
-                        fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
-                        color=(255, 0, 0))
-    except Exception as e:
-        print(e)
-    return frame
-
-
-def drawobj_z(frame_number, frame, objdf_z, color=(255, 0, 0), thickness=1):
-    odf = objdf_z[objdf_z.index == frame_number]
-    odf = odf[odf.columns[~odf.isna().any()].tolist()]
-    instances = set([x.split('_')[0] for x in odf.columns])
     s = frame.shape[0] / 1080.0
     for i in instances:
         xmin = odf[i + '_x'] * s
@@ -164,24 +131,34 @@ def drawobj_z(frame_number, frame, objdf_z, color=(255, 0, 0), thickness=1):
         cv2.rectangle(frame, pt1=(int(xmin), int(ymin)),
                       pt2=(int(xmax), int(ymax)),
                       color=color, thickness=thickness)
-        cv2.putText(frame, text=i,
-                    org=(int(xmin), int(ymax - 5)),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                    fontScale=0.4,
-                    color=color)
-
+        # cv2.putText(frame, text=i,
+        #             org=(int(xmin), int(ymax - 5)),
+        #             fontFace=cv2.FONT_HERSHEY_SIMPLEX,
+        #             fontScale=0.4,
+        #             color=color)
+    # Code to also get nearest objects in Glove for input categories
+    # try:
+    #     sr = objdf.loc[frame_number].dropna().filter(regex='_dist$').rename(lambda x: remove_number(x).replace('_dist', ''))
+    #     arr = get_emb_category(sr, emb_dim=50)
+    #     nearest_objects = get_nearest(arr, glove=True)
+    #     for index, instance in enumerate(nearest_objects[:3]):
+    #         cv2.putText(frame, text=str(instance), org=(frame.shape[1] - 420, 20 + 20 * index),
+    #                     fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+    #                     color=(255, 0, 0))
+    # except Exception as e:
+    #     print(e)
     return frame
 
 
 def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, get_img=False):
     outframe = deepcopy(anchored_frames[frame_slider])
-    outframe_z = deepcopy(outframe)
     # draw skeleton here
     if skel_checkbox:
         try:
 
             # outframe = drawskel(frame_slider,outframe,skel_df)
             outframe = drawskel(frame_slider, outframe, pca_input_df, color=(255, 0, 0))
+            # TODO: comment this line if not using position in training SEM.
             outframe = drawskel(frame_slider, outframe, pred_skel_df, color=(0, 255, 0))
         except:
             cv2.putText(outframe, 'No skeleton data', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
@@ -190,19 +167,27 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
     if obj_checkbox:
         try:
             # Draw ground truth objects
-            outframe = drawobj(frame_slider, outframe, objdf)
-            # TODO: uncomment to test depth
-                # outframe_z = drawobj_z(frame_slider, outframe_z, objdf_z, color=(0, 255, 0))
-                # Draw nearest objects (in the video)
+            odf = objdf[objdf.index == frame_slider]
+            odf = odf[odf.columns[~odf.isna().any()].tolist()]
+            instances = set([x.split('_')[0] for x in odf.columns])
+            outframe = drawobj(instances, outframe, odf, color=(255, 0, 0))
+            # This to draw nearest objects in the same frame
+            odf_z = objdf_z[objdf_z.index == frame_slider]
+            odf_z = odf_z[odf_z.columns[~odf_z.isna().any()].tolist()]
+            instances_z = set([x.split('_')[0] for x in odf_z.columns])
+            intersect_instances = list(set(instances_z).intersection(set(instances)))
+            diff_instances = list(set(instances_z).difference(set(instances)))
+            outframe = drawobj(intersect_instances, outframe, odf_z, color=(255, 255, 0))
+            outframe = drawobj(diff_instances, outframe, odf_z, color=(0, 0, 255))
+            # Draw nearest words (in the video)
             nearest_objects = get_nearest(pred_objhand.loc[frame_slider, :].values)
             for index, instance in enumerate(nearest_objects[:3]):
-                                                                      cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 140, 20 + 20 * index),
-                                                                      fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
-                                                                      color=(0, 255, 0))
+                cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 140, 20 + 20 * index),
+                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                            color=(0, 255, 0))
             # Draw nearest objects (Glove corpus)
-                #         glove_nearest_objects = glove_vectors.most_similar([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)])
-                #         glove_nearest_objects = [obj_score[0] for obj_score in glove_nearest_objects]
-            glove_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)], glove=True)
+            glove_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
+                                                glove=True)
             for index, instance in enumerate(glove_nearest_objects[:3]):
                 cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 280, 20 + 20 * index),
                             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
@@ -214,6 +199,15 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
                 color=(0, 255, 0))
 
+    cv2.putText(outframe, text=f'RED: Depth', org=(10, 20),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                color=(0, 0, 255))
+    cv2.putText(outframe, text=f'BLUE: Screen', org=(10, 40),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                color=(255, 0, 0))
+    cv2.putText(outframe, text=f'CYAN: Intersect', org=(10, 60),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                color=(255, 255, 0))
     # add Segmentation flag
     index = pred_objhand.index.get_indexer([frame_slider])[0]
     if sem_readouts['e_hat'][index] != sem_readouts['e_hat'][index - 1]:
@@ -225,14 +219,52 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
         return outframe
 
     # embedding image on axis to align
-    # TODO: uncomment to test depth
-    #     fig,ax = plt.subplots(nrows=1, ncols=2, figsize=(15, 5))
-    #     ax[0].imshow(cv2.cvtColor(outframe, cv2.COLOR_BGR2RGB))
-    # ax[1].imshow(cv2.cvtColor(cv2.resize(outframe_z, dsize=None, fx=1, fy=1), cv2.COLOR_BGR2RGB))
     fig, ax = plt.subplots(nrows=1, ncols=1)
     ax.imshow(cv2.cvtColor(outframe, cv2.COLOR_BGR2RGB))
     plt.close(fig)
     return fig
+
+
+def impose_rainbow_events(ax, fig):
+    cm = plt.get_cmap('gist_rainbow')
+    post = sem_readouts['e_hat']
+    boundaries = sem_readouts['boundaries']
+    NUM_COLORS = post.max()
+    # Hard-code 40 events for rainbow to be able to compare across epochs
+    # NUM_COLORS = 30
+    for i, (b, e) in enumerate(zip(boundaries, post)):
+        if b != 0:
+            second = i / frame_interval + offset
+            if b == 1:
+                ax.axvline(second, linestyle=(0, (5, 10)), alpha=0.3, color=cm(1. * e / NUM_COLORS), label='Old Event')
+            elif b == 2:
+                ax.axvline(second, linestyle='solid', alpha=0.3, color=cm(1. * e / NUM_COLORS), label='New Event')
+            elif b == 3:
+                ax.axvline(second, linestyle='dotted', alpha=0.3, color=cm(1. * e / NUM_COLORS), label='Restart Event')
+    fig.colorbar(matplotlib.cm.ScalarMappable(cmap=cm, norm=matplotlib.colors.Normalize(vmin=0, vmax=NUM_COLORS, clip=False)),
+                 orientation='horizontal')
+
+
+def impose_metrics(ax, fig):
+    pred_boundaries = get_binned_prediction(sem_readouts['post'], second_interval=second_interval,
+                                            sample_per_second=3)
+    # Padding prediction boundaries, could be changed to have higher resolution but not necessary
+    pred_boundaries = np.hstack([[0] * round(first_frame / fps / second_interval), pred_boundaries]).astype(bool)
+    #     gt_freqs_local = gaussian_filter1d(gt_freqs, 2)
+    last = min(len(pred_boundaries), len(gt_freqs))
+    bicorr = get_point_biserial(pred_boundaries[:last], gt_freqs[:last])
+    pred_boundaries_gaussed = gaussian_filter1d(pred_boundaries.astype(float), 1)
+    pearson_r, p = stats.pearsonr(pred_boundaries_gaussed[:last], gt_freqs[:last])
+    ax.text(0.1, 0.3, f'bicorr={bicorr:.3f}, pearson={pearson_r:.3f}', fontsize=14)
+    ax.set_ylim([0, 0.4])
+
+
+def impose_line_boundaries(ax, fig):
+    from matplotlib.lines import Line2D
+    linestyles = ['dashed', 'solid', 'dotted']
+    lines = [Line2D([0], [0], color='black', linewidth=1, linestyle=ls) for ls in linestyles]
+    labels = ['Old Event', 'New Event', 'Restart Event']
+    ax.legend(lines, labels, loc='upper right')
 
 
 def plot_diagnostic_readouts(frame_slider, run_select, title='', get_img=False):
@@ -243,42 +275,11 @@ def plot_diagnostic_readouts(frame_slider, run_select, title='', get_img=False):
     ax.set_title('Diagnostic Readouts ' + run_select)
     colors = {'new': 'red', 'old': 'green', 'restart': 'blue', 'repeat': 'purple'}
 
-    latest = 0
-    current = 0
-    post = sem_readouts['e_hat']
-    switch = []
-    for i in post:
-        if i != current:
-            if i > latest:
-                switch.append('new_post')
-                latest = i
-            else:
-                switch.append('old_post')
-            current = i
-        else:
-            switch.append('current_post')
+    impose_rainbow_events(ax, fig)
+    impose_line_boundaries(ax, fig)
+    impose_metrics(ax, fig)
 
-    df = pd.DataFrame(switch, columns=['switch'], index=pred_objhand.index)
-    pred_boundaries = get_binned_prediction(sem_readouts['post'], second_interval=second_interval,
-                                            sample_per_second=3)
-    # Padding prediction boundaries, could be changed to have higher resolution but not necessary
-    pred_boundaries = np.hstack([[0] * round(first_frame / fps / second_interval), pred_boundaries]).astype(bool)
-    #     gt_freqs_local = gaussian_filter1d(gt_freqs, 2)
-    last = min(len(pred_boundaries), len(gt_freqs))
-    bicorr = get_point_biserial(pred_boundaries[:last], gt_freqs[:last])
-    pred_boundaries_gaussed = gaussian_filter1d(pred_boundaries.astype(float), 1)
-    pearson_r, p = stats.pearsonr(pred_boundaries_gaussed[:last], gt_freqs[:last])
-    ax.vlines(df[df['switch'] == 'new_post'].index / fps, ymin=0, ymax=1, alpha=0.5, label='Switch to New '
-                                                                                           'Event',
-              color=colors['new'], linestyles='dotted')
-    ax.vlines(df[df['switch'] == 'old_post'].index / fps, ymin=0, ymax=1, alpha=0.5, label='Switch to Old '
-                                                                                           'Event',
-              color=colors['old'], linestyles='dotted')
     ax.axvline(frame_slider / fps, linewidth=2, alpha=0.5, color='r')
-
-    ax.legend()
-    ax.text(0.1, 0.3, f'bicorr={bicorr:.3f}, pearson={pearson_r:.3f}', fontsize=14)
-    ax.set_ylim([0, 0.4])
     if get_img:
         from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
         #         canvas = FigureCanvas(fig)
@@ -298,19 +299,23 @@ def draw_video():
     if os.path.exists(output_video_path):
         print('Video already drawn!!!')
         return
+    else:
+        print(f'Drawing {output_video_path}')
 
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     cv2_writer = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
-                                 frameSize=(640, 960), isColor=True)
+                                 frameSize=(640, 480), isColor=True)
     for frame_id, frame in anchored_frames.items():
         img = draw_frame_resampled(frame_id, skel_checkbox=True, obj_checkbox=True, run_select=run_select, get_img=True)
         img = cv2.resize(img, dsize=(640, 480))
-        diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
-        diagnostic = cv2.resize(diagnostic, dsize=(640, 480))
-        concat = np.concatenate([img, diagnostic], axis=0)
-        cv2_writer.write(concat)
+        cv2_writer.write(img)
+        # diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
+        # diagnostic = cv2.resize(diagnostic, dsize=(640, 480))
+        # concat = np.concatenate([img, diagnostic], axis=0)
+        # cv2_writer.write(concat)
     cv2_writer.release()
     print(f'Done {output_video_path}')
+
 
 import sys
 
@@ -323,22 +328,25 @@ else:
     run_select = sys.argv[1]
     tag = sys.argv[2]
     epoch = sys.argv[3]
+run_select = run_select.replace('_kinect', '')
 second_interval = 1  # interval to group boundaries
 frame_per_second = 3  # sampling rate to input to SEM
 fps = 25.0  # kinect videos
 frame_interval = frame_per_second * second_interval
 # def listen_to_run(run_select):
 skel_df = pd.read_csv(f'output/skel/{run_select}_kinect_skel_features.csv')
-anchored_frames = joblib.load(f'output/run_sem/{run_select}_kinect_trimjan_27_pca_frames.joblib')
-inputdf = pkl.load(open(f'output/run_sem/{run_select}_kinect_trim{tag}_inputdf{epoch}.pkl', 'rb'))
+anchored_frames = joblib.load(f'output/run_sem/frames/{run_select}_kinect_trimjan_27_pca_frames.joblib')
+inputdf = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_inputdf{epoch}.pkl', 'rb'))
 glove_vectors = pkl.load(open('gen_sim_glove_50.pkl', 'rb'))
-gt_freqs = pkl.load(open(f'output/run_sem/{run_select}_kinect_trim{tag}_gtfreqs.pkl', 'rb'))
-sem_readouts = pkl.load(open(f'output/run_sem/{run_select}_kinect_trim{tag}_diagnostic{epoch}.pkl', 'rb'))
+gt_freqs = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_gtfreqs.pkl', 'rb'))
+sem_readouts = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_diagnostic{epoch}.pkl', 'rb'))
 
 first_frame = inputdf[0].index[0]
 offset = first_frame / fps / second_interval
 
 objdf = inputdf[5]
+# TODO: uncomment to test depth
+objdf_z = inputdf[9]
 # TODO: uncomment to test depth
 # objdf_z = inputdf[9]
 skel_df_post = inputdf[2]
@@ -369,7 +377,7 @@ for i in range(25):
     # Prepare a dictionary of word2vec for this particular run
     categories = set()
     for c in inputdf[4].columns:
-        categories.update(inputdf[4].loc[:, c])
+        categories.update(inputdf[4].loc[:, c].dropna())
     if None in categories:
         categories.remove(None)
 
