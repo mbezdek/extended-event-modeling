@@ -6,7 +6,7 @@ import traceback
 
 sys.path.append('.')
 sys.path.append('../pysot')
-from utils import logger, parse_config, contain_substr
+from utils import parse_config, contain_substr
 import pandas as pd
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
@@ -16,7 +16,16 @@ from joblib import Parallel, delayed
 import glob
 import joblib
 import cv2
+import logging
 
+# Set-up logger
+logger = logging.getLogger(__name__)
+logger.setLevel(os.environ.get('LOGLEVEL', logging.INFO))
+# must have a handler, otherwise logging will use lastresort
+c_handler = logging.StreamHandler()
+LOGFORMAT = '%(name)s - %(levelname)s - %(message)s'
+c_handler.setFormatter(logging.Formatter(LOGFORMAT))
+logger.addHandler(c_handler)
 
 def get_depth_region_sparse(pixelwise_matrix, mask_matrix, xmin, xmax, ymin, ymax):
     # Coordinates range from 0-1079
@@ -153,9 +162,13 @@ def gen_objhand_feature(args, run, tag):
         # ------Initialize camera model for the run------
         skel_df = pd.read_csv(skel_csv)
         # Choose rows of skeleton df to sample for 3D and 2D coordinates:
-        ptimes = np.arange(500, 10000, 25)
+        ptimes = np.arange(skel_df.index[0], skel_df.index[-1], 25)
         # extract object and image points:
         imagePoints, objectPoints = sample_joints(skel_df, ptimes)
+        # If there are null values in imagePoints or objectPoints, camera calibration is null as well, making all xyz_3d null
+        null_indices = np.isnan(np.hstack([imagePoints, objectPoints])).any(axis=1)
+        imagePoints = imagePoints[~null_indices]
+        objectPoints = objectPoints[~null_indices]
         # Estimate the camera matrix
         idim = (1920, 1080)
         mtx = cv2.initCameraMatrix2D([objectPoints], [imagePoints], idim)
@@ -164,12 +177,12 @@ def gen_objhand_feature(args, run, tag):
                                                            flags=cv2.CALIB_USE_INTRINSIC_GUESS)
 
         # ------Iterate through key frames and calculate 3D coordinates for objects------
-        all_arrays = glob.glob(f'output/depth/{run}/*.joblib')
+        all_arrays = glob.glob(f"output/depth/{run.replace('_kinect', '')}/*.joblib")
         key_frame_ids = list(set([int(os.path.basename(arr).split('_')[0]) for arr in all_arrays]))
         depth_df = pd.DataFrame(index=track_df.index, columns=['3D_x', '3D_y', 'z'], dtype=np.float)
         for frame_id in sorted(key_frame_ids):
-            pixel_array = joblib.load(f'output/depth/{run}/{frame_id}_pixel_array.joblib')
-            mask_array = joblib.load(f'output/depth/{run}/{frame_id}_mask_array.joblib')
+            pixel_array = joblib.load(f"output/depth/{run.replace('_kinect', '')}/{frame_id}_pixel_array.joblib")
+            mask_array = joblib.load(f"output/depth/{run.replace('_kinect', '')}/{frame_id}_mask_array.joblib")
             # For each key frame, select existing objects and calculate depth
             for line, row in track_df[track_df['frame'] == frame_id].iterrows():
                 xmin, ymin, xmax, ymax = row['x'], row['y'], row['x'] + row['w'], row['y'] + row['h']
@@ -181,6 +194,7 @@ def gen_objhand_feature(args, run, tag):
                 region_depth /= 1000
                 x_cent = (xmin + xmax) / 2
                 y_cent = (ymin + ymax) / 2
+                # returned values can be null, making dist_z (later) null. One reason is null is camera calibration
                 xyz_3d = find_3D_point(cameraPoint=(x_cent, y_cent), depthPoint=region_depth, mtx=mtx, rvecs=rvecs, tvecs=tvecs)
                 if np.any(pd.notnull(depth_df.iloc[line, :])):
                     logger.warning('the same object at a particular frame is assigned twice!!')
@@ -193,6 +207,7 @@ def gen_objhand_feature(args, run, tag):
         hand_df = skel_df.loc[:, ['sync_time', 'J11_2D_X', 'J11_2D_Y', 'J11_3D_X', 'J11_3D_Y', 'J11_3D_Z']]
         hand_df['frame'] = (hand_df.loc[:, 'sync_time'] * fps).apply(round).astype(np.int)
         hand_df.set_index('frame', drop=False, verify_integrity=False, inplace=True)
+        # Converting from second to frame can introduce duplicated frames -> remove
         hand_df = hand_df[~hand_df.index.duplicated(keep='first')]
         # Process tracking result to create object dataframe
         final_frameid = max(max(hand_df['frame']), max(track_df['frame']))
@@ -378,7 +393,7 @@ if __name__ == '__main__':
     if '.txt' not in args.run:
         gen_objhand_feature(args, runs[0], tag)
     else:
-        res = Parallel(n_jobs=4)(delayed(
+        res = Parallel(n_jobs=16)(delayed(
             gen_objhand_feature)(args, run, tag) for run in runs)
         track_csvs, skel_csvs, output_csvs = zip(*res)
         results = dict()
