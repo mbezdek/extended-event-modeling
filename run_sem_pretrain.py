@@ -54,7 +54,7 @@ def preprocess_optical(vid_csv, standardize=True):
     return vid_df
 
 
-def preprocess_skel(skel_csv, use_position=False, standardize=True):
+def preprocess_skel(skel_csv, use_position=0, standardize=True):
     skel_df = pd.read_csv(skel_csv, index_col='frame')
     skel_df.drop(['sync_time', 'raw_time', 'body', 'J1_dist_from_J1'], axis=1, inplace=True)
     if use_position:
@@ -263,9 +263,9 @@ def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=
     cm = plt.get_cmap('gist_rainbow')
     post = sem_readouts.e_hat
     boundaries = sem_readouts.boundaries
-    # NUM_COLORS = post.max()
+    NUM_COLORS = post.max()
     # Hard-code 40 events for rainbow to be able to compare across events
-    NUM_COLORS = 30
+    # NUM_COLORS = 30
     """
      ('loosely dotted',        (0, (1, 10))),
      ('dotted',                (0, (1, 1))),
@@ -379,7 +379,8 @@ class SEMContext:
 
     def iterate(self, is_eval=True):
         for e in range(self.epochs):
-            self.current_epoch = e
+            # epoch counting from 1 for inputdf and diagnostic.
+            self.current_epoch = e + 1
             logger.info('Training')
             if self.train_stratified:
                 self.train_dataset = self.train_list[e % 8]
@@ -396,7 +397,7 @@ class SEMContext:
         for index, run in enumerate(self.train_dataset):
             self.is_train = True
             logger.info(f'Training video {run}')
-            self.set_epoch_variables(run)
+            self.set_run_variables(run)
             self.infer_on_video(store_dataframes=True)
 
     def evaluating(self):
@@ -405,7 +406,7 @@ class SEMContext:
         for index, run in enumerate(self.valid_dataset):
             self.is_train = False
             logger.info(f'Evaluating video {run}')
-            self.set_epoch_variables(run)
+            self.set_run_variables(run)
             self.infer_on_video(store_dataframes=True)
 
     def parse_input(self, token, is_stratified=0) -> List:
@@ -421,6 +422,9 @@ class SEMContext:
                 # sum(list, []) to remove nested list
                 return sum([self.parse_input(i) for i in list_input], [])
         else:
+            # To be consistent when config is stratified
+            if is_stratified:
+                return [[token]]
             # degenerate case, e.g. 4.4.4_kinect
             return [token]
 
@@ -428,7 +432,7 @@ class SEMContext:
         self.valid_dataset = self.parse_input(self.configs.valid)
         self.train_list = self.parse_input(self.configs.train, is_stratified=self.train_stratified)
 
-    def set_epoch_variables(self, run):
+    def set_run_variables(self, run):
         self.run = run
         self.movie = run + '_trim.mp4'
         self.title = os.path.join(self.tag, os.path.basename(self.movie[:-4]) + self.tag)
@@ -496,7 +500,8 @@ class SEMContext:
             # PCA transform input features. Also, get inverted vector for visualization
             if int(self.configs.pca):
                 # pca = PCA(float(self.configs.pca_explained), whiten=True)
-                pca = PCA(int(self.configs.pca_dim), whiten=True)
+                # pca = PCA(int(self.configs.pca_dim), whiten=True)
+                pca = pkl.load(open('pca.pkl', 'rb'))
                 try:
                     x_train_pca = pca.fit_transform(x_train[:, 2:])
                     x_train_inverted = pca.inverse_transform(x_train_pca)
@@ -567,15 +572,21 @@ class SEMContext:
         pd.set_option('use_inf_as_na', True)
         logger.info(f'Config {self.configs}')
 
+        logger.info(f'Loading features from csv formats')
         objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
         skel_csv = os.path.join(self.configs.skel_csv, self.run + '_skel_features.csv')
         appear_csv = os.path.join(self.configs.appear_csv, self.run + '_appear.csv')
         optical_csv = os.path.join(self.configs.optical_csv, self.run + '_video_features.csv')
 
+        logger.info(f'Processing features...')
         # Load csv files and preprocess to get a scene vector
+        logger.info(f'Processing Appear features...')
         appear_df = preprocess_appear(appear_csv)
+        logger.info(f'Processing Skel features...')
         skel_df = preprocess_skel(skel_csv, use_position=int(self.configs.use_position), standardize=True)
+        logger.info(f'Processing Optical features...')
         optical_df = preprocess_optical(optical_csv, standardize=True)
+        logger.info(f'Processing Objhand features...')
         # _, obj_handling_embs, categories = preprocess_objhand(objhand_csv, standardize=True, use_depth=False)
         _, _, categories = preprocess_objhand(objhand_csv, standardize=True, use_depth=False,
                                               num_objects=int(self.configs.num_objects))
@@ -652,7 +663,7 @@ if __name__ == "__main__":
 
     if not os.path.exists('output/run_sem/results_sem_corpus.csv'):
         csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'epoch',
-                       'model_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train']
+                       'number_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train']
         with open('output/run_sem/results_sem_corpus.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
@@ -664,7 +675,7 @@ if __name__ == "__main__":
     optimizer_kwargs = dict(lr=1e-2, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0, amsgrad=False)
     # these are the parameters for the event model itself.
     f_opts = dict(var_df0=50., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
-                  n_epochs=10, t=4, batch_update=True, n_hidden=16, variance_window=None, optimizer_kwargs=optimizer_kwargs)
+                  n_epochs=10, t=4, batch_update=True, n_hidden=int(args.n_hidden), variance_window=None, optimizer_kwargs=optimizer_kwargs)
     # set the hyper parameters for segmentation
     lmda = float(args.lmda)  # stickyness parameter (prior)
     alfa = float(args.alfa)  # concentration parameter (prior)
@@ -674,7 +685,7 @@ if __name__ == "__main__":
     # set default hyper parameters for each run, can be overridden later
     run_kwargs = dict()
     sem_model = SEM(**sem_init_kwargs)
-    tag = 'mar_21_depth_pos_3'
+    tag = 'mar_31_depth_3_nopos_shared_pca'
     context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, tag=tag, configs=args)
     try:
         context_sem.read_train_valid_list()

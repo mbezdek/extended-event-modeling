@@ -340,6 +340,7 @@ class ColorBGR:
     yellow = (0, 255, 255)
     magenta = (255, 0, 255)
     cyan = (255, 255, 0)
+    mild_cyan = (100, 100, 0)
 
 
 class ColorRef:
