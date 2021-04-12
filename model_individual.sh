@@ -1,8 +1,6 @@
 #!/bin/bash
 
-#SBATCH --array 1-4
 #SBATCH --ntasks 1
-#SBATCH --cpus-per-task 16
 #SBATCH --mem-per-cpu 4G
 #SBATCH --time 24:00:00
 
@@ -24,4 +22,4 @@ input=`head -n $SLURM_ARRAY_TASK_ID $1 | tail -n 1`
 echo $input
 export OMP_NUM_THREADS=1
 srun python run_sem_pretrain.py -c configs/config_run_sem.ini --train $input --valid $input
-# sbatch --array 1-10 --cpus-per-task 4 --job-name individual model_individual.sh intersect_features_1.txt
+# sbatch --array 1-10 --job-name individual model_individual.sh intersect_features_1.txt
