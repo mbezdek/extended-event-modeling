@@ -21,11 +21,12 @@ from scipy.stats import percentileofscore
 from sem.event_models import GRUEvent, LinearEvent, LSTMEvent
 from sem import SEM
 from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, \
-    logger, parse_config, contain_substr
+    logger, parse_config, contain_substr, ReadoutDataframes
 from joblib import Parallel, delayed
 import gensim.downloader
 import random
 from typing import List, Dict
+from copy import deepcopy
 
 # glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
 with open('gen_sim_glove_50.pkl', 'rb') as f:
@@ -81,13 +82,7 @@ def remove_number(string):
     return string
 
 
-def get_emb_category(category_distances, emb_dim=100):
-    # Add 1 to avoid 3 objects with 0 distances (rare but might happen), then calculate inverted weights
-    category_distances = category_distances + 1
-    # Add 1 to avoid cases there is only one object
-    category_weights = 1 - category_distances / (category_distances.sum() + 1)
-    if category_weights.sum() == 0:
-        logger.error('Sum of probabilities is zero')
+def get_emb(category_weights, emb_dim):
     average = np.zeros(shape=(1, emb_dim))
     for category, prob in category_weights.iteritems():
         r = np.zeros(shape=(1, emb_dim))
@@ -100,90 +95,102 @@ def get_emb_category(category_distances, emb_dim=100):
                 r += glove_vectors[w]
             r /= len(words)
         average += r * prob
+    return average
+
+
+def get_emb_distance(category_distances, emb_dim=100):
+    # Add 1 to avoid 3 objects with 0 distances (rare but might happen), then calculate inverted weights
+    category_distances = category_distances + 1
+    # Add 1 to avoid cases there is only one object
+    category_weights = 1 - category_distances / (category_distances.sum() + 1)
+    if category_weights.sum() == 0:
+        logger.error('Sum of probabilities is zero')
+    average = get_emb(category_weights, emb_dim=emb_dim)
     return average / category_weights.sum()
 
 
-def get_embeddings(objhand_df: pd.DataFrame, emb_dim=100, num_objects=3):
-    scene_embs = np.zeros(shape=(0, emb_dim))
+def get_embs_and_categories(objhand_df: pd.DataFrame, emb_dim=100, num_objects=3):
     obj_handling_embs = np.zeros(shape=(0, emb_dim))
     categories = pd.DataFrame()
 
-    for index, row in objhand_df.iterrows():
+    for i, row in objhand_df.iterrows():
         all_categories = list(row.index[row.notna()])
         if len(all_categories):
-            # averaging all objects
-            # scene_embedding = np.zeros(shape=(0, emb_dim))
-            # for category in all_categories:
-            #     cat_emb = get_emb_category([category], emb_dim)
-            #     scene_embedding = np.vstack([scene_embedding, cat_emb])
-            # scene_embedding = np.mean(scene_embedding, axis=0).reshape(1, emb_dim)
-            scene_embedding = get_emb_category(row.dropna().sort_values()[:7], emb_dim)
-
             # pick the nearest object
             nearest = row.argmin()
             assert nearest != -1
             # obj_handling_emb = get_emb_category(row.index[nearest], emb_dim)
             new_row = pd.Series(data=row.dropna().sort_values().index[:num_objects], name=row.name)
             categories = categories.append(new_row)
-            obj_handling_emb = get_emb_category(row.dropna().sort_values()[:num_objects], emb_dim)
+            obj_handling_emb = get_emb_distance(row.dropna().sort_values()[:num_objects], emb_dim)
         else:
-            scene_embedding = np.full(shape=(1, emb_dim), fill_value=np.nan)
             obj_handling_emb = np.full(shape=(1, emb_dim), fill_value=np.nan)
-        scene_embs = np.vstack([scene_embs, scene_embedding])
         obj_handling_embs = np.vstack([obj_handling_embs, obj_handling_emb])
-    return scene_embs, obj_handling_embs, categories
+    return obj_handling_embs, categories
 
 
 def preprocess_objhand(objhand_csv, standardize=True, use_depth=False, num_objects=3):
     objhand_df = pd.read_csv(objhand_csv, index_col='frame')
-    # Drop non-distance columns
-    for c in objhand_df.columns:
-        if 'dist' not in c:
-            objhand_df.drop([c], axis=1, inplace=True)
-    if use_depth:
-        objhand_df = objhand_df.filter(regex=f'_dist_z$')
-    else:
-        objhand_df = objhand_df.filter(regex=f'_dist$')
-    # remove track number
-    objhand_df.rename(remove_number, axis=1, inplace=True)
-    all_categories = set(objhand_df.columns.values)
-    # get neareast distance for the same category at each row
-    for category in all_categories:
-        if isinstance(objhand_df[category], pd.Series):
-            if use_depth:
-                objhand_df[category.replace('_dist_z', '')] = objhand_df[category]
-            else:
-                objhand_df[category.replace('_dist', '')] = objhand_df[category]
+
+    def filter_objhand():
+        if use_depth:
+            filtered_df = objhand_df.filter(regex=f'_dist_z$')
         else:
-            if use_depth:
-                objhand_df[category.replace('_dist_z', '')] = objhand_df[category].apply(lambda x: np.min(x), axis=1)
-            else:
-                # For some strange reason, min(89, NaN) could be 89 or NaN
-                objhand_df[category.replace('_dist', '')] = objhand_df[category].apply(lambda x: np.min(x), axis=1)
-            # objhand_df.loc[:, c] = (objhand_df[c] - min(objhand_df[c].dropna())) / (
-            #         max(objhand_df[c].dropna()) - min(objhand_df[c].dropna()))
-    # remove redundant columns
-    for c in set(objhand_df.columns):
-        if 'dist' in c:
-            objhand_df.drop([c], axis=1, inplace=True)
-    # normalize
-    # TODO: currently, many values exceed 5000, need debug in projected_skeletons
-    # mean = np.nanmean(objhand_df.values)
-    # std = np.nanstd(objhand_df.values)
-    # objhand_df = (objhand_df - mean) / std
-    scene_embs, obj_handling_embs, categories = get_embeddings(objhand_df, emb_dim=emb_dim, num_objects=num_objects)
-    if standardize:
-        scene_embs = (scene_embs - np.nanmean(scene_embs, axis=0)) / np.nanstd(scene_embs,
-                                                                               axis=0)
-        obj_handling_embs = (obj_handling_embs - np.nanmean(obj_handling_embs,
-                                                            axis=0)) / np.nanstd(
-            obj_handling_embs, axis=0)
-    scene_embs = pd.DataFrame(scene_embs, index=objhand_df.index,
-                              columns=list(map(lambda x: f'scene_{x}', range(emb_dim))))
+            filtered_df = objhand_df.filter(regex=f'_dist$')
+        # be careful that filter function return a view, thus filtered_df is a view of objhand_df.
+        # deepcopy to avoid unwanted bugs
+        filtered_df = deepcopy(filtered_df)
+        s = [re.split('([a-zA-Z\s\(\)]+)([0-9]+)', x)[1] for x in filtered_df.columns]
+        instances = set(s)
+        for i in instances:
+            filtered_df.loc[:, i + '_mindist'] = filtered_df[[col for col in filtered_df.columns if i in col]].min(axis=1)
+        filtered_df = filtered_df.filter(regex='_mindist')
+        # remove mindist
+        filtered_df.rename(lambda x: x.replace('_mindist', ''), axis=1, inplace=True)
+
+        return filtered_df
+
+    objhand_df = filter_objhand()
+
+    obj_handling_embs, categories = get_embs_and_categories(objhand_df, emb_dim=emb_dim, num_objects=num_objects)
+
     obj_handling_embs = pd.DataFrame(obj_handling_embs, index=objhand_df.index,
-                                     columns=list(
-                                         map(lambda x: f'objhand_{x}', range(emb_dim))))
-    return scene_embs, obj_handling_embs, categories
+                                     columns=list(map(lambda x: f'objhand_{x}', range(emb_dim))))
+    if standardize:
+        obj_handling_embs = (obj_handling_embs - obj_handling_embs.mean()) / obj_handling_embs.std()
+
+    return obj_handling_embs, categories
+
+
+def get_emb_speed(categories_speed, emb_dim):
+    if categories_speed.sum() == 0:
+        logger.error('Sum of probabilities is zero')
+    average = get_emb(categories_speed, emb_dim)
+    # Not dividing categories_speed here (scene-based) because we care about relative values between scenes.
+    return average
+
+
+def get_embs(objspeed_df: pd.DataFrame, emb_dim=100):
+    objspeed_embeddings = np.zeros(shape=(0, emb_dim))
+    for index, row in objspeed_df.iterrows():
+        objspeed_emb = get_emb_speed(row.dropna(), emb_dim)
+        objspeed_embeddings = np.vstack([objspeed_embeddings, objspeed_emb])
+    return objspeed_embeddings
+
+
+def preprocess_objspeed(objspeed_csv, standardize=True):
+    objspeed_df = pd.read_csv(objspeed_csv, index_col='frame')
+    # remove _maxspeed
+    objspeed_df.rename(lambda x: x.replace('_maxspeed', ''), axis=1, inplace=True)
+    objspeed_df.dropna(axis=0, how='all', inplace=True)
+    objspeed_embeddings = get_embs(objspeed_df, emb_dim)
+
+    objspeed_embeddings = pd.DataFrame(objspeed_embeddings, index=objspeed_df.index,
+                                       columns=list(map(lambda x: f'objspeed_{x}', range(emb_dim))))
+    if standardize:
+        objspeed_embeddings = (objspeed_embeddings - objspeed_embeddings.mean()) / objspeed_embeddings.std()
+
+    return objspeed_embeddings
 
 
 def interpolate_frame(dataframe: pd.DataFrame):
@@ -398,7 +405,7 @@ class SEMContext:
             self.is_train = True
             logger.info(f'Training video {run}')
             self.set_run_variables(run)
-            self.infer_on_video(store_dataframes=True)
+            self.infer_on_video(store_dataframes=int(self.configs.store_frames))
 
     def evaluating(self):
         # Randomize order of video
@@ -407,7 +414,7 @@ class SEMContext:
             self.is_train = False
             logger.info(f'Evaluating video {run}')
             self.set_run_variables(run)
-            self.infer_on_video(store_dataframes=True)
+            self.infer_on_video(store_dataframes=int(self.configs.store_frames))
 
     def parse_input(self, token, is_stratified=0) -> List:
         # Whether the train.txt or 4.4.4_kinect
@@ -443,55 +450,58 @@ class SEMContext:
         else:
             self.fps = 30
 
-    def infer_on_video(self, store_dataframes=True):
+    def infer_on_video(self, store_dataframes=1):
         try:
-            self.process_features()
+            self.process_features(use_cache=int(self.configs.use_cache), cache_tag=self.configs.cache_tag)
 
             if store_dataframes:
                 # Infer coordinates from nearest categories and add both to data_frame for visualization
-                objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
-                objhand_df = pd.read_csv(objhand_csv)
-                objhand_df = objhand_df.loc[self.data_frames[0].index, :]
+                # objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
+                # objhand_df = pd.read_csv(objhand_csv)
+                # objhand_df = objhand_df.loc[self.data_frames.appear_post.index, :]
 
                 def add_category_and_coordinates(categories: pd.DataFrame, use_depth=False):
                     # Readout to visualize object-hand features
                     # Re-index: some frames there are no objects near hand (which is not possible, this bug is due to min(89, NaN)=NaN
                     # categories = categories.reindex(range(categories.index[-1])).ffill()
                     categories = categories.ffill()
-                    categories = categories.loc[self.data_frames[0].index, :]
-                    self.data_frames.append(categories)
+                    categories = categories.loc[self.data_frames.appear_post.index, :]
+                    setattr(self.data_frames, 'categories' + ('_z' if use_depth else ''), categories)
                     # coordinates variable is determined by categories variable, thus having only 3 objects
                     coordinates = pd.DataFrame()
-                    for index, r in categories.iterrows():
-                        frame_series = pd.Series(dtype=float)
-                        # There could be a case where there are two spray bottles near the hand: 6.3.6
-                        # When num_objects is large, there are nan in categories -> filter
-                        # TODO: filter seen instances
-                        all_categories = set(r.dropna().values)
-                        for c in list(all_categories):
-                            # Filter by category name and select distance
-                            # Note: paper towel and towel causes duplicated columns in series,
-                            # Need anchor ^ to distinguish towel and paper towel (2.4.7),
-                            # need digit \d to distinguish pillow0 and pillowcase0 (3.3.5)
-                            # Need to escape character ( and ) in aloe (green bottle) (4.4.5)
-                            # Either use xy or depth (z) distance to get nearest object names
-                            if use_depth:
-                                df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(regex='_dist_z$')
-                                nearest_name = df.index[df.argmin()].replace('_dist_z',
-                                                                             '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
-                            else:
-                                df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(regex='_dist$')
-                                nearest_name = df.index[df.argmin()].replace('_dist',
-                                                                             '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
-                            # select nearest object's coordinates
-                            # need anchor ^ to distinguish between towel0 and paper towel0
-                            s = objhand_df.loc[index, :].filter(regex=f"^{re.escape(nearest_name)}")
-                            frame_series = frame_series.append(s)
-                        frame_series.name = index
-                        coordinates = coordinates.append(frame_series)
-                    self.data_frames.append(coordinates)
+                    # No need to construct coordinates, save time processing.
+                    # for index, r in categories.iterrows():
+                    #     frame_series = pd.Series(dtype=float)
+                    #     # There could be a case where there are two spray bottles near the hand: 6.3.6
+                    #     # When num_objects is large, there are nan in categories -> filter
+                    #     # TODO: filter seen instances
+                    #     all_categories = set(r.dropna().values)
+                    #     for c in list(all_categories):
+                    #         # Filter by category name and select distance
+                    #         # Note: paper towel and towel causes duplicated columns in series,
+                    #         # Need anchor ^ to distinguish towel and paper towel (2.4.7),
+                    #         # need digit \d to distinguish pillow0 and pillowcase0 (3.3.5)
+                    #         # Need to escape character ( and ) in aloe (green bottle) (4.4.5)
+                    #         # Either use xy or depth (z) distance to get nearest object names
+                    #         if use_depth:
+                    #             df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(regex='_dist_z$')
+                    #             nearest_name = df.index[df.argmin()].replace('_dist_z',
+                    #                                                          '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
+                    #         else:
+                    #             df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(regex='_dist$')
+                    #             nearest_name = df.index[df.argmin()].replace('_dist',
+                    #                                                          '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
+                    #         # select nearest object's coordinates
+                    #         # need anchor ^ to distinguish between towel0 and paper towel0
+                    #         s = objhand_df.loc[index, :].filter(regex=f"^{re.escape(nearest_name)}")
+                    #         frame_series = frame_series.append(s)
+                    #     frame_series.name = index
+                    #     coordinates = coordinates.append(frame_series)
+                    setattr(self.data_frames, 'coordinates' + ('_z' if use_depth else ''), coordinates)
 
                 add_category_and_coordinates(self.categories, use_depth=False)
+                # Adding categories_z and coordinates_z to data_frame
+                add_category_and_coordinates(self.categories_z, use_depth=True)
 
             # logger.info(f'Features: {self.combine_df.columns}')
             # Note that without copy=True, this code will return a view and subsequent changes to x_train will change self.combine_df
@@ -499,9 +509,11 @@ class SEMContext:
             x_train = self.combine_df.to_numpy(copy=True)
             # PCA transform input features. Also, get inverted vector for visualization
             if int(self.configs.pca):
-                # pca = PCA(float(self.configs.pca_explained), whiten=True)
                 # pca = PCA(int(self.configs.pca_dim), whiten=True)
-                pca = pkl.load(open('pca.pkl', 'rb'))
+                pca = pkl.load(open(f'{self.configs.cache_tag}_pca.pkl', 'rb'))
+                if x_train.shape[1] - 2 != pca.n_features_:
+                    logger.error(f'MISMATCH: pca.n_features_ = {pca.n_features_} vs. input features={x_train.shape[1] - 2}!!!')
+                    raise
                 try:
                     x_train_pca = pca.fit_transform(x_train[:, 2:])
                     x_train_inverted = pca.inverse_transform(x_train_pca)
@@ -511,12 +523,12 @@ class SEMContext:
                     x_train_inverted = pca.inverse_transform(x_train_pca)
                 x_train = np.hstack([x_train[:, :2], x_train_pca])
                 x_train_inverted = np.hstack([x_train[:, :2], x_train_inverted])
-                df_x_train_inverted = pd.DataFrame(data=x_train_inverted, index=self.data_frames[0].index,
+                df_x_train_inverted = pd.DataFrame(data=x_train_inverted, index=self.data_frames.appear_post.index,
                                                    columns=self.combine_df.columns)
-                self.data_frames.append(df_x_train_inverted)
+                setattr(self.data_frames, 'x_train_inverted', df_x_train_inverted)
             else:
-                df_x_train = pd.DataFrame(data=x_train, index=self.data_frames[0].index, columns=self.combine_df.columns)
-                self.data_frames.append(df_x_train)
+                df_x_train = pd.DataFrame(data=x_train, index=self.data_frames.appear_post.index, columns=self.combine_df.columns)
+                setattr(self.data_frames, 'x_train', df_x_train)
 
             # Note that this is different from x_train = x_train / np.sqrt(x_train.shape[1]), the below code will change values of
             # the memory allocation, to which self.combine_df refer -> change to be safer
@@ -536,24 +548,19 @@ class SEMContext:
                     x_inferred_inverted = x_inferred_inverted * np.sqrt(x_train.shape[1])
                     x_inferred_inverted = pca.inverse_transform(x_inferred_inverted[:, 2:])
                     x_inferred_inverted = np.hstack([x_inferred_inverted[:, :2], x_inferred_inverted])
-                    df_x_inferred_inverted = pd.DataFrame(data=x_inferred_inverted, index=self.data_frames[0].index,
+                    df_x_inferred_inverted = pd.DataFrame(data=x_inferred_inverted, index=self.data_frames.appear_post.index,
                                                           columns=self.combine_df.columns)
-                    self.data_frames.append(df_x_inferred_inverted)
+                    setattr(self.data_frames, 'x_inferred_inverted', df_x_inferred_inverted)
                 else:
                     x_inferred_ori = self.sem_model.results.x_hat * np.sqrt(x_train.shape[1])
-                    df_x_inferred_ori = pd.DataFrame(data=x_inferred_ori, index=self.data_frames[0].index,
+                    df_x_inferred_ori = pd.DataFrame(data=x_inferred_ori, index=self.data_frames.appear_post.index,
                                                      columns=self.combine_df.columns)
-                    self.data_frames.append(df_x_inferred_ori)
+                    setattr(self.data_frames, 'x_inferred', df_x_inferred_ori)
 
-                # Adding categories_z and coordinates_z to data_frame
-                # after training to avoid messing up with indexing in input_viz_refactored.ipynb
-                # adding categories_z here instead of above to avoid messing up with indexing of inputdf
-                # TODO: uncomment this line after getting objhand features with depth
-                add_category_and_coordinates(self.categories_z, use_depth=True)
                 with open('output/run_sem/' + self.title + f'_inputdf_{self.current_epoch}.pkl', 'wb') as f:
                     pkl.dump(self.data_frames, f)
 
-            logger.info(f'Done SEM {self.run}')
+            logger.info(f'Done SEM {self.run}!!!\n')
             with open('output/run_sem/sem_complete.txt', 'a') as f:
                 f.write(self.run + f'_{tag}' + '\n')
             # sem's Results() is initialized and different for each run
@@ -563,45 +570,76 @@ class SEMContext:
                 f.write(traceback.format_exc() + '\n')
             print(traceback.format_exc())
 
-    def process_features(self):
+    def process_features(self, use_cache=0, cache_tag=''):
         """
         This method load pre-processed features then combine and align them temporally
         :return:
         """
-        # For some reason, some optical flow videos have inf value, TODO: investigate
-        pd.set_option('use_inf_as_na', True)
-        logger.info(f'Config {self.configs}')
+        if use_cache:
+            readout_dataframes = pkl.load(open(f'output/run_sem/{cache_tag}/{self.movie[:-4]}{cache_tag}_inputdf_1.pkl', 'rb'))
 
-        logger.info(f'Loading features from csv formats')
-        objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
-        skel_csv = os.path.join(self.configs.skel_csv, self.run + '_skel_features.csv')
-        appear_csv = os.path.join(self.configs.appear_csv, self.run + '_appear.csv')
-        optical_csv = os.path.join(self.configs.optical_csv, self.run + '_video_features.csv')
+            appear_df = readout_dataframes.appear_post
+            optical_df = readout_dataframes.optical_post
+            skel_df = readout_dataframes.skel_post
+            obj_handling_embs = readout_dataframes.objhand_post
+            categories = readout_dataframes.categories
+            categories_z = readout_dataframes.categories_z
 
-        logger.info(f'Processing features...')
-        # Load csv files and preprocess to get a scene vector
-        logger.info(f'Processing Appear features...')
-        appear_df = preprocess_appear(appear_csv)
-        logger.info(f'Processing Skel features...')
-        skel_df = preprocess_skel(skel_csv, use_position=int(self.configs.use_position), standardize=True)
-        logger.info(f'Processing Optical features...')
-        optical_df = preprocess_optical(optical_csv, standardize=True)
-        logger.info(f'Processing Objhand features...')
-        # _, obj_handling_embs, categories = preprocess_objhand(objhand_csv, standardize=True, use_depth=False)
-        _, _, categories = preprocess_objhand(objhand_csv, standardize=True, use_depth=False,
-                                              num_objects=int(self.configs.num_objects))
-        # TODO: uncomment to test depth
-        # _, _, categories_z = preprocess_objhand(objhand_csv, standardize=True, use_depth=True)
-        _, obj_handling_embs, categories_z = preprocess_objhand(objhand_csv, standardize=True, use_depth=True,
-                                                                num_objects=int(self.configs.num_objects))
-        # Get consistent start-end times and resampling rate for all features
-        combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
-                                                                  rate=self.configs.rate, fps=self.fps)
+            # TODO: switch to scene motion
+            objspeed_embs = readout_dataframes.objspeed_post
+            data_frames = [appear_df, optical_df, skel_df, obj_handling_embs,
+                           objspeed_embs]
+            # data_frames = [appear_df, optical_df, skel_df, obj_handling_embs]
+            combine_df = pd.concat(data_frames, axis=1)
+            first_frame = appear_df.index[0]
+
+        else:
+            # For some reason, some optical flow videos have inf value
+            pd.set_option('use_inf_as_na', True)
+            logger.info(f'Config {self.configs}')
+
+            logger.info(f'Loading features from csv formats')
+            objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
+            skel_csv = os.path.join(self.configs.skel_csv, self.run + '_skel_features.csv')
+            appear_csv = os.path.join(self.configs.appear_csv, self.run + '_appear.csv')
+            optical_csv = os.path.join(self.configs.optical_csv, self.run + '_video_features.csv')
+            objspeed_csv = os.path.join(self.configs.objspeed_csv, self.run + '_objspeed.csv')
+
+            logger.info(f'Processing features...')
+            # Load csv files and preprocess to get a scene vector
+            logger.info(f'Processing Appear features...')
+            appear_df = preprocess_appear(appear_csv)
+            logger.info(f'Processing Skel features...')
+            skel_df = preprocess_skel(skel_csv, use_position=int(self.configs.use_position), standardize=True)
+            logger.info(f'Processing Optical features...')
+            optical_df = preprocess_optical(optical_csv, standardize=True)
+            logger.info(f'Processing Objhand features...')
+            # Switch obj_handling_embs appropriately to use depth
+            _, categories = preprocess_objhand(objhand_csv, standardize=True,
+                                               num_objects=int(self.configs.num_objects),
+                                               use_depth=False)
+            obj_handling_embs, categories_z = preprocess_objhand(objhand_csv, standardize=True,
+                                                                 num_objects=int(self.configs.num_objects),
+                                                                 use_depth=True)
+            logger.info(f'Processing Objspeed features...')
+            objspeed_embs = preprocess_objspeed(objspeed_csv, standardize=True)
+
+            # TODO: Switch to use scene motion or not
+            # Get consistent start-end times and resampling rate for all features
+            # combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
+            #                                                           rate=self.configs.rate, fps=self.fps)
+            combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs,
+                                                                       objspeed_embs],
+                                                                      rate=self.configs.rate, fps=self.fps)
+        readout_dataframes = ReadoutDataframes()
+        for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post', 'objspeed_post'], data_frames):
+        # for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post'], data_frames):
+            setattr(readout_dataframes, feature, df)
+        self.last_frame = readout_dataframes.appear_post.index[-1]
         self.first_frame = first_frame
-        self.last_frame = data_frames[0].index[-1]
         # This parameter is used to limit the time of ground truth video according to feature data
         self.end_second = math.ceil(self.last_frame / self.fps)
-        self.data_frames = data_frames
+        self.data_frames = readout_dataframes
         self.combine_df = combine_df
         self.categories = categories
         self.categories_z = categories_z
@@ -675,7 +713,8 @@ if __name__ == "__main__":
     optimizer_kwargs = dict(lr=1e-2, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0, amsgrad=False)
     # these are the parameters for the event model itself.
     f_opts = dict(var_df0=50., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
-                  n_epochs=10, t=4, batch_update=True, n_hidden=int(args.n_hidden), variance_window=None, optimizer_kwargs=optimizer_kwargs)
+                  n_epochs=10, t=4, batch_update=True, n_hidden=int(args.n_hidden), variance_window=None,
+                  optimizer_kwargs=optimizer_kwargs)
     # set the hyper parameters for segmentation
     lmda = float(args.lmda)  # stickyness parameter (prior)
     alfa = float(args.alfa)  # concentration parameter (prior)
@@ -685,7 +724,7 @@ if __name__ == "__main__":
     # set default hyper parameters for each run, can be overridden later
     run_kwargs = dict()
     sem_model = SEM(**sem_init_kwargs)
-    tag = 'mar_31_depth_3_nopos_shared_pca'
+    tag = 'april_12_scene_motion'
     context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, tag=tag, configs=args)
     try:
         context_sem.read_train_valid_list()

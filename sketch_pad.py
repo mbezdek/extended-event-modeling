@@ -369,15 +369,17 @@ import glob
 import os
 import cv2
 import pickle as pkl
+import joblib
 
-kinects = glob.glob('output/run_sem/*inputdf.pkl')
+tag = 'mar_20_individual_depth_scene'
+kinects = glob.glob(f'output/run_sem/{tag}/*inputdf_0.pkl')
 kinects = list(set([os.path.basename(k).split('_')[0] for k in kinects]))
 print(len(kinects))
 for run_select in kinects:
-    if os.path.exists(f'output/run_sem/{run_select}_kinect_trimjan_27_pca_frames.joblib'):
+    if os.path.exists(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_frames.joblib'):
         print(f'Already generated {run_select}')
         continue
-    with open(f'output/run_sem/{run_select}_kinect_trimjan_27_pca_inputdf.pkl', 'rb') as f:
+    with open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_inputdf_0.pkl', 'rb') as f:
         inputdfs = pkl.load(f)
     vidfile=f'data/small_videos/{run_select}_kinect_trim.mp4'
 
@@ -395,9 +397,11 @@ for run_select in kinects:
                 break
             if frame_id in frames:
                 cached_videos[frame_id] = cv2.resize(frame, None, fx=0.5, fy=0.5)
-        joblib.dump(cached_videos, f'output/run_sem/{run_select}_kinect_trimjan_27_pca_frames.joblib',
+        if not os.path.exists(f'output/run_sem/{tag}/'):
+            os.makedirs(f'output/run_sem/{tag}/')
+        joblib.dump(cached_videos, f'output/run_sem/frames/{run_select}_kinect_trim{tag}_frames.joblib',
                     compress=True)
-        # with open(f'output/run_sem/{run_select}_kinect_trimjan_27_pca_frames.pkl', 'wb') as f:
+        # with open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_frames.pkl', 'wb') as f:
         #         pkl.dump(cached_videos, f)
 
 import pickle as pkl
@@ -476,11 +480,17 @@ df['chapter'] = df['run'].apply(lambda x: int(x[2]))
 # Define interested metrics
 
 numerics = ['mean_pe', 'pearson_r', 'epoch', 'n_event_models', 'model_boundaries']
-df_select = df[df['tag'].isin(['mar_11_like_09_lr_1e-2_nh16', 'mar_09_ind_alfa1e-9_lmda1e9'])]
-df_select['nh'] = np.select([df_select['tag'].str.contains('nh16'), ~df_select['tag'].str.contains('nh16')], [16, 32])
+# compare between tags
+interested_tags = ['mar_31_depth_3_nopos_shared_pca', 'april_08_test_refactor', 'april_08_scene_motion']
+df_select = df[df['tag'].isin(interested_tags)]
+# df_select['nh'] = np.select([df_select['tag'].str.contains('nh16'), ~df_select['tag'].str.contains('nh16')], [16, 32])
 sns.pairplot(df_select[numerics + ['tag']], hue='tag', palette='bright',
-             markers=['o', 'v', 'D'], kind='reg', plot_kws={'scatter_kws': {'alpha': 0.3}})
-sns.pairplot(df_select[numerics], palette='bright', kind='reg', plot_kws={'scatter_kws': {'alpha': 0.3}})
+             kind='reg', plot_kws={'scatter_kws': {'alpha': 0.3}})
+# compare between chapters within a tag
+interested_tags = ['april_12_scene_motion']
+df_select = df[df['tag'].isin(interested_tags)]
+sns.pairplot(df_select[numerics + ['chapter']], hue='chapter', palette='bright',
+             kind='reg', plot_kws={'scatter_kws': {'alpha': 0.3}})
 plt.savefig('scatter_matrix_chapter.png')
 plt.show()
 sns.pairplot(df[numerics], hue='epoch', palette='viridis', vars=numerics)

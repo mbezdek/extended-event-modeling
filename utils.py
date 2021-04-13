@@ -117,6 +117,10 @@ def get_point_biserial(boundaries_binned, binned_comp) -> float:
     return r_pb
 
 
+class ReadoutDataframes:
+    pass
+
+
 class Sample:
     """
     This class contains example python object to test syntax
@@ -183,9 +187,9 @@ class SegmentationVideo:
             if len(seg) > 0:
                 new_seg = np.array([])
                 # For an interval, each participant have at most one vote
-                for i in range(0, round(max(seg))+1, second_interval):
-                    if seg[(seg > i) & (seg < i+1)].shape[0]:
-                        new_seg = np.hstack([new_seg, seg[(seg > i) & (seg < i+1)].mean()])
+                for i in range(0, round(max(seg)) + 1, second_interval):
+                    if seg[(seg > i) & (seg < i + 1)].shape[0]:
+                        new_seg = np.hstack([new_seg, seg[(seg > i) & (seg < i + 1)].mean()])
             else:
                 new_seg = seg
             new_seg_points.append(new_seg)
