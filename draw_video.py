@@ -104,7 +104,7 @@ def drawskel(frame_number, frame, skel_df, color=(255, 0, 0), thickness=2):
 
 def get_nearest(emb_vector: np.ndarray, glove=False):
     if glove:
-        nearest_objects = glove_vectors.most_similar(emb_vector)
+        nearest_objects = glove_vectors.most_similar(emb_vector, restrict_vocab=5000)
         nearest_objects = [(nr[0], round(nr[1], 2)) for nr in nearest_objects]
         return nearest_objects
 
@@ -331,6 +331,7 @@ skel_df = pd.read_csv(f'output/skel/{run_select}_kinect_skel_features.csv')
 objhand_df = pd.read_csv(os.path.join(f'output/objhand/{run_select}_kinect_objhand.csv'))
 anchored_frames = joblib.load(f'output/run_sem/frames/{run_select}_kinect_trimmar_20_individual_depth_scene_frames.joblib')
 inputdf = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_inputdf{epoch}.pkl', 'rb'))
+# glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
 glove_vectors = pkl.load(open('gen_sim_glove_50.pkl', 'rb'))
 gt_freqs = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_gtfreqs.pkl', 'rb'))
 sem_readouts = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_diagnostic{epoch}.pkl', 'rb'))
