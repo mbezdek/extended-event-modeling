@@ -123,18 +123,18 @@ def drawobj(instances, frame, odf, color=(255, 0, 0), thickness=1, draw_name=Fal
         ymax = ymin + (odf[i + '_h'] * s)
         try:
             conf_score = float(odf[i + '_confidence'])
-            color = tuple(map(int, np.array(color) * conf_score))
+            color_scaled = tuple(map(int, np.array(color) * conf_score))
         except:
-            color = (0, 0, 255)
+            color_scaled = (0, 0, 255)
         cv2.rectangle(frame, pt1=(int(xmin), int(ymin)),
                       pt2=(int(xmax), int(ymax)),
-                      color=color, thickness=thickness)
+                      color=color_scaled, thickness=thickness)
         if draw_name:
             cv2.putText(frame, text=i,
                         org=(int(xmin), int(ymax - 5)),
                         fontFace=cv2.FONT_HERSHEY_SIMPLEX,
                         fontScale=0.4,
-                        color=color)
+                        color=color_scaled)
     # Code to also get nearest objects in Glove for input categories
     # try:
     #     sr = objdf.loc[frame_number].dropna().filter(regex='_dist$').rename(lambda x: remove_number(x).replace('_dist', ''))
@@ -178,14 +178,14 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             for index, instance in enumerate(nearest_objects[:3]):
                 cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 140, 20 + 20 * index),
                             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
-                            color=(0, 255, 0))
+                            color=ColorBGR.green)
             # Draw nearest objects (Glove corpus)
             glove_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
                                                 glove=True)
             for index, instance in enumerate(glove_nearest_objects[:3]):
                 cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 280, 20 + 20 * index),
                             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
-                            color=(0, 255, 255))
+                            color=ColorBGR.yellow)
         except Exception as e:
             print(traceback.format_exc())
 
