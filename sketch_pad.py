@@ -479,10 +479,11 @@ df['chapter'] = df['run'].apply(lambda x: int(x[2]))
 # df = df[df['epoch'] < dump_df.index[-1]]
 # Define interested metrics
 
-numerics = ['mean_pe', 'pearson_r', 'epoch', 'n_event_models', 'model_boundaries']
+numerics = ['mean_pe', 'pearson_r', 'epoch', 'n_event_models', 'number_boundaries']
 # compare between tags
-interested_tags = ['mar_31_depth_3_nopos_shared_pca', 'april_08_test_refactor', 'april_08_scene_motion']
+interested_tags = ['mar_31_depth_3_nopos_shared_pca', 'april_12_test_refactor', 'april_12_scene_motion']
 df_select = df[df['tag'].isin(interested_tags)]
+df_select = df[(df['tag'].isin(interested_tags)) & (df['is_train'] == False)]
 # df_select['nh'] = np.select([df_select['tag'].str.contains('nh16'), ~df_select['tag'].str.contains('nh16')], [16, 32])
 sns.pairplot(df_select[numerics + ['tag']], hue='tag', palette='bright',
              kind='reg', plot_kws={'scatter_kws': {'alpha': 0.3}})

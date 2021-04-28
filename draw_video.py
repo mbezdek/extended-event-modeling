@@ -13,6 +13,8 @@ from glob import glob
 import os
 import sys
 import matplotlib
+import panel as pn
+import sys
 
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
@@ -22,6 +24,7 @@ from utils import get_point_biserial, get_binned_prediction
 import scipy.stats as stats
 import traceback
 from utils import ColorBGR
+import time
 
 
 def remove_number(string):
@@ -201,11 +204,14 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
     cv2.putText(outframe, text=f'FrameID: {frame_slider}', org=(10, 200),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
                 color=(0, 255, 0))
+    cv2.putText(outframe, text=f'Second: {frame_slider // fps}', org=(10, 220),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                color=(0, 255, 0))
     # add Segmentation flag
     index = pred_objhand.index.get_indexer([frame_slider])[0]
     if sem_readouts['e_hat'][index] != sem_readouts['e_hat'][index - 1]:
-        cv2.putText(outframe, text='SEGMENT', org=(10, 220),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+        cv2.putText(outframe, text='BOUNDARY', org=(10, 240),
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.6,
                     color=(0, 255, 0))
 
     if get_img:
@@ -297,92 +303,94 @@ def draw_video():
 
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     cv2_writer = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
-                                 frameSize=(640, 480), isColor=True)
+                                 frameSize=(1280, 480), isColor=True)
     for frame_id, frame in anchored_frames.items():
         img = draw_frame_resampled(frame_id, skel_checkbox=True, obj_checkbox=True, run_select=run_select, get_img=True)
         img = cv2.resize(img, dsize=(640, 480))
         cv2_writer.write(img)
-        # diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
-        # diagnostic = cv2.resize(diagnostic, dsize=(640, 480))
-        # concat = np.concatenate([img, diagnostic], axis=0)
-        # cv2_writer.write(concat)
+        diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
+        diagnostic = cv2.resize(diagnostic, dsize=(640, 480))
+        concat = np.concatenate([img, diagnostic], axis=0)
+        cv2_writer.write(concat)
     cv2_writer.release()
     print(f'Done {output_video_path}')
 
 
-import sys
+if __name__ == "__main__":
 
-if len(sys.argv) == 2:
-    with open('runs_to_draw.txt', 'r') as f:
-        lines = f.readlines()
-    for line in lines:
-        run_select, tag, epoch = [x.strip() for x in line.split(' ')]
-else:
-    run_select = sys.argv[1]
-    tag = sys.argv[2]
-    epoch = sys.argv[3]
-run_select = run_select.replace('_kinect', '')
-second_interval = 1  # interval to group boundaries
-frame_per_second = 3  # sampling rate to input to SEM
-fps = 25.0  # kinect videos
-frame_interval = frame_per_second * second_interval
-# def listen_to_run(run_select):
-skel_df = pd.read_csv(f'output/skel/{run_select}_kinect_skel_features.csv')
-objhand_df = pd.read_csv(os.path.join(f'output/objhand/{run_select}_kinect_objhand.csv'))
-anchored_frames = joblib.load(f'output/run_sem/frames/{run_select}_kinect_trimmar_20_individual_depth_scene_frames.joblib')
-inputdf = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_inputdf{epoch}.pkl', 'rb'))
-# glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
-glove_vectors = pkl.load(open('gen_sim_glove_50.pkl', 'rb'))
-gt_freqs = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_gtfreqs.pkl', 'rb'))
-sem_readouts = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_diagnostic{epoch}.pkl', 'rb'))
+    t1 = time.perf_counter()
+    if len(sys.argv) == 2:
+        with open('runs_to_draw.txt', 'r') as f:
+            lines = f.readlines()
+        for line in lines:
+            run_select, tag, epoch = [x.strip() for x in line.split(' ')]
+    else:
+        run_select = sys.argv[1]
+        tag = sys.argv[2]
+        epoch = sys.argv[3]
+    run_select = run_select.replace('_kinect', '')
+    second_interval = 1  # interval to group boundaries
+    frame_per_second = 3  # sampling rate to input to SEM
+    fps = 25.0  # kinect videos
+    frame_interval = frame_per_second * second_interval
+    skel_df = pd.read_csv(f'output/skel/{run_select}_kinect_skel_features.csv')
+    objhand_df = pd.read_csv(os.path.join(f'output/objhand/{run_select}_kinect_objhand.csv'))
+    anchored_frames = joblib.load(f'output/run_sem/frames/{run_select}_kinect_trimmar_20_individual_depth_scene_frames.joblib')
+    inputdf = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_inputdf{epoch}.pkl', 'rb'))
+    # glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
+    glove_vectors = pkl.load(open('gen_sim_glove_50.pkl', 'rb'))
+    gt_freqs = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_gtfreqs.pkl', 'rb'))
+    sem_readouts = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_diagnostic{epoch}.pkl', 'rb'))
 
-first_frame = inputdf.appear_post.index[0]
-offset = first_frame / fps / second_interval
+    first_frame = inputdf.appear_post.index[0]
+    offset = first_frame / fps / second_interval
 
-categories_z = inputdf.categories_z
-skel_df_post = inputdf.skel_post
-objhand_post = inputdf.objhand_post
+    categories_z = inputdf.categories_z
+    skel_df_post = inputdf.skel_post
+    objhand_post = inputdf.objhand_post
 
-# Prepare dataframes to plot input skeleton and predicted skeleton
-pca_input_df = inputdf.x_train_inverted
-pred_skel_df = inputdf.x_inferred_inverted
-skel_df_unscaled = skel_df_post.copy().loc[:, skel_df_post.columns]
-pred_skel_df = pred_skel_df.loc[:, skel_df_post.columns]
-pca_input_df = pca_input_df.loc[:, skel_df_post.columns]
+    # Prepare dataframes to plot input skeleton and predicted skeleton
+    pca_input_df = inputdf.x_train_inverted
+    pred_skel_df = inputdf.x_inferred_inverted
+    skel_df_unscaled = skel_df_post.copy().loc[:, skel_df_post.columns]
+    pred_skel_df = pred_skel_df.loc[:, skel_df_post.columns]
+    pca_input_df = pca_input_df.loc[:, skel_df_post.columns]
 
-skel_df_unscaled = skel_df_unscaled * skel_df.std() + skel_df.mean()
-pred_skel_df = pred_skel_df * skel_df.std() + skel_df.mean()
-pca_input_df = pca_input_df * skel_df.std() + skel_df.mean()
+    skel_df_unscaled = skel_df_unscaled * skel_df.std() + skel_df.mean()
+    pred_skel_df = pred_skel_df * skel_df.std() + skel_df.mean()
+    pca_input_df = pca_input_df * skel_df.std() + skel_df.mean()
 
-skel_df_unscaled['frame'] = skel_df_unscaled.index
-pred_skel_df['frame'] = pred_skel_df.index
-pca_input_df['frame'] = pca_input_df.index
-for i in range(25):
-    new_column = f'J{i}_Tracked'
-    skel_df_unscaled[new_column] = 'Inferred'
-    pred_skel_df[new_column] = 'Predicted'
-    pca_input_df[new_column] = 'Inferred'
+    skel_df_unscaled['frame'] = skel_df_unscaled.index
+    pred_skel_df['frame'] = pred_skel_df.index
+    pca_input_df['frame'] = pca_input_df.index
+    for i in range(25):
+        new_column = f'J{i}_Tracked'
+        skel_df_unscaled[new_column] = 'Inferred'
+        pred_skel_df[new_column] = 'Predicted'
+        pca_input_df[new_column] = 'Inferred'
 
-    # Prepare a dictionary of word2vec for this particular run
-    categories = set()
-    for c in inputdf.categories.columns:
-        categories.update(inputdf.categories.loc[:, c].dropna())
-    if None in categories:
-        categories.remove(None)
+        # Prepare a dictionary of word2vec for this particular run
+        categories = set()
+        for c in inputdf.categories.columns:
+            categories.update(inputdf.categories.loc[:, c].dropna())
+        if None in categories:
+            categories.remove(None)
 
-    pred_objhand = inputdf.x_inferred_inverted
-    pred_objhand = pred_objhand.loc[:, objhand_post.drop(['euclid', 'cosine'], axis=1, errors='ignore').columns]
-    word2vec = dict()
-    for category in categories:
-        r = np.zeros(shape=(1, pred_objhand.shape[1]))
-        try:
-            r += glove_vectors[category]
-        except Exception as e:
-            words = category.split(' ')
-            for w in words:
-                w = w.replace('(', '').replace(')', '')
-                r += glove_vectors[w]
-            r /= len(words)
-        word2vec[category] = r
+        pred_objhand = inputdf.x_inferred_inverted
+        pred_objhand = pred_objhand.loc[:, objhand_post.drop(['euclid', 'cosine'], axis=1, errors='ignore').columns]
+        word2vec = dict()
+        for category in categories:
+            r = np.zeros(shape=(1, pred_objhand.shape[1]))
+            try:
+                r += glove_vectors[category]
+            except Exception as e:
+                words = category.split(' ')
+                for w in words:
+                    w = w.replace('(', '').replace(')', '')
+                    r += glove_vectors[w]
+                r /= len(words)
+            word2vec[category] = r
 
-draw_video()
+    draw_video()
+    t2 = time.perf_counter()
+    print(f'Time elapsed for {run_select}: {t2 - t1}')

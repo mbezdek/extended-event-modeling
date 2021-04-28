@@ -93,10 +93,11 @@ def get_frequency_ground_truth(second_boundaries, second_interval=1,
     return frequency, bins
 
 
-def get_binned_prediction(posterior, second_interval=1, sample_per_second=30) -> np.ndarray:
-    e_hat = np.argmax(posterior, axis=1)
+def get_binned_prediction(boundaries, second_interval=1, sample_per_second=30) -> np.ndarray:
+    # e_hat = np.argmax(boundaries, axis=1)
     # TODO: change to [0] for the first frame after done modeling
-    frame_boundaries = np.concatenate([[1], e_hat[1:] != e_hat[:-1]])
+    # frame_boundaries = np.concatenate([[0], e_hat[1:] != e_hat[:-1]])
+    frame_boundaries = boundaries.astype(bool).astype(int)
     frame_interval = round(second_interval * sample_per_second)
     # Sum for each interval
     time_boundaries = np.add.reduceat(frame_boundaries,

@@ -400,7 +400,7 @@ class SEMContext:
 
     def training(self):
         # Randomize order of video
-        random.shuffle(self.train_dataset)
+        # random.shuffle(self.train_dataset)
         for index, run in enumerate(self.train_dataset):
             self.is_train = True
             logger.info(f'Training video {run}')
@@ -409,7 +409,7 @@ class SEMContext:
 
     def evaluating(self):
         # Randomize order of video
-        random.shuffle(self.valid_dataset)
+        # random.shuffle(self.valid_dataset)
         for index, run in enumerate(self.valid_dataset):
             self.is_train = False
             logger.info(f'Evaluating video {run}')
@@ -474,7 +474,6 @@ class SEMContext:
                     #     frame_series = pd.Series(dtype=float)
                     #     # There could be a case where there are two spray bottles near the hand: 6.3.6
                     #     # When num_objects is large, there are nan in categories -> filter
-                    #     # TODO: filter seen instances
                     #     all_categories = set(r.dropna().values)
                     #     for c in list(all_categories):
                     #         # Filter by category name and select distance
@@ -509,18 +508,17 @@ class SEMContext:
             x_train = self.combine_df.to_numpy(copy=True)
             # PCA transform input features. Also, get inverted vector for visualization
             if int(self.configs.pca):
-                # pca = PCA(int(self.configs.pca_dim), whiten=True)
-                pca = pkl.load(open(f'{self.configs.cache_tag}_pca.pkl', 'rb'))
-                if x_train.shape[1] - 2 != pca.n_features_:
-                    logger.error(f'MISMATCH: pca.n_features_ = {pca.n_features_} vs. input features={x_train.shape[1] - 2}!!!')
-                    raise
-                try:
+                if self.configs.use_shared_pca:
+                    pca = pkl.load(open(f'{self.configs.pca_tag}_pca.pkl', 'rb'))
+                    # pca = pkl.load(open(f'pca.pkl', 'rb'))
+                    if x_train.shape[1] - 2 != pca.n_features_:
+                        logger.error(f'MISMATCH: pca.n_features_ = {pca.n_features_} vs. input features={x_train.shape[1] - 2}!!!')
+                        raise
+                    x_train_pca = pca.transform(x_train[:, 2:])
+                else:
+                    pca = PCA(int(self.configs.pca_dim), whiten=True)
                     x_train_pca = pca.fit_transform(x_train[:, 2:])
-                    x_train_inverted = pca.inverse_transform(x_train_pca)
-                except Exception as e:
-                    print(repr(e))
-                    x_train_pca = pca.fit_transform(x_train[:, 2:])
-                    x_train_inverted = pca.inverse_transform(x_train_pca)
+                x_train_inverted = pca.inverse_transform(x_train_pca)
                 x_train = np.hstack([x_train[:, :2], x_train_pca])
                 x_train_inverted = np.hstack([x_train[:, :2], x_train_inverted])
                 df_x_train_inverted = pd.DataFrame(data=x_train_inverted, index=self.data_frames.appear_post.index,
@@ -586,10 +584,10 @@ class SEMContext:
             categories_z = readout_dataframes.categories_z
 
             # TODO: switch to scene motion
-            objspeed_embs = readout_dataframes.objspeed_post
-            data_frames = [appear_df, optical_df, skel_df, obj_handling_embs,
-                           objspeed_embs]
-            # data_frames = [appear_df, optical_df, skel_df, obj_handling_embs]
+            # objspeed_embs = readout_dataframes.objspeed_post
+            # data_frames = [appear_df, optical_df, skel_df, obj_handling_embs,
+            #                objspeed_embs]
+            data_frames = [appear_df, optical_df, skel_df, obj_handling_embs]
             combine_df = pd.concat(data_frames, axis=1)
             first_frame = appear_df.index[0]
 
@@ -626,14 +624,14 @@ class SEMContext:
 
             # TODO: Switch to use scene motion or not
             # Get consistent start-end times and resampling rate for all features
-            # combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
-            #                                                           rate=self.configs.rate, fps=self.fps)
-            combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs,
-                                                                       objspeed_embs],
+            combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
                                                                       rate=self.configs.rate, fps=self.fps)
+            # combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs,
+            #                                                            objspeed_embs],
+            #                                                           rate=self.configs.rate, fps=self.fps)
         readout_dataframes = ReadoutDataframes()
-        for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post', 'objspeed_post'], data_frames):
-        # for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post'], data_frames):
+        # for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post', 'objspeed_post'], data_frames):
+        for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post'], data_frames):
             setattr(readout_dataframes, feature, df)
         self.last_frame = readout_dataframes.appear_post.index[-1]
         self.first_frame = first_frame
@@ -652,7 +650,7 @@ class SEMContext:
         """
         self.sem_model.run(x_train, train=self.is_train, **self.run_kwargs)
         # Process results returned by SEM
-        pred_boundaries = get_binned_prediction(self.sem_model.results.post, second_interval=self.second_interval,
+        pred_boundaries = get_binned_prediction(self.sem_model.results.boundaries, second_interval=self.second_interval,
                                                 sample_per_second=self.sample_per_second)
         # Padding prediction boundaries, could be changed to have higher resolution but not necessary
         pred_boundaries = np.hstack([[0] * round(self.first_frame / self.fps / self.second_interval), pred_boundaries]).astype(
@@ -724,7 +722,7 @@ if __name__ == "__main__":
     # set default hyper parameters for each run, can be overridden later
     run_kwargs = dict()
     sem_model = SEM(**sem_init_kwargs)
-    tag = 'april_12_scene_motion'
+    tag = 'april_28_no_scene_motion_individual'
     context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, tag=tag, configs=args)
     try:
         context_sem.read_train_valid_list()
