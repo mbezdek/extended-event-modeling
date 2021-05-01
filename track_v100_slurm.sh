@@ -3,7 +3,6 @@
 #SBATCH --export=run=$run,tag=$tag
 #SBATCH -p gpu
 #SBATCH --gres=gpu:1
-#SBATCH -n4
 #SBATCH --mem=8G
 #SBATCH --time=24:00:00
 #SBATCH --mincpus=16

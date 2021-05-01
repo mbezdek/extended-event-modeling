@@ -522,6 +522,28 @@ class Canvas:
         self.axes[2].vlines(seg_points, ymin=0, ymax=1, alpha=0.05)
 
 
+class Sampler:
+    def __init__(self, df_select, validation_runs):
+        self.df_select = df_select
+        self.validation_runs = validation_runs
+        self.chapter_to_list = dict()
+        self.max_epoch = 0
+
+    def get_one_run(self, chapter):
+        return self.chapter_to_list[chapter].pop(-1)
+
+    def prepare_list(self):
+        chapters = self.df_select.groupby('chapter').mean().sort_values('percentile', ascending=False).index.to_numpy()
+        for c in chapters:
+            df_chapter = self.df_select[self.df_select['chapter'] == c]
+            df_chapter = df_chapter[(df_chapter['number_boundaries'] >= 5) & (df_chapter['number_boundaries'] <= 25)]
+            df_chapter = df_chapter[~df_chapter['run'].isin(self.validation_runs)]
+            ascend_percentile = list(df_chapter.sort_values('percentile')['run'])
+            self.chapter_to_list[c] = ascend_percentile
+        self.max_epoch = min(map(len, self.chapter_to_list.values()))
+        print(f'Maximum number of epoch is {self.max_epoch}')
+
+
 def contain_substr(column: str, keeps):
     for k in keeps:
         if k in column:

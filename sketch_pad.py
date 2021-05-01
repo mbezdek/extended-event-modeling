@@ -481,7 +481,8 @@ df['chapter'] = df['run'].apply(lambda x: int(x[2]))
 
 numerics = ['mean_pe', 'pearson_r', 'epoch', 'n_event_models', 'number_boundaries']
 # compare between tags
-interested_tags = ['mar_31_depth_3_nopos_shared_pca', 'april_12_test_refactor', 'april_12_scene_motion']
+interested_tags = ['april_29_no_sm_same_seed_random_sequence_1', 'april_29_no_sm_same_seed_random_sequence_2',
+                   'april_29_no_sm_same_seed_random_sequence_3', 'april_29_no_sm_same_seed_random_sequence_4', 'april_29_no_sm_same_seed_random_sequence_5']
 df_select = df[df['tag'].isin(interested_tags)]
 df_select = df[(df['tag'].isin(interested_tags)) & (df['is_train'] == False)]
 # df_select['nh'] = np.select([df_select['tag'].str.contains('nh16'), ~df_select['tag'].str.contains('nh16')], [16, 32])
@@ -515,6 +516,7 @@ df_run = df_std.drop(['chapter', 'mean_pe', 'std_pe', 'n_event_models', 'percent
 b_model = sm.OLS(df_run['bicorr'], df_run.drop(['bicorr', 'model_boundaries'], axis=1)).fit()
 b_model.summary()
 # add pearson_r column
+# THIS IS ONE OF THE EXAMPLES THAT FOR LONG-TERM USED METRICS, I SHOULDN'T BOTHER TO DO AD-HOC
 import pickle as pkl
 import pandas as np
 import numpy as np

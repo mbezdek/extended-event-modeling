@@ -1,4 +1,6 @@
 import numpy as np
+
+np.random.seed(1234)
 import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
@@ -21,7 +23,7 @@ from scipy.stats import percentileofscore
 from sem.event_models import GRUEvent, LinearEvent, LSTMEvent
 from sem import SEM
 from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, \
-    logger, parse_config, contain_substr, ReadoutDataframes
+    logger, parse_config, contain_substr, ReadoutDataframes, Sampler
 from joblib import Parallel, delayed
 import gensim.downloader
 import random
@@ -350,7 +352,7 @@ class SEMContext:
     This class maintain global variables for SEM training and inference
     """
 
-    def __init__(self, sem_model=None, run_kwargs=None, tag='', configs=None):
+    def __init__(self, sem_model=None, run_kwargs=None, tag='', configs=None, sampler=None):
         self.sem_model = sem_model
         self.run_kwargs = run_kwargs
         self.tag = tag
@@ -384,6 +386,12 @@ class SEMContext:
         self.categories = None
         self.categories_z = None
 
+        self.sampler = sampler
+        self.chapters = [4, 2, 1, 3]
+        if self.sampler is not None:
+            logger.info(f'Number of Epochs from Sampler={self.sampler.max_epoch}, not from Config={self.epochs}')
+            self.epochs = self.sampler.max_epoch
+
     def iterate(self, is_eval=True):
         for e in range(self.epochs):
             # epoch counting from 1 for inputdf and diagnostic.
@@ -399,17 +407,31 @@ class SEMContext:
                 self.evaluating()
 
     def training(self):
-        # Randomize order of video
-        # random.shuffle(self.train_dataset)
-        for index, run in enumerate(self.train_dataset):
-            self.is_train = True
-            logger.info(f'Training video {run}')
-            self.set_run_variables(run)
-            self.infer_on_video(store_dataframes=int(self.configs.store_frames))
+        if self.sampler is not None:
+            logger.info('Using sampler instead of train.txt!!!')
+            for c in self.chapters:
+                run = self.sampler.get_one_run(chapter=c)
+                self.is_train = True
+                logger.info(f'Training video {run}')
+                self.set_run_variables(run)
+                self.infer_on_video(store_dataframes=int(self.configs.store_frames))
+            # The order of percentile seems to be 4231.
+            # self.chapters = np.random.permutation(self.chapters)
+
+        else:
+            # Randomize order of video
+            # random.shuffle(self.train_dataset)
+            self.train_dataset = np.random.permutation(self.train_dataset)
+            for index, run in enumerate(self.train_dataset):
+                self.is_train = True
+                logger.info(f'Training video {run}')
+                self.set_run_variables(run)
+                self.infer_on_video(store_dataframes=int(self.configs.store_frames))
 
     def evaluating(self):
         # Randomize order of video
         # random.shuffle(self.valid_dataset)
+        self.valid_dataset = np.random.permutation(self.valid_dataset)
         for index, run in enumerate(self.valid_dataset):
             self.is_train = False
             logger.info(f'Evaluating video {run}')
@@ -512,7 +534,8 @@ class SEMContext:
                     pca = pkl.load(open(f'{self.configs.pca_tag}_pca.pkl', 'rb'))
                     # pca = pkl.load(open(f'pca.pkl', 'rb'))
                     if x_train.shape[1] - 2 != pca.n_features_:
-                        logger.error(f'MISMATCH: pca.n_features_ = {pca.n_features_} vs. input features={x_train.shape[1] - 2}!!!')
+                        logger.error(
+                            f'MISMATCH: pca.n_features_ = {pca.n_features_} vs. input features={x_train.shape[1] - 2}!!!')
                         raise
                     x_train_pca = pca.transform(x_train[:, 2:])
                 else:
@@ -690,7 +713,7 @@ class SEMContext:
         std_pe = self.sem_model.results.pe.std()
         with open('output/run_sem/results_sem_corpus.csv', 'a') as f:
             writer = csv.writer(f)
-            writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models), self.current_epoch,
+            writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models) - 2, self.current_epoch,
                              sum(pred_boundaries), sem_init_kwargs, tag, mean_pe, std_pe, pearson_r, self.is_train])
 
 
@@ -722,8 +745,23 @@ if __name__ == "__main__":
     # set default hyper parameters for each run, can be overridden later
     run_kwargs = dict()
     sem_model = SEM(**sem_init_kwargs)
-    tag = 'april_28_no_scene_motion_individual'
-    context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, tag=tag, configs=args)
+    tag = 'april_30_no_sm_same_seed_same_random_sequence_4'
+
+    if int(args.use_sampler):
+
+        df_select = pd.read_csv('output/run_sem/results_sem_corpus.csv')
+        df_select['chapter'] = df_select['run'].apply(lambda x: int(x[2]))
+        # metrics are read from cache_tag
+        interested_tags = [args.cache_tag]
+        df_select = df_select[(df_select['tag'].isin(interested_tags)) & (df_select['is_train'] == True)]
+        with open(args.valid, 'r') as f:
+            valid_runs = f.readlines()
+            valid_runs = [x.strip() for x in valid_runs]
+        sampler = Sampler(df_select=df_select, validation_runs=valid_runs)
+        sampler.prepare_list()
+    else:
+        sampler = None
+    context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, tag=tag, configs=args, sampler=sampler)
     try:
         context_sem.read_train_valid_list()
         context_sem.iterate(is_eval=True)
