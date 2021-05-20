@@ -162,10 +162,11 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             outframe = drawskel(frame_slider, outframe, skel_df)
             # TODO: comment these lines if not using position in training SEM.
             # outframe = drawskel(frame_slider, outframe, pca_input_df, color=(255, 0, 0))
-            # outframe = drawskel(frame_slider, outframe, pred_skel_df, color=(0, 255, 0))
+            outframe = drawskel(frame_slider, outframe, pred_skel_df, color=(0, 255, 0))
         except Exception as e:
             cv2.putText(outframe, 'No skeleton data', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
             print(traceback.format_exc())
+            # return None
     else:
         outframe = anchored_frames[frame_slider]
     if obj_checkbox:
@@ -303,15 +304,18 @@ def draw_video():
 
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     cv2_writer = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
-                                 frameSize=(1280, 480), isColor=True)
+                                 frameSize=(640, 480), isColor=True)
     for frame_id, frame in anchored_frames.items():
-        img = draw_frame_resampled(frame_id, skel_checkbox=True, obj_checkbox=True, run_select=run_select, get_img=True)
+        img = draw_frame_resampled(frame_id, skel_checkbox=True, obj_checkbox=True, run_select=run_select, get_img=True,
+                                   black=False)
+        # if img is None:
+        #     continue
         img = cv2.resize(img, dsize=(640, 480))
         cv2_writer.write(img)
-        diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
-        diagnostic = cv2.resize(diagnostic, dsize=(640, 480))
-        concat = np.concatenate([img, diagnostic], axis=0)
-        cv2_writer.write(concat)
+        # diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
+        # diagnostic = cv2.resize(diagnostic, dsize=(640, 480))
+        # concat = np.concatenate([img, diagnostic], axis=0)
+        # cv2_writer.write(concat)
     cv2_writer.release()
     print(f'Done {output_video_path}')
 

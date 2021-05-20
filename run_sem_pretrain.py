@@ -61,7 +61,7 @@ def preprocess_skel(skel_csv, use_position=0, standardize=True):
     skel_df = pd.read_csv(skel_csv, index_col='frame')
     skel_df.drop(['sync_time', 'raw_time', 'body', 'J1_dist_from_J1'], axis=1, inplace=True)
     if use_position:
-        keeps = ['accel', 'speed', 'dist', 'interhand', '3D', '2D']
+        keeps = ['accel', 'speed', 'dist', 'interhand', '2D']
     else:
         keeps = ['accel', 'speed', 'dist', 'interhand']
     for c in skel_df.columns:
@@ -388,9 +388,9 @@ class SEMContext:
 
         self.sampler = sampler
         self.chapters = [4, 2, 1, 3]
-        if self.sampler is not None:
-            logger.info(f'Number of Epochs from Sampler={self.sampler.max_epoch}, not from Config={self.epochs}')
-            self.epochs = self.sampler.max_epoch
+        # if self.sampler is not None:
+        #     logger.info(f'Number of Epochs from Sampler={self.sampler.max_epoch}, not from Config={self.epochs}')
+        #     self.epochs = self.sampler.max_epoch
 
     def iterate(self, is_eval=True):
         for e in range(self.epochs):
@@ -409,12 +409,16 @@ class SEMContext:
     def training(self):
         if self.sampler is not None:
             logger.info('Using sampler instead of train.txt!!!')
-            for c in self.chapters:
-                run = self.sampler.get_one_run(chapter=c)
-                self.is_train = True
-                logger.info(f'Training video {run}')
-                self.set_run_variables(run)
-                self.infer_on_video(store_dataframes=int(self.configs.store_frames))
+            # for c in self.chapters:
+            run = self.sampler.get_one_run()
+            self.is_train = True
+            # added on may_6
+            self.sem_model.kappa = int(self.configs.kappa)
+            # haven't tested yet, added on may_20
+            self.sem_model.alfa = float(self.configs.alfa)
+            logger.info(f'Training video {run}')
+            self.set_run_variables(run)
+            self.infer_on_video(store_dataframes=int(self.configs.store_frames))
             # The order of percentile seems to be 4231.
             # self.chapters = np.random.permutation(self.chapters)
 
@@ -434,6 +438,10 @@ class SEMContext:
         self.valid_dataset = np.random.permutation(self.valid_dataset)
         for index, run in enumerate(self.valid_dataset):
             self.is_train = False
+            # added on may_6
+            self.sem_model.kappa = 0
+            # haven't tested yet, added on may_20
+            self.sem_model.alfa = 1e-15
             logger.info(f'Evaluating video {run}')
             self.set_run_variables(run)
             self.infer_on_video(store_dataframes=int(self.configs.store_frames))
@@ -530,9 +538,8 @@ class SEMContext:
             x_train = self.combine_df.to_numpy(copy=True)
             # PCA transform input features. Also, get inverted vector for visualization
             if int(self.configs.pca):
-                if self.configs.use_shared_pca:
+                if int(self.configs.use_shared_pca):
                     pca = pkl.load(open(f'{self.configs.pca_tag}_pca.pkl', 'rb'))
-                    # pca = pkl.load(open(f'pca.pkl', 'rb'))
                     if x_train.shape[1] - 2 != pca.n_features_:
                         logger.error(
                             f'MISMATCH: pca.n_features_ = {pca.n_features_} vs. input features={x_train.shape[1] - 2}!!!')
@@ -541,8 +548,10 @@ class SEMContext:
                 else:
                     pca = PCA(int(self.configs.pca_dim), whiten=True)
                     x_train_pca = pca.fit_transform(x_train[:, 2:])
-                x_train_inverted = pca.inverse_transform(x_train_pca)
                 x_train = np.hstack([x_train[:, :2], x_train_pca])
+                df_x_train = pd.DataFrame(data=x_train, index=self.data_frames.appear_post.index)
+                setattr(self.data_frames, 'x_train_pca', df_x_train)
+                x_train_inverted = pca.inverse_transform(x_train_pca)
                 x_train_inverted = np.hstack([x_train[:, :2], x_train_inverted])
                 df_x_train_inverted = pd.DataFrame(data=x_train_inverted, index=self.data_frames.appear_post.index,
                                                    columns=self.combine_df.columns)
@@ -563,12 +572,14 @@ class SEMContext:
             if store_dataframes:
                 # Transform predicted vectors to the original vector space for visualization
                 if int(self.configs.pca):
-                    x_inferred_inverted = self.sem_model.results.x_hat
+                    x_inferred_pca = self.sem_model.results.x_hat
                     # x_inferred_inverted = np.hstack([appear, x_inferred_inverted])  # concat appear feature as if it's used for consistency
                     # Scale back to PCA whitening results
-                    x_inferred_inverted = x_inferred_inverted * np.sqrt(x_train.shape[1])
-                    x_inferred_inverted = pca.inverse_transform(x_inferred_inverted[:, 2:])
-                    x_inferred_inverted = np.hstack([x_inferred_inverted[:, :2], x_inferred_inverted])
+                    x_inferred_pca = x_inferred_pca * np.sqrt(x_train.shape[1])
+                    df_x_inferred = pd.DataFrame(data=x_inferred_pca, index=self.data_frames.appear_post.index)
+                    setattr(self.data_frames, 'x_inferred_pca', df_x_inferred)
+                    x_inferred_inverted = pca.inverse_transform(x_inferred_pca[:, 2:])
+                    x_inferred_inverted = np.hstack([x_inferred_pca[:, :2], x_inferred_inverted])
                     df_x_inferred_inverted = pd.DataFrame(data=x_inferred_inverted, index=self.data_frames.appear_post.index,
                                                           columns=self.combine_df.columns)
                     setattr(self.data_frames, 'x_inferred_inverted', df_x_inferred_inverted)
@@ -679,6 +690,13 @@ class SEMContext:
         pred_boundaries = np.hstack([[0] * round(self.first_frame / self.fps / self.second_interval), pred_boundaries]).astype(
             int)
         logger.info(f'Total # of pred_boundaries: {sum(pred_boundaries)}')
+        logger.info(f'Total # of event models: {len(self.sem_model.event_models) - 1}')
+        active_event_models = 0
+        threshold = 600
+        for i in range(len(self.sem_model.event_models)):
+            if len(self.sem_model.event_models[i].training_pairs) > threshold:
+                active_event_models += 1
+        logger.info(f'Total # of event models active more than {threshold // 3}s: {active_event_models}')
         with open('output/run_sem/' + self.title + f'_diagnostic_{self.current_epoch}.pkl', 'wb') as f:
             pkl.dump(self.sem_model.results.__dict__, f)
 
@@ -711,19 +729,20 @@ class SEMContext:
                 title=self.title + f'_PE_{self.grain}_{self.current_epoch}')
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
-        with open('output/run_sem/results_sem_corpus.csv', 'a') as f:
+        with open('output/run_sem/results_corpus.csv', 'a') as f:
             writer = csv.writer(f)
-            writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models) - 2, self.current_epoch,
-                             sum(pred_boundaries), sem_init_kwargs, tag, mean_pe, std_pe, pearson_r, self.is_train])
+            # len adds 1, and the buffer model adds 1 => len() - 2
+            writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
+                             self.current_epoch, sum(pred_boundaries), sem_init_kwargs, tag, mean_pe, std_pe, pearson_r, self.is_train])
 
 
 if __name__ == "__main__":
     args = parse_config()
 
-    if not os.path.exists('output/run_sem/results_sem_corpus.csv'):
-        csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'epoch',
+    if not os.path.exists('output/run_sem/results_corpus.csv'):
+        csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'active_event_models', 'epoch',
                        'number_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train']
-        with open('output/run_sem/results_sem_corpus.csv', 'w') as f:
+        with open('output/run_sem/results_corpus.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
 
@@ -731,9 +750,9 @@ if __name__ == "__main__":
     # Define model architecture, hyper parameters and optimizer
     f_class = GRUEvent
     # f_class = LSTMEvent
-    optimizer_kwargs = dict(lr=1e-2, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0, amsgrad=False)
+    optimizer_kwargs = dict(lr=float(args.lr), beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0, amsgrad=False)
     # these are the parameters for the event model itself.
-    f_opts = dict(var_df0=50., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
+    f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
                   n_epochs=10, t=4, batch_update=True, n_hidden=int(args.n_hidden), variance_window=None,
                   optimizer_kwargs=optimizer_kwargs)
     # set the hyper parameters for segmentation
@@ -745,7 +764,7 @@ if __name__ == "__main__":
     # set default hyper parameters for each run, can be overridden later
     run_kwargs = dict()
     sem_model = SEM(**sem_init_kwargs)
-    tag = 'april_30_no_sm_same_seed_same_random_sequence_4'
+    tag = args.tag
 
     if int(args.use_sampler):
 

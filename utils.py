@@ -51,6 +51,8 @@ def parse_config():
     parser.add_argument("--tag")
     parser.add_argument("--train")
     parser.add_argument("--valid")
+    parser.add_argument("--alfa")
+    parser.add_argument("--lmda")
     args = parser.parse_args(remaining_argv)
 
     return args
@@ -528,9 +530,16 @@ class Sampler:
         self.validation_runs = validation_runs
         self.chapter_to_list = dict()
         self.max_epoch = 0
+        self.counter = 0
+        self.train_list = []
 
-    def get_one_run(self, chapter):
+    def _get_one_run(self, chapter):
         return self.chapter_to_list[chapter].pop(-1)
+
+    def get_one_run(self):
+        run = self.train_list[self.counter % len(self.train_list)]
+        self.counter += 1
+        return run
 
     def prepare_list(self):
         chapters = self.df_select.groupby('chapter').mean().sort_values('percentile', ascending=False).index.to_numpy()
@@ -541,7 +550,10 @@ class Sampler:
             ascend_percentile = list(df_chapter.sort_values('percentile')['run'])
             self.chapter_to_list[c] = ascend_percentile
         self.max_epoch = min(map(len, self.chapter_to_list.values()))
-        print(f'Maximum number of epoch is {self.max_epoch}')
+        for i in range(self.max_epoch):
+            for c in [4, 2, 3, 1]:
+                self.train_list.append(self._get_one_run(c))
+        # print(f'Maximum number of epoch is {self.max_epoch}')
 
 
 def contain_substr(column: str, keeps):
