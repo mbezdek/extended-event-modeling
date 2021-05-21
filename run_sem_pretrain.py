@@ -40,7 +40,7 @@ emb_dim = glove_vectors['apple'].size
 def preprocess_appear(appear_csv):
     appear_df = pd.read_csv(appear_csv, index_col='frame')
     for c in appear_df.columns:
-        appear_df.loc[:, c] = appear_df[c].astype(int).astype(int)
+        appear_df.loc[:, c] = appear_df[c].astype(float)
     return appear_df
 
 
@@ -488,14 +488,14 @@ class SEMContext:
                 # Infer coordinates from nearest categories and add both to data_frame for visualization
                 # objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
                 # objhand_df = pd.read_csv(objhand_csv)
-                # objhand_df = objhand_df.loc[self.data_frames.appear_post.index, :]
+                # objhand_df = objhand_df.loc[self.data_frames.skel_post.index, :]
 
                 def add_category_and_coordinates(categories: pd.DataFrame, use_depth=False):
                     # Readout to visualize object-hand features
                     # Re-index: some frames there are no objects near hand (which is not possible, this bug is due to min(89, NaN)=NaN
                     # categories = categories.reindex(range(categories.index[-1])).ffill()
                     categories = categories.ffill()
-                    categories = categories.loc[self.data_frames.appear_post.index, :]
+                    categories = categories.loc[self.data_frames.skel_post.index, :]
                     setattr(self.data_frames, 'categories' + ('_z' if use_depth else ''), categories)
                     # coordinates variable is determined by categories variable, thus having only 3 objects
                     coordinates = pd.DataFrame()
@@ -528,7 +528,7 @@ class SEMContext:
                     #     coordinates = coordinates.append(frame_series)
                     setattr(self.data_frames, 'coordinates' + ('_z' if use_depth else ''), coordinates)
 
-                add_category_and_coordinates(self.categories, use_depth=False)
+                # add_category_and_coordinates(self.categories, use_depth=False)
                 # Adding categories_z and coordinates_z to data_frame
                 add_category_and_coordinates(self.categories_z, use_depth=True)
 
@@ -540,24 +540,25 @@ class SEMContext:
             if int(self.configs.pca):
                 if int(self.configs.use_shared_pca):
                     pca = pkl.load(open(f'{self.configs.pca_tag}_pca.pkl', 'rb'))
-                    if x_train.shape[1] - 2 != pca.n_features_:
+                    if x_train.shape[1] != pca.n_features_:
                         logger.error(
                             f'MISMATCH: pca.n_features_ = {pca.n_features_} vs. input features={x_train.shape[1] - 2}!!!')
                         raise
-                    x_train_pca = pca.transform(x_train[:, 2:])
+                    x_train_pca = pca.transform(x_train)
                 else:
                     pca = PCA(int(self.configs.pca_dim), whiten=True)
-                    x_train_pca = pca.fit_transform(x_train[:, 2:])
-                x_train = np.hstack([x_train[:, :2], x_train_pca])
-                df_x_train = pd.DataFrame(data=x_train, index=self.data_frames.appear_post.index)
+                    x_train_pca = pca.fit_transform(x_train)
+                # x_train = np.hstack([x_train[:, :2], x_train_pca])
+                x_train = x_train_pca
+                df_x_train = pd.DataFrame(data=x_train, index=self.data_frames.skel_post.index)
                 setattr(self.data_frames, 'x_train_pca', df_x_train)
                 x_train_inverted = pca.inverse_transform(x_train_pca)
-                x_train_inverted = np.hstack([x_train[:, :2], x_train_inverted])
-                df_x_train_inverted = pd.DataFrame(data=x_train_inverted, index=self.data_frames.appear_post.index,
+                # x_train_inverted = np.hstack([x_train[:, :2], x_train_inverted])
+                df_x_train_inverted = pd.DataFrame(data=x_train_inverted, index=self.data_frames.skel_post.index,
                                                    columns=self.combine_df.columns)
                 setattr(self.data_frames, 'x_train_inverted', df_x_train_inverted)
             else:
-                df_x_train = pd.DataFrame(data=x_train, index=self.data_frames.appear_post.index, columns=self.combine_df.columns)
+                df_x_train = pd.DataFrame(data=x_train, index=self.data_frames.skel_post.index, columns=self.combine_df.columns)
                 setattr(self.data_frames, 'x_train', df_x_train)
 
             # Note that this is different from x_train = x_train / np.sqrt(x_train.shape[1]), the below code will change values of
@@ -576,16 +577,16 @@ class SEMContext:
                     # x_inferred_inverted = np.hstack([appear, x_inferred_inverted])  # concat appear feature as if it's used for consistency
                     # Scale back to PCA whitening results
                     x_inferred_pca = x_inferred_pca * np.sqrt(x_train.shape[1])
-                    df_x_inferred = pd.DataFrame(data=x_inferred_pca, index=self.data_frames.appear_post.index)
+                    df_x_inferred = pd.DataFrame(data=x_inferred_pca, index=self.data_frames.skel_post.index)
                     setattr(self.data_frames, 'x_inferred_pca', df_x_inferred)
-                    x_inferred_inverted = pca.inverse_transform(x_inferred_pca[:, 2:])
-                    x_inferred_inverted = np.hstack([x_inferred_pca[:, :2], x_inferred_inverted])
-                    df_x_inferred_inverted = pd.DataFrame(data=x_inferred_inverted, index=self.data_frames.appear_post.index,
+                    x_inferred_inverted = pca.inverse_transform(x_inferred_pca)
+                    # x_inferred_inverted = np.hstack([x_inferred_pca[:, :2], x_inferred_inverted])
+                    df_x_inferred_inverted = pd.DataFrame(data=x_inferred_inverted, index=self.data_frames.skel_post.index,
                                                           columns=self.combine_df.columns)
                     setattr(self.data_frames, 'x_inferred_inverted', df_x_inferred_inverted)
                 else:
                     x_inferred_ori = self.sem_model.results.x_hat * np.sqrt(x_train.shape[1])
-                    df_x_inferred_ori = pd.DataFrame(data=x_inferred_ori, index=self.data_frames.appear_post.index,
+                    df_x_inferred_ori = pd.DataFrame(data=x_inferred_ori, index=self.data_frames.skel_post.index,
                                                      columns=self.combine_df.columns)
                     setattr(self.data_frames, 'x_inferred', df_x_inferred_ori)
 
@@ -614,7 +615,7 @@ class SEMContext:
             optical_df = readout_dataframes.optical_post
             skel_df = readout_dataframes.skel_post
             obj_handling_embs = readout_dataframes.objhand_post
-            categories = readout_dataframes.categories
+            # categories = readout_dataframes.categories
             categories_z = readout_dataframes.categories_z
 
             # TODO: switch to scene motion
@@ -635,7 +636,7 @@ class SEMContext:
             skel_csv = os.path.join(self.configs.skel_csv, self.run + '_skel_features.csv')
             appear_csv = os.path.join(self.configs.appear_csv, self.run + '_appear.csv')
             optical_csv = os.path.join(self.configs.optical_csv, self.run + '_video_features.csv')
-            objspeed_csv = os.path.join(self.configs.objspeed_csv, self.run + '_objspeed.csv')
+            # objspeed_csv = os.path.join(self.configs.objspeed_csv, self.run + '_objspeed.csv')
 
             logger.info(f'Processing features...')
             # Load csv files and preprocess to get a scene vector
@@ -647,14 +648,14 @@ class SEMContext:
             optical_df = preprocess_optical(optical_csv, standardize=True)
             logger.info(f'Processing Objhand features...')
             # Switch obj_handling_embs appropriately to use depth
-            _, categories = preprocess_objhand(objhand_csv, standardize=True,
-                                               num_objects=int(self.configs.num_objects),
-                                               use_depth=False)
+            # _, categories = preprocess_objhand(objhand_csv, standardize=True,
+            #                                    num_objects=int(self.configs.num_objects),
+            #                                    use_depth=False)
             obj_handling_embs, categories_z = preprocess_objhand(objhand_csv, standardize=True,
                                                                  num_objects=int(self.configs.num_objects),
                                                                  use_depth=True)
             logger.info(f'Processing Objspeed features...')
-            objspeed_embs = preprocess_objspeed(objspeed_csv, standardize=True)
+            # objspeed_embs = preprocess_objspeed(objspeed_csv, standardize=True)
 
             # TODO: Switch to use scene motion or not
             # Get consistent start-end times and resampling rate for all features
@@ -667,13 +668,13 @@ class SEMContext:
         # for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post', 'objspeed_post'], data_frames):
         for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post'], data_frames):
             setattr(readout_dataframes, feature, df)
-        self.last_frame = readout_dataframes.appear_post.index[-1]
+        self.last_frame = readout_dataframes.skel_post.index[-1]
         self.first_frame = first_frame
         # This parameter is used to limit the time of ground truth video according to feature data
         self.end_second = math.ceil(self.last_frame / self.fps)
         self.data_frames = readout_dataframes
         self.combine_df = combine_df
-        self.categories = categories
+        # self.categories = categories
         self.categories_z = categories_z
 
     def run_sem_and_plot(self, x_train):
@@ -768,7 +769,7 @@ if __name__ == "__main__":
 
     if int(args.use_sampler):
 
-        df_select = pd.read_csv('output/run_sem/results_sem_corpus.csv')
+        df_select = pd.read_csv('output/run_sem/results_corpus.csv')
         df_select['chapter'] = df_select['run'].apply(lambda x: int(x[2]))
         # metrics are read from cache_tag
         interested_tags = [args.cache_tag]
@@ -777,7 +778,7 @@ if __name__ == "__main__":
             valid_runs = f.readlines()
             valid_runs = [x.strip() for x in valid_runs]
         sampler = Sampler(df_select=df_select, validation_runs=valid_runs)
-        sampler.prepare_list()
+        sampler.prepare_list(min_boundary=5, max_boundary=50, metric='percentile')
     else:
         sampler = None
     context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, tag=tag, configs=args, sampler=sampler)

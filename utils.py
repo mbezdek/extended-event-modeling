@@ -541,11 +541,11 @@ class Sampler:
         self.counter += 1
         return run
 
-    def prepare_list(self):
-        chapters = self.df_select.groupby('chapter').mean().sort_values('percentile', ascending=False).index.to_numpy()
+    def prepare_list(self, min_boundary=5, max_boundary=25, metric='percentile'):
+        chapters = self.df_select.groupby('chapter').mean().sort_values(metric, ascending=False).index.to_numpy()
         for c in chapters:
             df_chapter = self.df_select[self.df_select['chapter'] == c]
-            df_chapter = df_chapter[(df_chapter['number_boundaries'] >= 5) & (df_chapter['number_boundaries'] <= 25)]
+            df_chapter = df_chapter[(df_chapter['number_boundaries'] >= min_boundary) & (df_chapter['number_boundaries'] <= max_boundary)]
             df_chapter = df_chapter[~df_chapter['run'].isin(self.validation_runs)]
             ascend_percentile = list(df_chapter.sort_values('percentile')['run'])
             self.chapter_to_list[c] = ascend_percentile

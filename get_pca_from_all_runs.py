@@ -13,7 +13,7 @@ else:
 if len(sys.argv) > 2:
     sample = int(sys.argv[2])
 else:
-    sample = 500
+    sample = 200
 
 print(f'Tag is: {tag}')
 print(f'Sample for each run is: {sample}')
@@ -24,7 +24,7 @@ print(f'Total runs: {len(input_paths)}')
 
 def load_and_sample(path, sample):
     input_df = pkl.load(open(path, 'rb'))
-    data_frames = [input_df.optical_post, input_df.skel_post, input_df.objhand_post]
+    data_frames = [input_df.appear_post, input_df.optical_post, input_df.skel_post, input_df.objhand_post]
     if 'scene_motion' in tag:
         data_frames.append(input_df.objspeed_post)
     input_df = pd.concat(data_frames, axis=1)
