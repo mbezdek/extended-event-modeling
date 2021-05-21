@@ -542,7 +542,7 @@ class SEMContext:
                     pca = pkl.load(open(f'{self.configs.pca_tag}_pca.pkl', 'rb'))
                     if x_train.shape[1] != pca.n_features_:
                         logger.error(
-                            f'MISMATCH: pca.n_features_ = {pca.n_features_} vs. input features={x_train.shape[1] - 2}!!!')
+                            f'MISMATCH: pca.n_features_ = {pca.n_features_} vs. input features={x_train.shape[1]}!!!')
                         raise
                     x_train_pca = pca.transform(x_train)
                 else:
