@@ -412,9 +412,7 @@ class SEMContext:
             # for c in self.chapters:
             run = self.sampler.get_one_run()
             self.is_train = True
-            # added on may_6
             self.sem_model.kappa = int(self.configs.kappa)
-            # haven't tested yet, added on may_20
             self.sem_model.alfa = float(self.configs.alfa)
             logger.info(f'Training video {run}')
             self.set_run_variables(run)
@@ -438,11 +436,9 @@ class SEMContext:
         self.valid_dataset = np.random.permutation(self.valid_dataset)
         for index, run in enumerate(self.valid_dataset):
             self.is_train = False
-            # added on may_6
             self.sem_model.kappa = 0
-            # haven't tested yet, added on may_20
-            self.sem_model.alfa = 1e-15
-            logger.info(f'Evaluating video {run}')
+            self.sem_model.alfa = 1e-30
+            logger.info(f'Evaluating video {run} at epoch {self.current_epoch}')
             self.set_run_variables(run)
             self.infer_on_video(store_dataframes=int(self.configs.store_frames))
 
@@ -618,10 +614,12 @@ class SEMContext:
             # categories = readout_dataframes.categories
             categories_z = readout_dataframes.categories_z
 
-            # TODO: switch to scene motion
+            # switch to scene motion
             # objspeed_embs = readout_dataframes.objspeed_post
             # data_frames = [appear_df, optical_df, skel_df, obj_handling_embs,
             #                objspeed_embs]
+            # TODO: switch to 5 components with two features
+            # data_frames = [skel_df, obj_handling_embs]
             data_frames = [appear_df, optical_df, skel_df, obj_handling_embs]
             combine_df = pd.concat(data_frames, axis=1)
             first_frame = appear_df.index[0]
@@ -629,7 +627,6 @@ class SEMContext:
         else:
             # For some reason, some optical flow videos have inf value
             pd.set_option('use_inf_as_na', True)
-            logger.info(f'Config {self.configs}')
 
             logger.info(f'Loading features from csv formats')
             objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
@@ -657,10 +654,13 @@ class SEMContext:
             logger.info(f'Processing Objspeed features...')
             # objspeed_embs = preprocess_objspeed(objspeed_csv, standardize=True)
 
-            # TODO: Switch to use scene motion or not
             # Get consistent start-end times and resampling rate for all features
+            # TODO: switch to 5 components with two features
+            # combine_df, first_frame, data_frames = combine_dataframes([skel_df, obj_handling_embs],
+            #                                                           rate=self.configs.rate, fps=self.fps)
             combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
                                                                       rate=self.configs.rate, fps=self.fps)
+            # Switch to use scene motion or not
             # combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs,
             #                                                            objspeed_embs],
             #                                                           rate=self.configs.rate, fps=self.fps)
@@ -684,6 +684,12 @@ class SEMContext:
         :return:
         """
         self.sem_model.run(x_train, train=self.is_train, **self.run_kwargs)
+        switch_old = (self.sem_model.results.boundaries == 1).sum()
+        switch_new = (self.sem_model.results.boundaries == 2).sum()
+        switch_current = (self.sem_model.results.boundaries == 3).sum()
+        # set k_prev to None in order to run the next video
+        # added on may_28
+        self.sem_model.k_prev = None
         # Process results returned by SEM
         pred_boundaries = get_binned_prediction(self.sem_model.results.boundaries, second_interval=self.second_interval,
                                                 sample_per_second=self.sample_per_second)
@@ -692,11 +698,9 @@ class SEMContext:
             int)
         logger.info(f'Total # of pred_boundaries: {sum(pred_boundaries)}')
         logger.info(f'Total # of event models: {len(self.sem_model.event_models) - 1}')
-        active_event_models = 0
         threshold = 600
-        for i in range(len(self.sem_model.event_models)):
-            if len(self.sem_model.event_models[i].training_pairs) > threshold:
-                active_event_models += 1
+        active_event_models = np.count_nonzero(self.sem_model.c > threshold)
+
         logger.info(f'Total # of event models active more than {threshold // 3}s: {active_event_models}')
         with open('output/run_sem/' + self.title + f'_diagnostic_{self.current_epoch}.pkl', 'wb') as f:
             pkl.dump(self.sem_model.results.__dict__, f)
@@ -730,20 +734,23 @@ class SEMContext:
                 title=self.title + f'_PE_{self.grain}_{self.current_epoch}')
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
-        with open('output/run_sem/results_corpus.csv', 'a') as f:
+        with open('output/run_sem/results_corpus_extend.csv', 'a') as f:
             writer = csv.writer(f)
             # len adds 1, and the buffer model adds 1 => len() - 2
             writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
-                             self.current_epoch, sum(pred_boundaries), sem_init_kwargs, tag, mean_pe, std_pe, pearson_r, self.is_train])
+                             self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe, std_pe, pearson_r, self.is_train,
+                             switch_old, switch_new, switch_current])
 
 
 if __name__ == "__main__":
     args = parse_config()
+    logger.info(f'Config: {args}')
 
-    if not os.path.exists('output/run_sem/results_corpus.csv'):
+    if not os.path.exists('output/run_sem/results_corpus_extend.csv'):
         csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'active_event_models', 'epoch',
-                       'number_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train']
-        with open('output/run_sem/results_corpus.csv', 'w') as f:
+                       'number_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train',
+                       'switch_old', 'switch_new', 'switch_current']
+        with open('output/run_sem/results_corpus_extend.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
 
@@ -762,6 +769,7 @@ if __name__ == "__main__":
     kappa = int(args.kappa)
     sem_init_kwargs = {'lmda': lmda, 'alfa': alfa, 'kappa': kappa, 'f_opts': f_opts,
                        'f_class': f_class}
+    logger.info(f'SEM parameters: {sem_init_kwargs}')
     # set default hyper parameters for each run, can be overridden later
     run_kwargs = dict()
     sem_model = SEM(**sem_init_kwargs)

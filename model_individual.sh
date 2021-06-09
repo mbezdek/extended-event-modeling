@@ -2,6 +2,8 @@
 
 #SBATCH --ntasks 1
 #SBATCH --mem-per-cpu 4G
+#SBATCH --cpus-per-task 1
+#SBATCH -N 1
 #SBATCH --time 24:00:00
 
 

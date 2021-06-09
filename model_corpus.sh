@@ -1,9 +1,10 @@
 #!/bin/bash
 
 #SBATCH --cpus-per-task 1
-#SBATCH --mem-per-cpu 8G
+#SBATCH --mem-per-cpu 16G
 #SBATCH --time 48:00:00
 #SBATCH --ntasks 1
+#SBATCH --output=%j.%x.out
 
 
 cd /scratch/n.tan/extended-event-modeling/
@@ -14,6 +15,6 @@ source activate pt-tf-37
 
 #python run_sem_pretrain.py -c configs/config_run_sem.ini --run $1
 # uncomment to do grid search
-#python run_sem_pretrain.py -c configs/config_run_sem.ini --train $1 --valid $2 --alfa $3 --lmda $4 --tag $5
-python run_sem_pretrain.py -c configs/config_run_sem.ini --train $1 --valid $2
+python run_sem_pretrain.py -c configs/config_run_sem.ini --train $1 --valid $2 --alfa $3 --lmda $4 --tag $5
+#python run_sem_pretrain.py -c configs/config_run_sem.ini --train $1 --valid $2
 # sbatch model_corpus.sh chapter_1_sorted.txt
