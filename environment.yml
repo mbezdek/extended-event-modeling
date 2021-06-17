@@ -29,7 +29,7 @@ dependencies:
   - tensorboardX
   - coloredlogs
   - colorlog
-  - gensim
+  - gensim=3.8.0
   - opencv
   - panel
   - statsmodels

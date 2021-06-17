@@ -554,6 +554,7 @@ class Sampler:
             for c in [4, 2, 3, 1]:
                 self.train_list.append(self._get_one_run(c))
         # print(f'Maximum number of epoch is {self.max_epoch}')
+        logger.info(f"Sampler's Training List: {self.train_list} with {len(self.train_list)} runs")
 
 
 def contain_substr(column: str, keeps):

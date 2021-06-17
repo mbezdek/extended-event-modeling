@@ -687,6 +687,7 @@ class SEMContext:
         switch_old = (self.sem_model.results.boundaries == 1).sum()
         switch_new = (self.sem_model.results.boundaries == 2).sum()
         switch_current = (self.sem_model.results.boundaries == 3).sum()
+        entropy = stats.entropy(self.sem_model.results.c)
         # set k_prev to None in order to run the next video
         # added on may_28
         self.sem_model.k_prev = None
@@ -734,23 +735,23 @@ class SEMContext:
                 title=self.title + f'_PE_{self.grain}_{self.current_epoch}')
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
-        with open('output/run_sem/results_corpus_extend.csv', 'a') as f:
+        with open('output/run_sem/results_corpus_entropy.csv', 'a') as f:
             writer = csv.writer(f)
             # len adds 1, and the buffer model adds 1 => len() - 2
             writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
                              self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe, std_pe, pearson_r, self.is_train,
-                             switch_old, switch_new, switch_current])
+                             switch_old, switch_new, switch_current, entropy])
 
 
 if __name__ == "__main__":
     args = parse_config()
     logger.info(f'Config: {args}')
 
-    if not os.path.exists('output/run_sem/results_corpus_extend.csv'):
+    if not os.path.exists('output/run_sem/results_corpus_entropy.csv'):
         csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'active_event_models', 'epoch',
                        'number_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train',
-                       'switch_old', 'switch_new', 'switch_current']
-        with open('output/run_sem/results_corpus_extend.csv', 'w') as f:
+                       'switch_old', 'switch_new', 'switch_current', 'entropy']
+        with open('output/run_sem/results_corpus_entropy.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
 

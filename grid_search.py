@@ -7,7 +7,10 @@ lmda = [1e0, 1e2, 1e4, 1e6, 1e8]
 
 for a in alfa:
     for l in lmda:
-        tag = f'june_06_object1_grid_alfa{a:.0E}_lmda{l:.0E}'
+        if a > l:
+            print(f'Alfa={a} > Lmda={l}, skip this run')
+            continue
+        tag = f'june_17_pca30_lr1e-3_grid_alfa{a:.0E}_lmda{l:.0E}'
         proc = subprocess.Popen(
             ['sbatch', '--job-name', tag, 'model_corpus.sh',
              'train.txt', 'valid.txt', f'{a:.0E}', f'{l:.0E}', tag])
