@@ -52,7 +52,7 @@ Download this release: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essenti
 Unzip file using: https://www.7-zip.org/ \
 Remember where you install ffmpeg, then adding that path to PATH, example: https://www.architectryan.com/2018/03/17/add-to-the-path-on-windows-10/
 
-## Running
+## Running Scripts
 ### Drawing segmentations
 ```python load_and_draw.py -c configs/config_draw_segmentation.ini```
 ### Tracking
@@ -62,8 +62,8 @@ If there is a runtime error: \
 `RuntimeError (RuntimeError: CuDNN error: CUDNN_STATUS_SUCCESS)` \
 Try remove (instead of uninstall) and then re-install \
 ```conda remove cudnn cudatoolkit pytorch torchvision && conda install cuda92 pytorch=0.4.1 -c pytorch```
-### Segmenting
-```python segmenting/segmenting.py -c configs/config_segmenting.ini```
+### Train SEM and Evaluate
+```python run_sem_pretrain.py -c configs/config_run_sem.ini```
 #### Trouble shooting
 If there is a runtime error: \
 `AttributeError: Can't pickle local object 'processify.<locals>.process_func'` \
@@ -74,3 +74,11 @@ Search `def sem_run` and command out processify decorator:
 # @processify
 def sem_run(x, sem_init_kwargs=None, run_kwargs=None):
 ```
+## Visualize Results
+We use panel to develop some visualization dashboards useful to understand SEM's results
+### Input Features
+```panel serve input_viz_refactored.ipynb --port 6300 --allow-websocket-origin=localhost:6300 --allow-websocket-origin=127.0.0.1:6300```
+### Output Diagnostic Results
+```panel serve output_tabs_viz.ipynb --allow-websocket-origin=localhost:6100 --port 6100 --allow-websocket-origin=127.0.0.1:6100```
+### Overall Metrics
+```panel serve matrix_viz.ipynb --port 6200 --allow-websocket-origin=localhost:6200 --allow-websocket-origin=127.0.0.1:6200```

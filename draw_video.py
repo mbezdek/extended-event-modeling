@@ -111,10 +111,10 @@ def get_nearest(emb_vector: np.ndarray, glove=False):
         nearest_objects = [(nr[0], round(nr[1], 2)) for nr in nearest_objects]
         return nearest_objects
 
-    res = {kv[0]: np.linalg.norm(kv[1] - emb_vector) for kv in word2vec.items()}
-    res = sorted(res.items(), key=lambda kv: kv[1])
-    res = [(nr[0], round(nr[1], 2)) for nr in res]
-    return res
+    # res = {kv[0]: np.linalg.norm(kv[1] - emb_vector) for kv in word2vec.items()}
+    # res = sorted(res.items(), key=lambda kv: kv[1])
+    # res = [(nr[0], round(nr[1], 2)) for nr in res]
+    # return res
 
 
 def drawobj(instances, frame, odf, color=(255, 0, 0), thickness=1, draw_name=False):
@@ -152,7 +152,7 @@ def drawobj(instances, frame, odf, color=(255, 0, 0), thickness=1, draw_name=Fal
     return frame
 
 
-def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, get_img=False, black=True):
+def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, get_img=False, black=False):
     outframe = deepcopy(anchored_frames[frame_slider])
     if black:
         outframe[:, :, :] = 0
@@ -162,15 +162,15 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             outframe = drawskel(frame_slider, outframe, skel_df)
             # TODO: comment these lines if not using position in training SEM.
             # outframe = drawskel(frame_slider, outframe, pca_input_df, color=(255, 0, 0))
-            outframe = drawskel(frame_slider, outframe, pred_skel_df, color=(0, 255, 0))
+            # outframe = drawskel(frame_slider, outframe, pred_skel_df, color=(0, 255, 0))
         except Exception as e:
             cv2.putText(outframe, 'No skeleton data', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
             print(traceback.format_exc())
-            # return None
     else:
         outframe = anchored_frames[frame_slider]
     if obj_checkbox:
         try:
+            # Draw boxes for nearest objects and background objects
             odf_z = objhand_df[objhand_df.index == frame_slider]
             odf_z = odf_z[odf_z.columns[~odf_z.isna().any()].tolist()]
             sorted_objects = list(pd.Series(odf_z.filter(regex='dist_z$').iloc[0, :]).sort_values().index)
@@ -178,18 +178,27 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             outframe = drawobj(sorted_objects[:3], outframe, odf_z, color=ColorBGR.red, draw_name=True)
             outframe = drawobj(sorted_objects[3:], outframe, odf_z, color=ColorBGR.cyan, draw_name=True)
             # Draw nearest words (in the video)
-            nearest_objects = get_nearest(pred_objhand.loc[frame_slider, :].values)
-            for index, instance in enumerate(nearest_objects[:3]):
+            # nearest_objects = get_nearest(pred_objhand.loc[frame_slider, :].values)
+            # for index, instance in enumerate(nearest_objects[:3]):
+            #     cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 140, 20 + 20 * index),
+            #                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+            #                 color=ColorBGR.green)
+            # Draw nearest objects (Glove corpus)
+
+            # Put three nearest works from glove to input vector
+            input_nearest_objects = get_nearest([np.array(inputdf.x_train_inverted.loc[frame_slider, pred_objhand.columns].values, dtype=np.float32)],
+                                                glove=True)
+            for index, instance in enumerate(input_nearest_objects[:3]):
                 cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 140, 20 + 20 * index),
                             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
-                            color=ColorBGR.green)
-            # Draw nearest objects (Glove corpus)
-            glove_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
+                            color=ColorBGR.blue)
+            # Put three nearest words from glove to prediction vector
+            pred_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
                                                 glove=True)
-            for index, instance in enumerate(glove_nearest_objects[:3]):
+            for index, instance in enumerate(pred_nearest_objects[:3]):
                 cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 280, 20 + 20 * index),
                             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
-                            color=ColorBGR.yellow)
+                            color=ColorBGR.green)
         except Exception as e:
             print(traceback.format_exc())
 
@@ -205,14 +214,11 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
     cv2.putText(outframe, text=f'FrameID: {frame_slider}', org=(10, 200),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
                 color=(0, 255, 0))
-    cv2.putText(outframe, text=f'Second: {frame_slider // fps}', org=(10, 220),
-                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
-                color=(0, 255, 0))
     # add Segmentation flag
     index = pred_objhand.index.get_indexer([frame_slider])[0]
     if sem_readouts['e_hat'][index] != sem_readouts['e_hat'][index - 1]:
-        cv2.putText(outframe, text='BOUNDARY', org=(10, 240),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.6,
+        cv2.putText(outframe, text='SEGMENT', org=(10, 220),
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
                     color=(0, 255, 0))
 
     if get_img:
@@ -340,11 +346,11 @@ if __name__ == "__main__":
     skel_df = pd.read_csv(f'output/skel/{run_select}_kinect_skel_features.csv')
     objhand_df = pd.read_csv(os.path.join(f'output/objhand/{run_select}_kinect_objhand.csv'))
     anchored_frames = joblib.load(f'output/run_sem/frames/{run_select}_kinect_trimmar_20_individual_depth_scene_frames.joblib')
-    inputdf = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_inputdf{epoch}.pkl', 'rb'))
+    inputdf = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_inputdf_{epoch}.pkl', 'rb'))
     # glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
     glove_vectors = pkl.load(open('gen_sim_glove_50.pkl', 'rb'))
     gt_freqs = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_gtfreqs.pkl', 'rb'))
-    sem_readouts = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_diagnostic{epoch}.pkl', 'rb'))
+    sem_readouts = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_diagnostic_{epoch}.pkl', 'rb'))
 
     first_frame = inputdf.appear_post.index[0]
     offset = first_frame / fps / second_interval
@@ -373,27 +379,27 @@ if __name__ == "__main__":
         pred_skel_df[new_column] = 'Predicted'
         pca_input_df[new_column] = 'Inferred'
 
-        # Prepare a dictionary of word2vec for this particular run
-        categories = set()
-        for c in inputdf.categories.columns:
-            categories.update(inputdf.categories.loc[:, c].dropna())
-        if None in categories:
-            categories.remove(None)
-
         pred_objhand = inputdf.x_inferred_inverted
         pred_objhand = pred_objhand.loc[:, objhand_post.drop(['euclid', 'cosine'], axis=1, errors='ignore').columns]
-        word2vec = dict()
-        for category in categories:
-            r = np.zeros(shape=(1, pred_objhand.shape[1]))
-            try:
-                r += glove_vectors[category]
-            except Exception as e:
-                words = category.split(' ')
-                for w in words:
-                    w = w.replace('(', '').replace(')', '')
-                    r += glove_vectors[w]
-                r /= len(words)
-            word2vec[category] = r
+        # Prepare a dictionary of word2vec for this particular run
+        # categories = set()
+        # for c in inputdf.categories_z.columns:
+        #     categories.update(inputdf.categories_z.loc[:, c].dropna())
+        # if None in categories:
+        #     categories.remove(None)
+        #
+        # word2vec = dict()
+        # for category in categories:
+        #     r = np.zeros(shape=(1, pred_objhand.shape[1]))
+        #     try:
+        #         r += glove_vectors[category]
+        #     except Exception as e:
+        #         words = category.split(' ')
+        #         for w in words:
+        #             w = w.replace('(', '').replace(')', '')
+        #             r += glove_vectors[w]
+        #         r /= len(words)
+        #     word2vec[category] = r
 
     draw_video()
     t2 = time.perf_counter()
