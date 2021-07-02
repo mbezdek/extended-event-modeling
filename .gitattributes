@@ -1,2 +1,1 @@
-output/run_sem/** filter=lfs diff=lfs merge=lfs -text
 output/run_sem/june_29_pca30_k0_parallel_grid_alfa1E-02_lmda1E+04 filter=lfs diff=lfs merge=lfs -text
