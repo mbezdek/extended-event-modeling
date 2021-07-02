@@ -412,7 +412,7 @@ class SEMContext:
             # for c in self.chapters:
             run = self.sampler.get_one_run()
             self.is_train = True
-            self.sem_model.kappa = int(self.configs.kappa)
+            self.sem_model.kappa = float(self.configs.kappa)
             self.sem_model.alfa = float(self.configs.alfa)
             logger.info(f'Training video {run}')
             self.set_run_variables(run)
@@ -441,6 +441,7 @@ class SEMContext:
             logger.info(f'Evaluating video {run} at epoch {self.current_epoch}')
             self.set_run_variables(run)
             self.infer_on_video(store_dataframes=int(self.configs.store_frames))
+            # break
 
     def parse_input(self, token, is_stratified=0) -> List:
         # Whether the train.txt or 4.4.4_kinect
@@ -687,10 +688,14 @@ class SEMContext:
         switch_old = (self.sem_model.results.boundaries == 1).sum()
         switch_new = (self.sem_model.results.boundaries == 2).sum()
         switch_current = (self.sem_model.results.boundaries == 3).sum()
-        entropy = stats.entropy(self.sem_model.results.c)
+        # Added on june_20
+        entropy = stats.entropy(self.sem_model.results.c) / np.log((self.sem_model.results.c > 0).sum())
         # set k_prev to None in order to run the next video
         # added on may_28
         self.sem_model.k_prev = None
+        # set x_prev to None in order to train the general event
+        # added on june_29
+        self.sem_model.x_prev = None
         # Process results returned by SEM
         pred_boundaries = get_binned_prediction(self.sem_model.results.boundaries, second_interval=self.second_interval,
                                                 sample_per_second=self.sample_per_second)
@@ -767,7 +772,7 @@ if __name__ == "__main__":
     # set the hyper parameters for segmentation
     lmda = float(args.lmda)  # stickyness parameter (prior)
     alfa = float(args.alfa)  # concentration parameter (prior)
-    kappa = int(args.kappa)
+    kappa = float(args.kappa)
     sem_init_kwargs = {'lmda': lmda, 'alfa': alfa, 'kappa': kappa, 'f_opts': f_opts,
                        'f_class': f_class}
     logger.info(f'SEM parameters: {sem_init_kwargs}')
