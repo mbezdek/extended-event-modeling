@@ -553,6 +553,8 @@ class Sampler:
         for i in range(self.max_epoch):
             for c in [4, 2, 3, 1]:
                 self.train_list.append(self._get_one_run(c))
+        # added on july_15 to test noisy video hypothesis
+        # self.train_list = self.train_list[::-1]
         # print(f'Maximum number of epoch is {self.max_epoch}')
         logger.info(f"Sampler's Training List: {self.train_list} with {len(self.train_list)} runs")
 

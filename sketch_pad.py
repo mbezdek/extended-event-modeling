@@ -352,11 +352,11 @@ with open('output/run_sem/1.3.9_kinect_trimjan_07_1000ms_diagnostic.pkl', 'rb') 
     df['restart_post'] = df.filter(regex='restart_').sum(axis=1)
     df['switch'] = df.filter(regex='_post').idxmax(axis=1)
     ax.vlines(df[df['switch'] == 'new_post'].index / frame_interval + offset, ymin=0, ymax=1, alpha=0.5, label='Switch to New '
-                                                                                                                 'Event',
-               color=colors['new'], linestyles='dotted')
+                                                                                                               'Event',
+              color=colors['new'], linestyles='dotted')
     ax.vlines(df[df['switch'] == 'old_post'].index / frame_interval + offset, ymin=0, ymax=1, alpha=0.5, label='Switch to Old '
-                                                                                                                 'Event',
-               color=colors['old'], linestyles='dotted')
+                                                                                                               'Event',
+              color=colors['old'], linestyles='dotted')
     # ax.vlines(df[df['switch'] == 'repeat_post'].index, ymin=0, ymax=1, alpha=0.5, label='Repeat Event', color=colors['repeat'],
     #            linestyles='dotted')
     # ax.vlines(df[df['switch'] == 'restart_post'].index, ymin=0, ymax=1, alpha=0.5, label='Restart Event', color=colors['restart'],
@@ -381,7 +381,7 @@ for run_select in kinects:
         continue
     with open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_inputdf_0.pkl', 'rb') as f:
         inputdfs = pkl.load(f)
-    vidfile=f'data/small_videos/{run_select}_kinect_trim.mp4'
+    vidfile = f'data/small_videos/{run_select}_kinect_trim.mp4'
 
     appear = inputdfs[0]
     frames = appear.index
@@ -407,9 +407,11 @@ for run_select in kinects:
 import pickle as pkl
 import glob
 
+
 class DiagnosticResults:
     def __init__(self):
         pass
+
 
 diagnostics = glob.glob('output/run_sem/*diagnostic.pkl')
 for d in diagnostics:
@@ -420,24 +422,28 @@ for d in diagnostics:
         diag.__dict__ = sem_readouts.__dict__
         pkl.dump(diag, f)
 
-for all_lik, new_lik, repeat_lik in zip(sem_readouts['frame_dynamics']['old_lik'], sem_readouts['frame_dynamics']['new_lik'], sem_readouts['frame_dynamics']['repeat_lik']):
+for all_lik, new_lik, repeat_lik in zip(sem_readouts['frame_dynamics']['old_lik'], sem_readouts['frame_dynamics']['new_lik'],
+                                        sem_readouts['frame_dynamics']['repeat_lik']):
     print(all_lik, new_lik, repeat_lik)
     break
 
-sem_readouts['frame_dynamics']['old_lik'] = [[l for l in all_lik if not(np.isclose(l, new_lik, rtol=1e-2) or np.isclose(l, repeat_lik, rtol=1e-2))]
- for all_lik, new_lik, repeat_lik in zip(sem_readouts['frame_dynamics']['old_lik'], sem_readouts['frame_dynamics']['new_lik'], sem_readouts['frame_dynamics']['repeat_lik'])]
-sem_readouts['frame_dynamics']['old_lik']  = [l if len(l) else [-5000] for l in sem_readouts['frame_dynamics']['old_lik']]
-
-
+sem_readouts['frame_dynamics']['old_lik'] = [
+    [l for l in all_lik if not (np.isclose(l, new_lik, rtol=1e-2) or np.isclose(l, repeat_lik, rtol=1e-2))]
+    for all_lik, new_lik, repeat_lik in zip(sem_readouts['frame_dynamics']['old_lik'], sem_readouts['frame_dynamics']['new_lik'],
+                                            sem_readouts['frame_dynamics']['repeat_lik'])]
+sem_readouts['frame_dynamics']['old_lik'] = [l if len(l) else [-5000] for l in sem_readouts['frame_dynamics']['old_lik']]
 
 # draw all interested metrics against epoch, not necessary anymore because we have scatter matrix.
 import pandas as pd
+
 df = pd.read_csv('output/run_sem/results_sem_run.csv')
 grouped = df.groupby('tag')
 agg = grouped[['bicorr', 'percentile']].describe()
-grouped[['bicorr', 'percentile']].describe()[[('bicorr', 'mean'), ('bicorr', 'std'), ('percentile', 'mean'), ('percentile', 'std')]]
+grouped[['bicorr', 'percentile']].describe()[
+    [('bicorr', 'mean'), ('bicorr', 'std'), ('percentile', 'mean'), ('percentile', 'std')]]
 
 import matplotlib.pyplot as plt
+
 y_interesteds = ['bicorr', 'percentile', 'model_boundaries', 'n_event_models', 'mean_pe', 'std_pe']
 for y_interested in y_interesteds:
 
@@ -458,12 +464,12 @@ for y_interested in y_interesteds:
     plt.savefig(f'compare_{y_interested}.png')
     plt.close(fig)
 
-
 #
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import statsmodels.api as sm
+
 # load data frame
 df = pd.read_csv('output/run_sem/results_sem_run_pearson.csv')
 df['chapter'] = df['run'].apply(lambda x: int(x[2]))
@@ -482,7 +488,8 @@ df['chapter'] = df['run'].apply(lambda x: int(x[2]))
 numerics = ['mean_pe', 'pearson_r', 'epoch', 'n_event_models', 'number_boundaries']
 # compare between tags
 interested_tags = ['april_29_no_sm_same_seed_random_sequence_1', 'april_29_no_sm_same_seed_random_sequence_2',
-                   'april_29_no_sm_same_seed_random_sequence_3', 'april_29_no_sm_same_seed_random_sequence_4', 'april_29_no_sm_same_seed_random_sequence_5']
+                   'april_29_no_sm_same_seed_random_sequence_3', 'april_29_no_sm_same_seed_random_sequence_4',
+                   'april_29_no_sm_same_seed_random_sequence_5']
 df_select = df[df['tag'].isin(interested_tags)]
 df_select = df[(df['tag'].isin(interested_tags)) & (df['is_train'] == False)]
 # df_select['nh'] = np.select([df_select['tag'].str.contains('nh16'), ~df_select['tag'].str.contains('nh16')], [16, 32])
@@ -524,6 +531,7 @@ import scipy.stats as stats
 from scipy.ndimage import gaussian_filter1d
 from utils import get_point_biserial, get_binned_prediction
 
+
 def get_pearson_r(run, tag, epoch):
     sem_readouts = pkl.load(
         open(f"output/run_sem/{run}_trim{tag}_diagnostic_{epoch}.pkl", 'rb'))
@@ -543,6 +551,7 @@ def get_pearson_r(run, tag, epoch):
     r, p = stats.pearsonr(pred_boundaries_gaussed[:last], gt_freqs[:last])
     return r
 
+
 df['pearson_r'] = df.apply(lambda x: get_pearson_r(x.run, x.tag, x.current_epoch), axis=1)
 # Showing that conditioning on n_event_models is a bad idea
 agg = df.groupby('chapter').mean()
@@ -552,3 +561,55 @@ sns.scatterplot(x=agg.index, y=agg['bicorr'], hue=agg.index, palette='bright', a
 plt.show()
 # just a handy line
 df[df['tag'] == 'mar_04_individual_3'][select_columns].sort_values('pearson_r')
+
+modified_runs = open('modified_runs.txt', 'rt').readlines()
+modified_runs = [r.strip() for r in modified_runs]
+for run in modified_runs:
+    df = pd.read_csv(f'data/ground_truth_labels/{run}_labels.csv')
+    scale = 540 / df['height'].iloc[0]
+    df['height'] = 540
+    df['width'] = 960
+    df['xmin'] = (df['xmin'] * scale).astype(int)
+    df['xmax'] = (df['xmax'] * scale).astype(int)
+    df['ymin'] = (df['ymin'] * scale).astype(int)
+    df['ymax'] = (df['ymax'] * scale).astype(int)
+
+    df.to_csv(f'data/ground_truth_labels/{run}_fixed_labels.csv', index=False)
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
+import glob
+import plotly.express as px
+import datetime
+
+
+def my_parse(timestamp):
+    h, m, s, ms = timestamp.split(':')
+    return 3600 * int(h) + 60 * int(m) + int(s) + int(ms) / 1000
+
+
+df = pd.read_excel('timing_start_stop_clap.xlsx', sheet_name=1)
+df = df.rename(columns={"Scene\n(actor, chapter, run)": "Scene"})
+df_select = pd.concat([df.filter(like='Scene'), df.filter(like='Camera'), df.filter(like="event")], axis=1)
+interested_runs = ['1.2.3', '2.2.7', '6.2.2']
+df_select = df_select[(df_select['Scene'].isin(interested_runs)) & (df_select['Camera'] == 'kinect')]
+events = []
+for i, test_series in df_select.iterrows():
+    for e in range(1, 8):
+        events.append(dict(Run=test_series.filter(like='Scene')[0],
+                           Start=pd.to_datetime(test_series.filter(like=f'event{e}Start')[0][:-3]),
+                           Finish=pd.to_datetime(test_series.filter(like=f'event{e}End')[0][:-3]),
+                           # Start=my_parse(test_series.filter(like=f'event{e}Start')[0]),
+                           # Finish=my_parse(test_series.filter(like=f'event{e}End')[0]),
+                           Event=test_series[f'event{e}']))
+df_con = pd.DataFrame(events)
+fig = px.timeline(df_con, x_start="Start", x_end="Finish", y="Run", color="Event",
+                  color_discrete_sequence=px.colors.qualitative.Dark24
+                  )
+midnight = datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+offset = midnight + datetime.timedelta(0, 100)
+fig.add_vline(x=b)
+fig.update_yaxes(autorange="reversed")
+fig.write_image('gantt.png')

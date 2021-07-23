@@ -407,6 +407,7 @@ class SEMContext:
                 self.evaluating()
 
     def training(self):
+        # TODO: can be refactored for simplicity
         if self.sampler is not None:
             logger.info('Using sampler instead of train.txt!!!')
             # for c in self.chapters:
@@ -423,12 +424,14 @@ class SEMContext:
         else:
             # Randomize order of video
             # random.shuffle(self.train_dataset)
-            self.train_dataset = np.random.permutation(self.train_dataset)
-            for index, run in enumerate(self.train_dataset):
-                self.is_train = True
-                logger.info(f'Training video {run}')
-                self.set_run_variables(run)
-                self.infer_on_video(store_dataframes=int(self.configs.store_frames))
+            # self.train_dataset = np.random.permutation(self.train_dataset)
+            run = self.train_dataset[(self.current_epoch - 1) % len(self.train_dataset)]
+            self.is_train = True
+            self.sem_model.kappa = float(self.configs.kappa)
+            self.sem_model.alfa = float(self.configs.alfa)
+            logger.info(f'Training video {run}')
+            self.set_run_variables(run)
+            self.infer_on_video(store_dataframes=int(self.configs.store_frames))
 
     def evaluating(self):
         # Randomize order of video
@@ -688,6 +691,9 @@ class SEMContext:
         switch_old = (self.sem_model.results.boundaries == 1).sum()
         switch_new = (self.sem_model.results.boundaries == 2).sum()
         switch_current = (self.sem_model.results.boundaries == 3).sum()
+        logger.info(f'Total # of OLD switches: {switch_old}')
+        logger.info(f'Total # of NEW switches: {switch_new}')
+        logger.info(f'Total # of RESTART switches: {switch_current}')
         # Added on june_20
         entropy = stats.entropy(self.sem_model.results.c) / np.log((self.sem_model.results.c > 0).sum())
         # set k_prev to None in order to run the next video
