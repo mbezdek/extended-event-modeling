@@ -9,6 +9,8 @@ import sys
 
 import os
 
+sys.path.append(os.getcwd())
+sys.path.append('../pysot')
 from pysot.core.config import cfg
 from pysot.models.model_builder import ModelBuilder
 from pysot.tracker.tracker_builder import build_tracker
@@ -536,6 +538,7 @@ if __name__ == '__main__':
         # Create video writer and reader
         start = perf_counter()
         INPUT_VIDEO_PATH = os.path.join(args.input_video_dir, args.run + f'_trim.mp4')
+        # INPUT_LABEL_PATH = os.path.join(args.input_label_dir, args.run + f'_labels_fixed.csv')
         INPUT_LABEL_PATH = os.path.join(args.input_label_dir, args.run + f'_labels.csv')
         OUTPUT_VIDEO_FW = os.path.join(args.output_video_dir, args.run + f'_{args.tag}_fw.avi')
         OUTPUT_VIDEO_BW = os.path.join(args.output_video_dir, args.run + f'_{args.tag}_bw.avi')
@@ -571,6 +574,8 @@ if __name__ == '__main__':
         context_forward = Context(track_kwargs=track_kwargs, color_reference=color_reference)
         while cv2_video_reader.capture.isOpened():
             frame_id += 1
+            # if frame_id > 400:
+            #     break
             ret, frame = cv2_video_reader.read_frame()
             if not ret:
                 logger.info('End of video stream, ret is False!')
