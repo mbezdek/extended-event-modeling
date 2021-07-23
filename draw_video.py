@@ -278,14 +278,13 @@ def plot_diagnostic_readouts(frame_slider, run_select, title='', get_img=False):
     ax.plot(gaussian_filter1d(gt_freqs, 1), label='Subject Boundaries')
     ax.set_xlabel('Time (second)')
     ax.set_ylabel('Boundary Probability')
+    ax.axvline(frame_slider / fps, linewidth=2, alpha=0.5, color='r')
     ax.set_title('Diagnostic Readouts ' + run_select)
-    colors = {'new': 'red', 'old': 'green', 'restart': 'blue', 'repeat': 'purple'}
 
     impose_rainbow_events(ax, fig)
     impose_line_boundaries(ax, fig)
-    impose_metrics(ax, fig)
+#     impose_metrics(ax, fig)
 
-    ax.axvline(frame_slider / fps, linewidth=2, alpha=0.5, color='r')
     if get_img:
         from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
         #         canvas = FigureCanvas(fig)
@@ -303,26 +302,28 @@ def draw_video():
     if not os.path.exists(f'output/videos'):
         os.makedirs('output/videos')
     if os.path.exists(output_video_path):
-        print('Video already drawn!!!')
-        return
-    else:
-        print(f'Drawing {output_video_path}')
+        print('Video already drawn!!! Deleting...')
+        os.remove(output_video_path)
+    print(f'Drawing {output_video_path}')
 
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    cv2_writer = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
-                                 frameSize=(640, 480), isColor=True)
+    # cv2_writer = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
+    #                              frameSize=(640, 480), isColor=True)
+    cv2_writer_long = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
+                                 frameSize=(640, 720), isColor=True)
     for frame_id, frame in anchored_frames.items():
         img = draw_frame_resampled(frame_id, skel_checkbox=True, obj_checkbox=True, run_select=run_select, get_img=True,
                                    black=False)
         # if img is None:
         #     continue
         img = cv2.resize(img, dsize=(640, 480))
-        cv2_writer.write(img)
-        # diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
-        # diagnostic = cv2.resize(diagnostic, dsize=(640, 480))
-        # concat = np.concatenate([img, diagnostic], axis=0)
-        # cv2_writer.write(concat)
-    cv2_writer.release()
+        # cv2_writer.write(img)
+        diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
+        diagnostic = cv2.resize(diagnostic, dsize=(640, 240))
+        concat = np.concatenate([img, diagnostic], axis=0)
+        cv2_writer_long.write(concat)
+    # cv2_writer.release()
+    cv2_writer_long.release()
     print(f'Done {output_video_path}')
 
 

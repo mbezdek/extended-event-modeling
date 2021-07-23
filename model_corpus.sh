@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #SBATCH --cpus-per-task 1
-#SBATCH --mem-per-cpu 72G
+#SBATCH --mem-per-cpu 96G
 #SBATCH --time 120:00:00
 #SBATCH --ntasks 1
 #SBATCH --output=%j.%x.out
