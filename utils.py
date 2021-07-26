@@ -53,6 +53,7 @@ def parse_config():
     parser.add_argument("--valid")
     parser.add_argument("--alfa")
     parser.add_argument("--lmda")
+    parser.add_argument("--lr")
     args = parser.parse_args(remaining_argv)
 
     return args

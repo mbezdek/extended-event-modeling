@@ -308,6 +308,7 @@ def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=
         plt.savefig('output/run_sem/' + title + '.png')
     if show:
         plt.show()
+    plt.close()
 
 
 def plot_pe(sem_readouts, frame_interval, offset, title):
@@ -316,6 +317,7 @@ def plot_pe(sem_readouts, frame_interval, offset, title):
     df['second'] = df.index / frame_interval + offset
     df.plot(kind='line', x='second', y='prediction_error', alpha=1.00, ax=ax)
     plt.savefig('output/run_sem/' + title + '.png')
+    plt.close()
 
 
 def resample_df(objhand_df, rate='40ms', fps=30):
@@ -569,6 +571,7 @@ class SEMContext:
             x_train = x_train / np.sqrt(x_train.shape[1])
             # appear, x_train = np.split(x_train, [2], axis=1)  # remove appear features
             # This function train and change sem event models
+            # x_train = np.random.permutation(x_train)
             self.run_sem_and_plot(x_train)
             if store_dataframes:
                 # Transform predicted vectors to the original vector space for visualization
@@ -773,7 +776,7 @@ if __name__ == "__main__":
     optimizer_kwargs = dict(lr=float(args.lr), beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0, amsgrad=False)
     # these are the parameters for the event model itself.
     f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
-                  n_epochs=10, t=4, batch_update=True, n_hidden=int(args.n_hidden), variance_window=None,
+                  n_epochs=1, t=4, batch_update=True, n_hidden=int(args.n_hidden), variance_window=None,
                   optimizer_kwargs=optimizer_kwargs)
     # set the hyper parameters for segmentation
     lmda = float(args.lmda)  # stickyness parameter (prior)
