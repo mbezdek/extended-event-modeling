@@ -22,11 +22,13 @@ if __name__ == '__main__':
     cv2_video_writer = CV2VideoWriter(output_video_path=args.output_video_path,
                                       width=cv2_video_reader.width,
                                       height=cv2_video_reader.height)
+    logger.info(f'Video width={cv2_video_reader.width}')
+    logger.info(f'Video height={cv2_video_reader.height}')
     # Parse label file
     label_df = pd.read_csv(args.input_label_path)
     if 'index' in label_df.columns:
         label_times = np.array(sorted(label_df['index'].unique()))
-        label_frames = label_times * 30
+        label_frames = label_times * cv2_video_reader.fps
         label_frames = list(label_frames.astype(np.int))
     else:
         label_frames = np.array(sorted(label_df['frame'].unique()))
@@ -45,7 +47,7 @@ if __name__ == '__main__':
             my_frame = FrameWrapper(frame=frame, frame_id=frame_id)
             my_frame.put_text(f'FrameID: {frame_id}')
             if 'index' in label_df.columns:
-                box_df = label_df[label_df['index'] == (frame_id // cv2_video_reader.fps)]
+                box_df = label_df[label_df['index'] == round(frame_id / cv2_video_reader.fps)]
             else:
                 label_df['xmax'] = label_df['x'] + label_df['w']
                 label_df['xmin'] = label_df['x']

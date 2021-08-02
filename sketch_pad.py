@@ -562,10 +562,27 @@ plt.show()
 # just a handy line
 df[df['tag'] == 'mar_04_individual_3'][select_columns].sort_values('pearson_r')
 
-modified_runs = open('modified_runs.txt', 'rt').readlines()
+### FIXING mismatch tracking
+# re-scale videos
+#ffmpeg -i data\small_videos\1.3.4_kinect_trim.mp4 -s 960x540 -c:a copy 1.3.4_kinect_trim_960_540.mp4
+#ffmpeg -i data\small_videos\6.2.1_kinect_trim.mp4 -s 960x540 -c:a copy 6.2.1_kinect_trim_960_540.mp4
+
+# re-scale label files
+import pandas as pd
+import cv2
+from shutil import copyfile
+modified_runs = open('scaled_down_runs.txt', 'rt').readlines()
 modified_runs = [r.strip() for r in modified_runs]
 for run in modified_runs:
+    capture = cv2.VideoCapture(f'data/small_videos/{run}_trim.mp4')
+    height, width = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT)), int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    if height != 540 or width != 960:
+        print(f'Video dimension is {width}x{height}, not 960x540, skip!')
+        continue
     df = pd.read_csv(f'data/ground_truth_labels/{run}_labels.csv')
+    print(f"Label dimension is {df['width'].unique()}x{df['height'].unique()}, scaling to 960x540!")
+    print(f'Copy label file to data/ground_truth_labels/{run}_labels_copy.csv for backup...')
+    copyfile(f'data/ground_truth_labels/{run}_labels.csv', f'data/ground_truth_labels/{run}_labels_copy.csv')
     scale = 540 / df['height'].iloc[0]
     df['height'] = 540
     df['width'] = 960
@@ -574,7 +591,7 @@ for run in modified_runs:
     df['ymin'] = (df['ymin'] * scale).astype(int)
     df['ymax'] = (df['ymax'] * scale).astype(int)
 
-    df.to_csv(f'data/ground_truth_labels/{run}_fixed_labels.csv', index=False)
+    df.to_csv(f'data/ground_truth_labels/{run}_labels.csv', index=False)
 
 import pandas as pd
 import matplotlib.pyplot as plt

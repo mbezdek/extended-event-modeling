@@ -556,7 +556,9 @@ if __name__ == '__main__':
         cv2_video_writer_merged = CV2VideoWriter(output_video_path=OUTPUT_VIDEO_MERGED,
                                                  width=cv2_video_reader.width,
                                                  height=cv2_video_reader.height, fps=120)
-        csv_headers = ['frame', 'name', 'x', 'y', 'w', 'h', 'confidence', 'ground_truth']
+        width = cv2_video_reader.width
+        height = cv2_video_reader.height
+        csv_headers = ['frame', 'name', 'x', 'y', 'w', 'h', 'confidence', 'ground_truth', 'width', 'height']
         with open(OUTPUT_CSV_PATH, 'w') as g:
             writer = csv.writer(g)
             writer.writerow(csv_headers)
@@ -620,7 +622,7 @@ if __name__ == '__main__':
                             for box_wrapper in track_wrapper.boxes:
                                 if box_wrapper.frame_id in buffer_frames:
                                     writer = csv.writer(g)
-                                    writer.writerow(box_wrapper.get_csv_row())
+                                    writer.writerow(box_wrapper.get_csv_row() + [width, height])
                 # reset buffer
                 buffer_frames = dict()
                 # release backward tracks
