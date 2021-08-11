@@ -21,7 +21,7 @@ sys.path.append('../SEM2')
 from sklearn.decomposition import PCA
 from scipy.stats import percentileofscore
 from sem.event_models import GRUEvent, LinearEvent, LSTMEvent
-from sem import SEM
+from sem.sem import SEM
 from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, \
     logger, parse_config, contain_substr, ReadoutDataframes, Sampler
 from joblib import Parallel, delayed

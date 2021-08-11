@@ -152,11 +152,14 @@ def gen_objhand_feature(args, run, tag):
         output_csv = os.path.join(args.output_objhand_csv, run + '_objhand.csv')
         # Read tracking result
         track_df = pd.read_csv(track_csv)
-        # Scale tracking results because tracking is in 960x540 and skeleton is in 1920x1080
-        track_df.loc[:, 'x'] = track_df.loc[:, 'x'] * 2
-        track_df.loc[:, 'y'] = track_df.loc[:, 'y'] * 2
-        track_df.loc[:, 'w'] = track_df.loc[:, 'w'] * 2
-        track_df.loc[:, 'h'] = track_df.loc[:, 'h'] * 2
+        # Scale tracking results to match skeleton, which in 1920x1080. Replace scale=2 to fix variant dimension runs,
+        # though this shouldn't happen since all videos should be modified to 960x540
+        # scale = 1920 / track_df['width']
+        scale = 2
+        track_df.loc[:, 'x'] = track_df.loc[:, 'x'] * scale
+        track_df.loc[:, 'y'] = track_df.loc[:, 'y'] * scale
+        track_df.loc[:, 'w'] = track_df.loc[:, 'w'] * scale
+        track_df.loc[:, 'h'] = track_df.loc[:, 'h'] * scale
         track_df = calc_center(track_df)
 
         # ------Initialize camera model for the run------
