@@ -12,6 +12,7 @@ dependencies:
   - scikit-learn=0.23.2
   - pandas
   - matplotlib
+  - colorcet
   - seaborn
   - pyyaml
   - yacs
@@ -26,6 +27,6 @@ dependencies:
   - ipython
   - jupyter
   - pip
-  - panel
+  - panel=0.11.3
   - pip:
       - ray[default]==1.5.1
