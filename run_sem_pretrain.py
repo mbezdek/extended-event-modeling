@@ -749,7 +749,7 @@ class SEMContext:
                 title=self.title + f'_PE_{self.grain}_{self.current_epoch}')
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
-        with open('output/run_sem/results_corpus_entropy.csv', 'a') as f:
+        with open('output/run_sem/results_entropy_new.csv', 'a') as f:
             writer = csv.writer(f)
             # len adds 1, and the buffer model adds 1 => len() - 2
             writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
@@ -761,11 +761,11 @@ if __name__ == "__main__":
     args = parse_config()
     logger.info(f'Config: {args}')
 
-    if not os.path.exists('output/run_sem/results_corpus_entropy.csv'):
+    if not os.path.exists('output/run_sem/results_entropy_new.csv'):
         csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'active_event_models', 'epoch',
                        'number_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train',
                        'switch_old', 'switch_new', 'switch_current', 'entropy']
-        with open('output/run_sem/results_corpus_entropy.csv', 'w') as f:
+        with open('output/run_sem/results_entropy_new.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
 
