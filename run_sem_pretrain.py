@@ -1,6 +1,11 @@
+seed = 1111
+print(f'Setting seeds {seed}')
 import numpy as np
 
-np.random.seed(1234)
+np.random.seed(seed)
+import tensorflow as tf
+
+tf.random.set_seed(seed)
 import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
@@ -23,7 +28,7 @@ from scipy.stats import percentileofscore
 from sem.event_models import GRUEvent, LinearEvent, LSTMEvent
 from sem.sem import SEM
 from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, \
-    logger, parse_config, contain_substr, ReadoutDataframes, Sampler
+    logger, parse_config, contain_substr, ReadoutDataframes, Sampler, get_coverage, get_purity, event_label_to_interval
 from joblib import Parallel, delayed
 import gensim.downloader
 import random
@@ -691,6 +696,33 @@ class SEMContext:
         :return:
         """
         self.sem_model.run(x_train, train=self.is_train, **self.run_kwargs)
+        start_second = self.first_frame / self.fps
+        event_to_intervals = event_label_to_interval(self.sem_model.results.e_hat, start_second)
+        df = pd.read_csv('./event_annotation_timing.csv')
+        run_df = df[df['run'] == self.run.split('_')[0]]
+
+        # calculate coverage
+        coverage_df = pd.DataFrame(
+            columns=['annotated_event', 'annotated_length', 'sem_max_overlap', 'max_coverage', 'epoch', 'run', 'tag', 'is_train'])
+        for i, annotations in run_df.iterrows():
+            ann_event, max_coverage_event, max_coverage = get_coverage(annotations, event_to_intervals)
+            coverage_df.loc[len(coverage_df.index)] = [ann_event, annotations['endsec'] - annotations['startsec'],
+                                                       max_coverage_event, max_coverage,
+                                                       self.current_epoch, self.run, self.tag, self.is_train]
+
+        # calculate purity
+        purity_df = pd.DataFrame(
+            columns=['sem_event', 'sem_length', 'annotated_max_overlap', 'max_purity', 'epoch', 'run', 'tag', 'is_train'])
+        for sem_event, sem_intervals in event_to_intervals.items():
+            sem_event, max_purity_ann_event, max_purity = get_purity(sem_event, sem_intervals, run_df)
+            sem_length = sum([interval[1] - interval[0] for interval in sem_intervals])
+            purity_df.loc[len(purity_df.index)] = [sem_event, sem_length, max_purity_ann_event, max_purity,
+                                                   self.current_epoch, self.run, self.tag, self.is_train]
+        purity_df.to_csv(path_or_buf='output/run_sem/purity.csv', index=False, header=False, mode='a')
+        coverage_df.to_csv(path_or_buf='output/run_sem/coverage.csv', index=False, header=False, mode='a')
+        average_coverage = np.average(coverage_df['max_coverage'], weights=coverage_df['annotated_length'])
+        average_purity = np.average(purity_df['max_purity'], weights=purity_df['sem_length'])
+
         switch_old = (self.sem_model.results.boundaries == 1).sum()
         switch_new = (self.sem_model.results.boundaries == 2).sum()
         switch_current = (self.sem_model.results.boundaries == 3).sum()
@@ -749,23 +781,37 @@ class SEMContext:
                 title=self.title + f'_PE_{self.grain}_{self.current_epoch}')
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
-        with open('output/run_sem/results_entropy_new.csv', 'a') as f:
+        with open('output/run_sem/results_purity_coverage.csv', 'a') as f:
             writer = csv.writer(f)
             # len adds 1, and the buffer model adds 1 => len() - 2
             writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
-                             self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe, std_pe, pearson_r, self.is_train,
-                             switch_old, switch_new, switch_current, entropy])
+                             self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
+                             std_pe, pearson_r, self.is_train,
+                             switch_old, switch_new, switch_current, entropy,
+                             average_purity, average_coverage])
 
 
 if __name__ == "__main__":
     args = parse_config()
     logger.info(f'Config: {args}')
 
-    if not os.path.exists('output/run_sem/results_entropy_new.csv'):
+    if not os.path.exists('output/run_sem/results_purity_coverage.csv'):
         csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'active_event_models', 'epoch',
                        'number_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train',
-                       'switch_old', 'switch_new', 'switch_current', 'entropy']
-        with open('output/run_sem/results_entropy_new.csv', 'w') as f:
+                       'switch_old', 'switch_new', 'switch_current', 'entropy',
+                       'purity', 'coverage']
+        with open('output/run_sem/results_purity_coverage.csv', 'w') as f:
+            writer = csv.writer(f)
+            writer.writerow(csv_headers)
+    if not os.path.exists('output/run_sem/purity.csv'):
+        csv_headers = ['sem_event', 'sem_length', 'annotated_max_overlap', 'max_purity', 'epoch', 'run', 'tag', 'is_train']
+        with open('output/run_sem/purity.csv', 'w') as f:
+            writer = csv.writer(f)
+            writer.writerow(csv_headers)
+    if not os.path.exists('output/run_sem/coverage.csv'):
+        csv_headers = ['annotated_event', 'annotated_length', 'sem_max_overlap', 'max_coverage', 'epoch', 'run', 'tag',
+                       'is_train']
+        with open('output/run_sem/coverage.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
 

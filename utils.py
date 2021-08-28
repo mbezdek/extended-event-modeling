@@ -2,6 +2,8 @@ import numpy as np
 import cv2
 import os
 import logging
+
+import pandas as pd
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -546,7 +548,8 @@ class Sampler:
         chapters = self.df_select.groupby('chapter').mean().sort_values(metric, ascending=False).index.to_numpy()
         for c in chapters:
             df_chapter = self.df_select[self.df_select['chapter'] == c]
-            df_chapter = df_chapter[(df_chapter['number_boundaries'] >= min_boundary) & (df_chapter['number_boundaries'] <= max_boundary)]
+            df_chapter = df_chapter[
+                (df_chapter['number_boundaries'] >= min_boundary) & (df_chapter['number_boundaries'] <= max_boundary)]
             df_chapter = df_chapter[~df_chapter['run'].isin(self.validation_runs)]
             ascend_percentile = list(df_chapter.sort_values('percentile')['run'])
             self.chapter_to_list[c] = ascend_percentile
@@ -565,3 +568,62 @@ def contain_substr(column: str, keeps):
         if k in column:
             return 1
     return 0
+
+
+def get_overlap(reference: Tuple, hypothesis: Tuple, length=None):
+    t2_overlap = min(reference[1], hypothesis[1])
+    t1_overlap = max(reference[0], hypothesis[0])
+    overlap = max(t2_overlap - t1_overlap, 0)
+    if length is None:
+        length = (reference[1] - reference[0])
+    return overlap / length
+
+
+def get_coverage(annotated_event: pd.Series, event_to_intervals: Dict):
+    annotated_time = (annotated_event['startsec'], annotated_event['endsec'])
+    max_coverage = -1
+    max_coverage_event = -1
+    for sem_event, sem_intervals in event_to_intervals.items():
+        c = max([get_overlap(annotated_time, interval) for interval in sem_intervals])
+        if c >= max_coverage:
+            max_coverage = c
+            max_coverage_event = sem_event
+    print(f"Max coverage for {annotated_event['evname']} is SEM's event {max_coverage_event} with {max_coverage}")
+    return annotated_event['evname'], max_coverage_event, max_coverage
+
+
+def get_purity(sem_event: int, sem_intervals: List, run_df: pd.DataFrame):
+    max_purity = -1
+    max_purity_ann_event = ''
+    total_length = sum([interval[1] - interval[0] for interval in sem_intervals])
+    for i, annotated_event in run_df.iterrows():
+        annotated_time = (annotated_event['startsec'], annotated_event['endsec'])
+        c = max([get_overlap(interval, annotated_time, length=total_length) for interval in sem_intervals])
+        if c >= max_purity:
+            max_purity = c
+            max_purity_ann_event = annotated_event['evname']
+    print(f"Max purity for SEM's event {sem_event} is annotated event {max_purity_ann_event} with {max_purity}")
+    return sem_event, max_purity_ann_event, max_purity
+
+
+def event_label_to_interval(event_label: np.ndarray, start_second):
+    events = set(event_label)
+    event_to_intervals = {e: [] for e in events}
+    for e in event_to_intervals.keys():
+        time = np.where(event_label == e)[0]
+        prev = time[0]
+        start = time[0]
+        # add 1 frame to length in cases the event only exists in one frame, making length=0
+        for cur in time[1:]:
+            if cur > prev + 1:
+                if start == prev:
+                    prev += 1
+                event_to_intervals[e].append((start / 3 + start_second, prev / 3 + start_second))
+                start = cur
+                prev = cur
+            else:
+                prev = prev + 1
+        if start == prev:
+            prev += 1
+        event_to_intervals[e].append((start / 3 + start_second, prev / 3 + start_second))
+    return event_to_intervals
