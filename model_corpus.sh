@@ -1,14 +1,16 @@
 #!/bin/bash
 
-#SBATCH --cpus-per-task 1
-#SBATCH --mem-per-cpu 96G
-#SBATCH --time 120:00:00
+#SBATCH --cpus-per-task 16
+#SBATCH --mem-per-cpu 3G
+#SBATCH --time 168:00:00
 #SBATCH --ntasks 1
+#SBATCH --nodes 1
 #SBATCH --output=%j.%x.out
 
 
 cd /scratch/n.tan/extended-event-modeling/
-source activate pt-tf-37
+source activate tf-37
+export PYTHONPATH=${PYTHONPATH}:/scratch/n.tan/SEM2
 
 #python vidfeatures/object_hand_features.py -c configs/config_objhand_features.ini
 #python job_split.py 1

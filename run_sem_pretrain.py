@@ -129,6 +129,8 @@ def get_embs_and_categories(objhand_df: pd.DataFrame, emb_dim=100, num_objects=3
             # obj_handling_emb = get_emb_category(row.index[nearest], emb_dim)
             new_row = pd.Series(data=row.dropna().sort_values().index[:num_objects], name=row.name)
             categories = categories.append(new_row)
+            # Interestingly, some words such as towel are more semantically central than mouthwash
+            # glove.most_similar(glove['towel'] + ['mouthwash']) yields towel and words close to mouthwash, but not mouthwash!
             obj_handling_emb = get_emb_distance(row.dropna().sort_values()[:num_objects], emb_dim)
         else:
             obj_handling_emb = np.full(shape=(1, emb_dim), fill_value=np.nan)
@@ -163,6 +165,8 @@ def preprocess_objhand(objhand_csv, standardize=True, use_depth=False, num_objec
 
     obj_handling_embs = pd.DataFrame(obj_handling_embs, index=objhand_df.index,
                                      columns=list(map(lambda x: f'objhand_{x}', range(emb_dim))))
+    # Standardizing using a single video might project embedded vectors to weird space (e.g. mouthwash -> srishti)
+    # Moreover, the word2vec model already standardize for the whole corpus, thus we don't need to standardize.
     if standardize:
         obj_handling_embs = (obj_handling_embs - obj_handling_embs.mean()) / obj_handling_embs.std()
 
@@ -577,6 +581,7 @@ class SEMContext:
             # appear, x_train = np.split(x_train, [2], axis=1)  # remove appear features
             # This function train and change sem event models
             # x_train = np.random.permutation(x_train)
+            # Comment this chunk to generate cached features faster
             self.run_sem_and_plot(x_train)
             if store_dataframes:
                 # Transform predicted vectors to the original vector space for visualization
@@ -660,7 +665,7 @@ class SEMContext:
             # _, categories = preprocess_objhand(objhand_csv, standardize=True,
             #                                    num_objects=int(self.configs.num_objects),
             #                                    use_depth=False)
-            obj_handling_embs, categories_z = preprocess_objhand(objhand_csv, standardize=True,
+            obj_handling_embs, categories_z = preprocess_objhand(objhand_csv, standardize=False,
                                                                  num_objects=int(self.configs.num_objects),
                                                                  use_depth=True)
             logger.info(f'Processing Objspeed features...')
@@ -670,13 +675,14 @@ class SEMContext:
             # TODO: switch to 5 components with two features
             # combine_df, first_frame, data_frames = combine_dataframes([skel_df, obj_handling_embs],
             #                                                           rate=self.configs.rate, fps=self.fps)
+            readout_dataframes = ReadoutDataframes()
+            setattr(readout_dataframes, 'objhand_pre', obj_handling_embs)
             combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
                                                                       rate=self.configs.rate, fps=self.fps)
             # Switch to use scene motion or not
             # combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs,
             #                                                            objspeed_embs],
             #                                                           rate=self.configs.rate, fps=self.fps)
-        readout_dataframes = ReadoutDataframes()
         # for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post', 'objspeed_post'], data_frames):
         for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post'], data_frames):
             setattr(readout_dataframes, feature, df)
