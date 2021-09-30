@@ -28,5 +28,6 @@ dependencies:
   - jupyter
   - pip
   - panel=0.11.3
+  - holoviews=1.14.5
   - pip:
       - ray[default]==1.5.1
