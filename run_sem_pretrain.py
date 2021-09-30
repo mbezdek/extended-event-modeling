@@ -138,7 +138,7 @@ def get_embs_and_categories(objhand_df: pd.DataFrame, emb_dim=100, num_objects=3
     return obj_handling_embs, categories
 
 
-def preprocess_objhand(objhand_csv, standardize=True, use_depth=False, num_objects=3):
+def preprocess_objhand(objhand_csv, standardize=True, use_depth=False, num_objects=3, feature='objhand'):
     objhand_df = pd.read_csv(objhand_csv, index_col='frame')
 
     def filter_objhand():
@@ -164,7 +164,7 @@ def preprocess_objhand(objhand_csv, standardize=True, use_depth=False, num_objec
     obj_handling_embs, categories = get_embs_and_categories(objhand_df, emb_dim=emb_dim, num_objects=num_objects)
 
     obj_handling_embs = pd.DataFrame(obj_handling_embs, index=objhand_df.index,
-                                     columns=list(map(lambda x: f'objhand_{x}', range(emb_dim))))
+                                     columns=list(map(lambda x: f'{feature}_{x}', range(emb_dim))))
     # Standardizing using a single video might project embedded vectors to weird space (e.g. mouthwash -> srishti)
     # Moreover, the word2vec model already standardize for the whole corpus, thus we don't need to standardize.
     if standardize:
@@ -605,6 +605,8 @@ class SEMContext:
 
                 with open('output/run_sem/' + self.title + f'_inputdf_{self.current_epoch}.pkl', 'wb') as f:
                     pkl.dump(self.data_frames, f)
+            # with open('output/run_sem/' + self.title + f'_inputdf_{self.current_epoch}.pkl', 'wb') as f:
+            #     pkl.dump(self.data_frames, f)
 
             logger.info(f'Done SEM {self.run}!!!\n')
             with open('output/run_sem/sem_complete.txt', 'a') as f:
@@ -628,6 +630,7 @@ class SEMContext:
             optical_df = readout_dataframes.optical_post
             skel_df = readout_dataframes.skel_post
             obj_handling_embs = readout_dataframes.objhand_post
+            scene_embs = readout_dataframes.scene_post
             # categories = readout_dataframes.categories
             categories_z = readout_dataframes.categories_z
 
@@ -637,7 +640,7 @@ class SEMContext:
             #                objspeed_embs]
             # TODO: switch to 5 components with two features
             # data_frames = [skel_df, obj_handling_embs]
-            data_frames = [appear_df, optical_df, skel_df, obj_handling_embs]
+            data_frames = [appear_df, optical_df, skel_df, obj_handling_embs, scene_embs]
             combine_df = pd.concat(data_frames, axis=1)
             first_frame = appear_df.index[0]
 
@@ -667,8 +670,11 @@ class SEMContext:
             #                                    use_depth=False)
             obj_handling_embs, categories_z = preprocess_objhand(objhand_csv, standardize=False,
                                                                  num_objects=int(self.configs.num_objects),
-                                                                 use_depth=True)
-            logger.info(f'Processing Objspeed features...')
+                                                                 use_depth=True, feature='objhand')
+            logger.info(f'Processing Scene features...')
+            scene_embs, _ = preprocess_objhand(objhand_csv, standardize=False, num_objects=30, use_depth=True,
+                                               feature='scene')
+            # logger.info(f'Processing Objspeed features...')
             # objspeed_embs = preprocess_objspeed(objspeed_csv, standardize=True)
 
             # Get consistent start-end times and resampling rate for all features
@@ -677,14 +683,14 @@ class SEMContext:
             #                                                           rate=self.configs.rate, fps=self.fps)
             readout_dataframes = ReadoutDataframes()
             setattr(readout_dataframes, 'objhand_pre', obj_handling_embs)
-            combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
-                                                                      rate=self.configs.rate, fps=self.fps)
-            # Switch to use scene motion or not
-            # combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs,
-            #                                                            objspeed_embs],
+            # combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs],
             #                                                           rate=self.configs.rate, fps=self.fps)
-        # for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post', 'objspeed_post'], data_frames):
-        for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post'], data_frames):
+            # Switch to use scene embedding or not
+            combine_df, first_frame, data_frames = combine_dataframes([appear_df, optical_df, skel_df, obj_handling_embs,
+                                                                       scene_embs],
+                                                                      rate=self.configs.rate, fps=self.fps)
+        for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post', 'scene_post'], data_frames):
+        # for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post'], data_frames):
             setattr(readout_dataframes, feature, df)
         self.last_frame = readout_dataframes.skel_post.index[-1]
         self.first_frame = first_frame
