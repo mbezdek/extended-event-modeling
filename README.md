@@ -32,10 +32,15 @@ After installing MVS 2017, open Cross Tools Command Prompt VS 2017 and run: \
 ```cd /path/to/pysot``` \
 ```python setup.py build_ext --inplace```
 
-### Install SEM from github repository
-Using `python -m pip` to avoid confusing if the system has multiple Python versions. \
+
+### Install SEM from github repository 
 Be aware of changes because this command will pull the latest version of SEM \
-```python -m pip install git+https://github.com/nicktfranklin/SEM2``` \
+```git clone git@github.com:NguyenThanhTan/SEM2.git  ``` \
+Export the Path to SEM \
+```export PYTHONPATH="${PYTHONPATH}:/Users/sophie/Documents/SEM2"```\
+
+
+
 
 ### For GPU running (local machine has a GPU card or running on cloud)
 ```conda install -c anaconda tensorflow-gpu=2``` \
