@@ -31,7 +31,9 @@ print(f'Total runs: {len(input_paths)}')
 def load_and_sample(path, sample):
     input_df = pkl.load(open(path, 'rb'))
     if pca_tag == '' or pca_tag == 'all':
-        data_frames = [input_df.appear_post, input_df.optical_post, input_df.skel_post, input_df.objhand_post]
+        # use scene as a default, since sep 22
+        data_frames = [input_df.appear_post, input_df.optical_post, input_df.skel_post, input_df.objhand_post,
+                       input_df.scene_post]
     elif pca_tag == 'objhand_only':
         data_frames = [input_df.objhand_post]
     elif pca_tag == 'skel_only':
@@ -40,7 +42,7 @@ def load_and_sample(path, sample):
         data_frames = [input_df.skel_post, input_df.objhand_post]
     else:
         raise Exception(f'Unclear which features to include!!!')
-    if 'scene_motion' in tag:
+    if 'motion' in tag:
         data_frames.append(input_df.objspeed_post)
     input_df = pd.concat(data_frames, axis=1)
     return input_df.sample(n=sample)
@@ -53,6 +55,8 @@ print(f'Total data points to PCA: {len(combined_runs)}')
 pca = PCA(n_components=n_components, whiten=True)
 
 pca.fit(combined_runs)
+
+print(f"pca.components_.shape={pca.components_.shape}")
 
 print(f'Saving {tag}_{pca_tag}_{n_components}_pca.pkl')
 with open(f'{tag}_{pca_tag}_{n_components}_pca.pkl', 'wb') as f:

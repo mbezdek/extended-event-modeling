@@ -38,6 +38,7 @@ def calc_joint_speed(df, joint):
     return df
 
 
+# speed doesn't have direction -> opposite direction is an issue, but rare.
 def calc_joint_acceleration(df, joint):
     j = str(joint)
     js = 'J' + j + '_speed'
@@ -55,6 +56,8 @@ def calc_interhand_dist(df):
     return df
 
 
+# speed doesn't have direction -> interhand speed and acceleration?
+# actually, intuitively correct calculation is not necessarily useful. More, consider with other features.
 def calc_interhand_speed(df):
     # Values are positive when right hand (J11) is faster than left hand (J7)
     if 'J7_speed' not in df.columns:
