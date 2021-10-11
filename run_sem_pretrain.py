@@ -71,14 +71,12 @@ def preprocess_skel(skel_csv, use_position=0, standardize=True):
         keeps = ['accel', 'speed', 'dist', 'interhand']
     for c in skel_df.columns:
         if contain_substr(c, keeps):
-            if not standardize:
-                skel_df.loc[:, c] = (skel_df[c] - min(skel_df[c].dropna())) / (
-                        max(skel_df[c].dropna()) - min(skel_df[c].dropna()))
-            else:
-                skel_df.loc[:, c] = (skel_df[c] - skel_df[c].dropna().mean()) / skel_df[
-                    c].dropna().std()
+            continue
         else:
             skel_df.drop([c], axis=1, inplace=True)
+    if standardize:
+        stats = pd.read_csv('stats_skel_90.csv')
+        skel_df = (skel_df - stats.loc['mean', skel_df.columns]) / stats.loc['std', skel_df.columns]
 
     return skel_df
 
