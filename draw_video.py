@@ -15,6 +15,7 @@ import sys
 import matplotlib
 import panel as pn
 import sys
+from typing import List
 
 matplotlib.use('agg')
 import matplotlib.pyplot as plt
@@ -88,7 +89,7 @@ def drawskel(frame_number, frame, skel_df, color=(255, 0, 0), thickness=2):
     for joint in range(25):
         jx = int(r['J' + str(joint) + '_2D_X'].values[0] * s)
         jy = int(r['J' + str(joint) + '_2D_Y'].values[0] * s)
-        jtrack = r['J' + str(joint) + '_Tracked'].values[0]
+        # jtrack = r['J' + str(joint) + '_Tracked'].values[0]
         if (all(x > 0 for x in [jx, jy])):
             if joint == 11:
                 cv2.circle(frame, (jx, jy), 5, (0, 255, 255), -1)
@@ -104,10 +105,10 @@ def drawskel(frame_number, frame, skel_df, color=(255, 0, 0), thickness=2):
     #                 cv2.circle(frame,(jx,jy),4,(255,0,0),-1)
     return frame
 
-
-def get_nearest(emb_vector: np.ndarray, glove=False):
+def get_nearest(emb_vector: List, glove=False):
     if glove:
-        nearest_objects = glove_vectors.most_similar(emb_vector, restrict_vocab=5000)
+        # nearest_objects = glove_vectors.most_similar(emb_vector, restrict_vocab=10000)
+        nearest_objects = glove_vectors.most_similar(emb_vector)
         nearest_objects = [(nr[0], round(nr[1], 2)) for nr in nearest_objects]
         return nearest_objects
 
@@ -136,7 +137,7 @@ def drawobj(instances, frame, odf, color=(255, 0, 0), thickness=1, draw_name=Fal
             cv2.putText(frame, text=i,
                         org=(int(xmin), int(ymax - 5)),
                         fontFace=cv2.FONT_HERSHEY_SIMPLEX,
-                        fontScale=0.4,
+                        fontScale=0.5,
                         color=color_scaled)
     # Code to also get nearest objects in Glove for input categories
     # try:
@@ -145,7 +146,7 @@ def drawobj(instances, frame, odf, color=(255, 0, 0), thickness=1, draw_name=Fal
     #     nearest_objects = get_nearest(arr, glove=True)
     #     for index, instance in enumerate(nearest_objects[:3]):
     #         cv2.putText(frame, text=str(instance), org=(frame.shape[1] - 420, 20 + 20 * index),
-    #                     fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+    #                     fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
     #                     color=(255, 0, 0))
     # except Exception as e:
     #     print(e)
@@ -159,7 +160,7 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
     # draw skeleton here
     if skel_checkbox:
         try:
-            outframe = drawskel(frame_slider, outframe, skel_df)
+            outframe = drawskel(frame_slider, outframe, skel_df, color=(255, 0, 0))
             # TODO: comment these lines if not using position in training SEM.
             # outframe = drawskel(frame_slider, outframe, pca_input_df, color=(255, 0, 0))
             # outframe = drawskel(frame_slider, outframe, pred_skel_df, color=(0, 255, 0))
@@ -176,49 +177,79 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             sorted_objects = list(pd.Series(odf_z.filter(regex='dist_z$').iloc[0, :]).sort_values().index)
             sorted_objects = [object.replace('_dist_z', '') for object in sorted_objects]
             outframe = drawobj(sorted_objects[:3], outframe, odf_z, color=ColorBGR.red, draw_name=True)
-            outframe = drawobj(sorted_objects[3:], outframe, odf_z, color=ColorBGR.cyan, draw_name=True)
+            # outframe = drawobj(sorted_objects[3:], outframe, odf_z, color=ColorBGR.cyan, draw_name=True)
+
             # Draw nearest words (in the video)
             # nearest_objects = get_nearest(pred_objhand.loc[frame_slider, :].values)
             # for index, instance in enumerate(nearest_objects[:3]):
             #     cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 140, 20 + 20 * index),
-            #                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+            #                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
             #                 color=ColorBGR.green)
             # Draw nearest objects (Glove corpus)
+            # Put three nearest words from glove to pre-sampling input vector
+            # input_nearest_objects = get_nearest(
+            #     [np.array(inputdf.objhand_pre.loc[frame_slider].values, dtype=np.float32)],
+            #     glove=True)
+            # for index, instance in enumerate(input_nearest_objects[:3]):
+            #     cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 450, 20 + 20 * index),
+            #                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+            #                 color=ColorBGR.red)
 
-            # Put three nearest works from glove to input vector
-            input_nearest_objects = get_nearest([np.array(inputdf.x_train_inverted.loc[frame_slider, pred_objhand.columns].values, dtype=np.float32)],
-                                                glove=True)
+            # Put three nearest words from glove to post-sampling, pre-PCA input vector
+            input_nearest_objects = get_nearest(
+                [np.array(inputdf.objhand_post.loc[frame_slider].values, dtype=np.float32)],
+                glove=True)
             for index, instance in enumerate(input_nearest_objects[:3]):
-                cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 140, 20 + 20 * index),
-                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 450, 20 + 20 * index),
+                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                             color=ColorBGR.blue)
+            # Put three nearest works from glove to input vector
+            input_nearest_objects = get_nearest(
+                [np.array(inputdf.x_train_inverted.loc[frame_slider, inputdf.objhand_post.columns].values, dtype=np.float32)],
+                glove=True)
+            for index, instance in enumerate(input_nearest_objects[:3]):
+                cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 300, 20 + 20 * index),
+                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+                            color=ColorBGR.magenta)
             # Put three nearest words from glove to prediction vector
             pred_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
-                                                glove=True)
+                                               glove=True)
             for index, instance in enumerate(pred_nearest_objects[:3]):
-                cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 280, 20 + 20 * index),
-                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 150, 20 + 20 * index),
+                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                             color=ColorBGR.green)
         except Exception as e:
             print(traceback.format_exc())
 
     cv2.putText(outframe, text=f'RED: 3 Nearest Objects', org=(10, 120),
-                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                 color=ColorBGR.red)
 
-    cv2.putText(outframe, text=f'CYAN: Background Objects', org=(10, 140),
-                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
-                color=ColorBGR.cyan)
+    # cv2.putText(outframe, text=f'CYAN: Background Objects', org=(10, 140),
+    #             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+    #             color=ColorBGR.cyan)
+
+    # Testing the effect of each stage of processing objhand feature
+    # cv2.putText(outframe, text=f'RED: Pre-sampling', org=(10, 120),
+    #             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+    #             color=ColorBGR.red)
+    #
+    # cv2.putText(outframe, text=f'Blue: Post-sampling, Pre-PCA', org=(10, 140),
+    #             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+    #             color=ColorBGR.blue)
+    # cv2.putText(outframe, text=f'Magenta: Post-PCA', org=(10, 160),
+    #             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+    #             color=ColorBGR.magenta)
 
     # add frameID
     cv2.putText(outframe, text=f'FrameID: {frame_slider}', org=(10, 200),
-                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                 color=(0, 255, 0))
     # add Segmentation flag
     index = pred_objhand.index.get_indexer([frame_slider])[0]
     if sem_readouts['e_hat'][index] != sem_readouts['e_hat'][index - 1]:
         cv2.putText(outframe, text='SEGMENT', org=(10, 220),
-                    fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.4,
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                     color=(0, 255, 0))
 
     if get_img:
@@ -283,7 +314,7 @@ def plot_diagnostic_readouts(frame_slider, run_select, title='', get_img=False):
 
     impose_rainbow_events(ax, fig)
     impose_line_boundaries(ax, fig)
-#     impose_metrics(ax, fig)
+    #     impose_metrics(ax, fig)
 
     if get_img:
         from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
@@ -310,7 +341,9 @@ def draw_video():
     # cv2_writer = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
     #                              frameSize=(640, 480), isColor=True)
     cv2_writer_long = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
-                                 frameSize=(640, 720), isColor=True)
+                                      # frameSize=(640, 720),
+                                      frameSize=(640, 480),
+                                      isColor=True)
     for frame_id, frame in anchored_frames.items():
         img = draw_frame_resampled(frame_id, skel_checkbox=True, obj_checkbox=True, run_select=run_select, get_img=True,
                                    black=False)
@@ -318,10 +351,11 @@ def draw_video():
         #     continue
         img = cv2.resize(img, dsize=(640, 480))
         # cv2_writer.write(img)
-        diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
-        diagnostic = cv2.resize(diagnostic, dsize=(640, 240))
-        concat = np.concatenate([img, diagnostic], axis=0)
-        cv2_writer_long.write(concat)
+        # diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
+        # diagnostic = cv2.resize(diagnostic, dsize=(640, 240))
+        # concat = np.concatenate([img, diagnostic], axis=0)
+        # cv2_writer_long.write(concat)
+        cv2_writer_long.write(img)
     # cv2_writer.release()
     cv2_writer_long.release()
     print(f'Done {output_video_path}')
@@ -367,9 +401,9 @@ if __name__ == "__main__":
     pred_skel_df = pred_skel_df.loc[:, skel_df_post.columns]
     pca_input_df = pca_input_df.loc[:, skel_df_post.columns]
 
-    skel_df_unscaled = skel_df_unscaled * skel_df.std() + skel_df.mean()
-    pred_skel_df = pred_skel_df * skel_df.std() + skel_df.mean()
-    pca_input_df = pca_input_df * skel_df.std() + skel_df.mean()
+    skel_df_unscaled = skel_df_unscaled * skel_df[skel_df_post.columns].std() + skel_df[skel_df_post.columns].mean()
+    pred_skel_df = pred_skel_df * skel_df[skel_df_post.columns].std() + skel_df[skel_df_post.columns].mean()
+    pca_input_df = pca_input_df * skel_df[skel_df_post.columns].std() + skel_df[skel_df_post.columns].mean()
 
     skel_df_unscaled['frame'] = skel_df_unscaled.index
     pred_skel_df['frame'] = pred_skel_df.index

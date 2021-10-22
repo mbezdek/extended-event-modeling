@@ -1,5 +1,7 @@
 seed = 1111
 print(f'Setting seeds {seed}')
+import random
+random.seed(seed)
 import numpy as np
 
 np.random.seed(seed)
@@ -94,6 +96,9 @@ def preprocess_skel(skel_csv, use_position=0, standardize=True):
         # mask outliers with N/A
         select_indices = (skel_df < combined_runs.quantile(.95)) & (skel_df > combined_runs.quantile(.05))
         skel_df = skel_df[select_indices]
+        qualified_columns = (select_indices.sum() > int(len(skel_df) * 0.8))
+        assert qualified_columns.sum() / len(qualified_columns) > 0.9, \
+            f"Video {skel_csv} has {len(qualified_columns) - qualified_columns.sum()} un-qualified columns!!!"
         # fill N/A
         skel_df = skel_df.ffill()
 
@@ -439,6 +444,7 @@ class SEMContext:
             if is_eval:
                 logger.info('Evaluating')
                 self.evaluating()
+            # break
 
     def training(self):
         # TODO: can be refactored for simplicity
@@ -457,7 +463,7 @@ class SEMContext:
 
         else:
             # Randomize order of video
-            # random.shuffle(self.train_dataset)
+            random.shuffle(self.train_dataset)
             # self.train_dataset = np.random.permutation(self.train_dataset)
             run = self.train_dataset[(self.current_epoch - 1) % len(self.train_dataset)]
             self.is_train = True
@@ -605,32 +611,32 @@ class SEMContext:
             # This function train and change sem event models
             # x_train = np.random.permutation(x_train)
             # Comment this chunk to generate cached features faster
-            # self.run_sem_and_plot(x_train)
-            # if store_dataframes:
-            #     # Transform predicted vectors to the original vector space for visualization
-            #     if int(self.configs.pca):
-            #         x_inferred_pca = self.sem_model.results.x_hat
-            #         # x_inferred_inverted = np.hstack([appear, x_inferred_inverted])  # concat appear feature as if it's used for consistency
-            #         # Scale back to PCA whitening results
-            #         x_inferred_pca = x_inferred_pca * np.sqrt(x_train.shape[1])
-            #         df_x_inferred = pd.DataFrame(data=x_inferred_pca, index=self.data_frames.skel_post.index)
-            #         setattr(self.data_frames, 'x_inferred_pca', df_x_inferred)
-            #         x_inferred_inverted = pca.inverse_transform(x_inferred_pca)
-            #         # x_inferred_inverted = np.hstack([x_inferred_pca[:, :2], x_inferred_inverted])
-            #         df_x_inferred_inverted = pd.DataFrame(data=x_inferred_inverted, index=self.data_frames.skel_post.index,
-            #                                               columns=self.combine_df.columns)
-            #         setattr(self.data_frames, 'x_inferred_inverted', df_x_inferred_inverted)
-            #     else:
-            #         x_inferred_ori = self.sem_model.results.x_hat * np.sqrt(x_train.shape[1])
-            #         df_x_inferred_ori = pd.DataFrame(data=x_inferred_ori, index=self.data_frames.skel_post.index,
-            #                                          columns=self.combine_df.columns)
-            #         setattr(self.data_frames, 'x_inferred', df_x_inferred_ori)
-            #
-            #     with open('output/run_sem/' + self.title + f'_inputdf_{self.current_epoch}.pkl', 'wb') as f:
-            #         pkl.dump(self.data_frames, f)
+            self.run_sem_and_plot(x_train)
+            if store_dataframes:
+                # Transform predicted vectors to the original vector space for visualization
+                if int(self.configs.pca):
+                    x_inferred_pca = self.sem_model.results.x_hat
+                    # x_inferred_inverted = np.hstack([appear, x_inferred_inverted])  # concat appear feature as if it's used for consistency
+                    # Scale back to PCA whitening results
+                    x_inferred_pca = x_inferred_pca * np.sqrt(x_train.shape[1])
+                    df_x_inferred = pd.DataFrame(data=x_inferred_pca, index=self.data_frames.skel_post.index)
+                    setattr(self.data_frames, 'x_inferred_pca', df_x_inferred)
+                    x_inferred_inverted = pca.inverse_transform(x_inferred_pca)
+                    # x_inferred_inverted = np.hstack([x_inferred_pca[:, :2], x_inferred_inverted])
+                    df_x_inferred_inverted = pd.DataFrame(data=x_inferred_inverted, index=self.data_frames.skel_post.index,
+                                                          columns=self.combine_df.columns)
+                    setattr(self.data_frames, 'x_inferred_inverted', df_x_inferred_inverted)
+                else:
+                    x_inferred_ori = self.sem_model.results.x_hat * np.sqrt(x_train.shape[1])
+                    df_x_inferred_ori = pd.DataFrame(data=x_inferred_ori, index=self.data_frames.skel_post.index,
+                                                     columns=self.combine_df.columns)
+                    setattr(self.data_frames, 'x_inferred', df_x_inferred_ori)
+
+                with open('output/run_sem/' + self.title + f'_inputdf_{self.current_epoch}.pkl', 'wb') as f:
+                    pkl.dump(self.data_frames, f)
             # Uncomment this chunk and comment the above chunk to save cached features faster, also no eval
-            with open('output/run_sem/' + self.title + f'_inputdf_{self.current_epoch}.pkl', 'wb') as f:
-                pkl.dump(self.data_frames, f)
+            # with open('output/run_sem/' + self.title + f'_inputdf_{self.current_epoch}.pkl', 'wb') as f:
+            #     pkl.dump(self.data_frames, f)
 
             logger.info(f'Done SEM {self.run}!!!\n')
             with open('output/run_sem/sem_complete.txt', 'a') as f:
@@ -889,7 +895,7 @@ if __name__ == "__main__":
     context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, tag=tag, configs=args, sampler=sampler)
     try:
         context_sem.read_train_valid_list()
-        context_sem.iterate(is_eval=False)
+        context_sem.iterate(is_eval=True)
     except Exception as e:
         with open('output/run_sem/sem_error.txt', 'a') as f:
             f.write(traceback.format_exc() + '\n')

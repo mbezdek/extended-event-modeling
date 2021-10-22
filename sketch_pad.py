@@ -630,3 +630,32 @@ offset = midnight + datetime.timedelta(0, 100)
 fig.add_vline(x=b)
 fig.update_yaxes(autorange="reversed")
 fig.write_image('gantt.png')
+
+import os
+import pandas as pd
+import pickle as pkl
+import matplotlib.pyplot as plt
+import seaborn as sns
+import glob
+df_pe = pd.DataFrame(columns=['run', 'epoch', 'pe', 'pe_w', 'pe_w2', 'pe_w3', 'pe_york'])
+for i in range(20):
+    files = glob.glob(f'output/run_sem/oct_11_multi_worlds_grid_lr1E-03_alfa1E-02_lmda1E+06/*diagnostic_{i}.pkl')
+    if len(files):
+        for f in files:
+            sem_readouts = pkl.load(open(f, 'rb'))
+            run = os.path.basename(f).split('_')[0]
+            epoch = f.split('_')[-1].split('.')[0]
+            df_pe.loc[len(df_pe)] = [run, epoch, sem_readouts['pe'].mean(), sem_readouts['pe_w'].mean(),
+                                     sem_readouts['pe_w2'].mean(), sem_readouts['pe_w3'].mean(), sem_readouts['pe_york'].mean()]
+    else:
+        print(f'no files for epoch {i}')
+
+fig, axes = plt.subplots(nrows=1, ncols=5, figsize=(4*5, 4), squeeze=False, sharex=True, sharey=True)
+i = 0
+df_pe['epoch'] = df_pe['epoch'].astype(int)
+for r in df_pe.columns:
+    if 'pe' in r:
+        sns.regplot(x='epoch', y=r, data=df_pe, ax=axes[0][i], lowess=True)
+        axes[0][i].set_title(f'{r}')
+        i += 1
+plt.savefig('multi_worlds.png')
