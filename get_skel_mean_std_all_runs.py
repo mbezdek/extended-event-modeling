@@ -36,12 +36,10 @@ for c in combined_runs.columns:
     else:
         combined_runs.drop([c], axis=1, inplace=True)
 assert len(combined_runs.columns) == 77, f"len(combined_runs.columns)={len(combined_runs.columns)} != 77"
+combined_runs.to_csv('sampled_skel_features.csv', index_label=False)
 # get statistics and save
 # for some reason, J*_acceleration and inf value
 pd.set_option('use_inf_as_na', True)
 combined_runs.dropna(axis=0, inplace=True)
 # for acceleration dimensions, some values are too high or too low, affecting mean and std.
-combined_runs = combined_runs[(combined_runs < combined_runs.quantile(.95)) & (combined_runs > combined_runs.quantile(.05))]
-stats = combined_runs.describe().loc[['mean', 'std']]
-
-stats.to_csv('stats_skel_90.csv', index_label=False)
+combined_runs_q = combined_runs[(combined_runs < combined_runs.quantile(.95)) & (combined_runs > combined_runs.quantile(.05))]

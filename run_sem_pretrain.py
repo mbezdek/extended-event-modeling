@@ -75,7 +75,16 @@ def preprocess_skel(skel_csv, use_position=0, standardize=True):
         else:
             skel_df.drop([c], axis=1, inplace=True)
     if standardize:
-        stats = pd.read_csv('stats_skel_90.csv')
+        # load sampled skel features, 200 samples for each video.
+        combined_runs = pd.read_csv('sampled_skel_features.csv')
+        select_indices = (combined_runs < combined_runs.quantile(.95)) & (combined_runs > combined_runs.quantile(.05))
+        combined_runs_q = combined_runs[select_indices]
+        stats = combined_runs_q.describe().loc[['mean', 'std']]
+        # mask outliers with N/A
+        skel_df = skel_df[select_indices]
+        # fill N/A
+        skel_df = skel_df.ffill()
+        # standardize using global statistics
         skel_df = (skel_df - stats.loc['mean', skel_df.columns]) / stats.loc['std', skel_df.columns]
 
     return skel_df

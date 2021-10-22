@@ -61,7 +61,8 @@ def calc_interhand_speed(df):
         df = calc_joint_speed(df, 7)
     if 'J11_speed' not in df.columns:
         df = calc_joint_speed(df, 11)
-    df['interhand_speed'] = df.J11_speed - df.J7_speed
+    # due to mirror, take absolute
+    df['interhand_speed'] = (df.J11_speed - df.J7_speed).abs()
     return df
 
 
@@ -71,7 +72,8 @@ def calc_interhand_acceleration(df):
         df = calc_joint_acceleration(df, 7)
     if 'J11_acceleration' not in df.columns:
         df = calc_joint_acceleration(df, 11)
-    df['interhand_acceleration'] = df.J11_acceleration - df.J7_acceleration
+    # due to mirror, take absolute
+    df['interhand_acceleration'] = (df.J11_acceleration - df.J7_acceleration).abs()
     return df
 
 
@@ -93,6 +95,9 @@ def gen_skel_feature(args, run, tag):
         skel_csv_out = os.path.join(args.skel_csv_out,
                                     run + '_skel_features.csv')
         skeldf = pd.read_csv(skel_csv_in)
+        sync_time = skeldf['sync_time'].copy()
+        skeldf = skeldf.rolling(7).mean()
+        skeldf['sync_time'] = sync_time
         if args.joints == "all":
             joints = list(range(25))
         for j in joints:
