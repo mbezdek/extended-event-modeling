@@ -45,10 +45,11 @@ def load_and_sample(path, sample):
     if 'motion' in tag:
         data_frames.append(input_df.objspeed_post)
     input_df = pd.concat(data_frames, axis=1)
+    print(f'Path={path}, len={len(input_df)}')
     return input_df.sample(n=sample)
 
 
-input_dfs = Parallel(n_jobs=16)(delayed(load_and_sample)(path, sample=sample) for path in input_paths)
+input_dfs = Parallel(n_jobs=1)(delayed(load_and_sample)(path, sample=sample) for path in input_paths)
 combined_runs = pd.concat(input_dfs, axis=0)
 print(f'Total data points to PCA: {len(combined_runs)}')
 # run pca and save pca pickle
