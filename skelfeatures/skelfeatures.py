@@ -38,7 +38,6 @@ def calc_joint_speed(df, joint):
     return df
 
 
-# speed doesn't have direction -> opposite direction is an issue, but rare.
 def calc_joint_acceleration(df, joint):
     j = str(joint)
     js = 'J' + j + '_speed'
@@ -56,25 +55,21 @@ def calc_interhand_dist(df):
     return df
 
 
-# speed doesn't have direction -> interhand speed and acceleration?
-# actually, intuitively correct calculation is not necessarily useful. More, consider with other features.
 def calc_interhand_speed(df):
-    # Values are positive when right hand (J11) is faster than left hand (J7)
-    if 'J7_speed' not in df.columns:
-        df = calc_joint_speed(df, 7)
-    if 'J11_speed' not in df.columns:
-        df = calc_joint_speed(df, 11)
-    df['interhand_speed'] = df.J11_speed - df.J7_speed
+    # Values are positive when hands moving away negative when hands get closer
+    if 'interhand_dist' not in df.columns:
+        df = calc_interhand_dist(df)
+    df['interhand_speed'] = (df['interhand_dist'] - df['interhand_dist'].shift(1)) / (
+        df.sync_time - df.sync_time.shift(1))
     return df
 
 
 def calc_interhand_acceleration(df):
-    # Values are positive when right hand (J11) is faster than left hand (J7)
-    if 'J7_acceleration' not in df.columns:
-        df = calc_joint_acceleration(df, 7)
-    if 'J11_acceleration' not in df.columns:
-        df = calc_joint_acceleration(df, 11)
-    df['interhand_acceleration'] = df.J11_acceleration - df.J7_acceleration
+    # Values are positive when interhand speed is increasing and negative when decreasing
+    if 'interhand_speed' not in df.columns:
+        df = calc_interhand_speed(df)
+    df['interhand_acceleration'] = (df['interhand_speed'] - df['interhand_speed'].shift(1)) / (
+        df.sync_time - df.sync_time.shift(1))
     return df
 
 
