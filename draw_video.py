@@ -2,7 +2,7 @@
 This script is used to draw and overlay predictions on video,
 Run this file on the cluster instead of downloading pickle files and run locally
 """
-
+import logging
 import pickle as pkl
 import pandas as pd
 import numpy as np
@@ -26,6 +26,11 @@ import scipy.stats as stats
 import traceback
 from utils import ColorBGR
 import time
+from sklearn.metrics.pairwise import cosine_similarity
+from matplotlib.colors import ListedColormap
+import colorcet as cc
+import matplotlib as mpl
+from matplotlib.lines import Line2D
 
 
 def remove_number(string):
@@ -105,17 +110,24 @@ def drawskel(frame_number, frame, skel_df, color=(255, 0, 0), thickness=2):
     #                 cv2.circle(frame,(jx,jy),4,(255,0,0),-1)
     return frame
 
-def get_nearest(emb_vector: List, glove=False):
-    if glove:
+
+def get_nearest(emb_vector: List, space='glove'):
+    if space == 'glove':
         # nearest_objects = glove_vectors.most_similar(emb_vector, restrict_vocab=10000)
         nearest_objects = glove_vectors.most_similar(emb_vector)
         nearest_objects = [(nr[0], round(nr[1], 2)) for nr in nearest_objects]
         return nearest_objects
-
-    # res = {kv[0]: np.linalg.norm(kv[1] - emb_vector) for kv in word2vec.items()}
-    # res = sorted(res.items(), key=lambda kv: kv[1])
-    # res = [(nr[0], round(nr[1], 2)) for nr in res]
-    # return res
+    elif space == 'scene':
+        # res = {kv[0]: np.linalg.norm(kv[1] - emb_vector) for kv in word2vec.items()}
+        res = {kv[0]: cosine_similarity(kv[1], emb_vector)[0][0] for kv in scene_word2vec.items()}
+        res = sorted(res.items(), key=lambda kv: kv[1], reverse=True)
+        res = [(nr[0], round(nr[1], 2)) for nr in res]
+        return res
+    elif space == 'corpus':
+        res = {kv[0]: cosine_similarity(kv[1], emb_vector)[0][0] for kv in corpus_word2vec.items()}
+        res = sorted(res.items(), key=lambda kv: kv[1], reverse=True)
+        res = [(nr[0], round(nr[1], 2)) for nr in res]
+        return res
 
 
 def drawobj(instances, frame, odf, color=(255, 0, 0), thickness=1, draw_name=False):
@@ -166,7 +178,7 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             # outframe = drawskel(frame_slider, outframe, pred_skel_df, color=(0, 255, 0))
         except Exception as e:
             cv2.putText(outframe, 'No skeleton data', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-            print(traceback.format_exc())
+            # print(traceback.format_exc())
     else:
         outframe = anchored_frames[frame_slider]
     if obj_checkbox:
@@ -176,8 +188,8 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             odf_z = odf_z[odf_z.columns[~odf_z.isna().any()].tolist()]
             sorted_objects = list(pd.Series(odf_z.filter(regex='dist_z$').iloc[0, :]).sort_values().index)
             sorted_objects = [object.replace('_dist_z', '') for object in sorted_objects]
-            outframe = drawobj(sorted_objects[:3], outframe, odf_z, color=ColorBGR.red, draw_name=True)
-            # outframe = drawobj(sorted_objects[3:], outframe, odf_z, color=ColorBGR.cyan, draw_name=True)
+            outframe = drawobj(sorted_objects[:3], outframe, odf_z, color=ColorBGR.red, draw_name=False)
+            outframe = drawobj(sorted_objects[3:], outframe, odf_z, color=ColorBGR.cyan, draw_name=False)
 
             # Draw nearest words (in the video)
             # nearest_objects = get_nearest(pred_objhand.loc[frame_slider, :].values)
@@ -196,38 +208,57 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             #                 color=ColorBGR.red)
 
             # Put three nearest words from glove to post-sampling, pre-PCA input vector
-            input_nearest_objects = get_nearest(
-                [np.array(inputdf.objhand_post.loc[frame_slider].values, dtype=np.float32)],
-                glove=True)
-            for index, instance in enumerate(input_nearest_objects[:3]):
-                cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 450, 20 + 20 * index),
-                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
-                            color=ColorBGR.blue)
+            # input_nearest_objects = get_nearest(
+            #     [np.array(inputdf.objhand_post.loc[frame_slider].values, dtype=np.float32)],
+            #     glove=True)
+            # for index, instance in enumerate(input_nearest_objects[:3]):
+            #     cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 450, 20 + 20 * index),
+            #                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+            #                 color=ColorBGR.blue)
+            out_obj_frame = np.zeros(shape=(outframe.shape[0] // 2, outframe.shape[1], outframe.shape[2]), dtype=np.uint8)
             # Put three nearest works from glove to input vector
             input_nearest_objects = get_nearest(
                 [np.array(inputdf.x_train_inverted.loc[frame_slider, inputdf.objhand_post.columns].values, dtype=np.float32)],
-                glove=True)
+                space='scene')
             for index, instance in enumerate(input_nearest_objects[:3]):
-                cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 300, 20 + 20 * index),
-                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
-                            color=ColorBGR.magenta)
+                cv2.putText(out_obj_frame, text=str(instance), org=(out_obj_frame.shape[1] - 450, 50 + 20 * index),
+                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.45,
+                            color=ColorBGR.red)
+            cv2.putText(out_obj_frame, text=f'Input (Scene)', org=(out_obj_frame.shape[1] - 450, 20),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+                        color=ColorBGR.red)
             # Put three nearest words from glove to prediction vector
             pred_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
-                                               glove=True)
+                                               space='scene')
             for index, instance in enumerate(pred_nearest_objects[:3]):
-                cv2.putText(outframe, text=str(instance), org=(outframe.shape[1] - 150, 20 + 20 * index),
-                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+                cv2.putText(out_obj_frame, text=str(instance), org=(out_obj_frame.shape[1] - 300, 50 + 20 * index),
+                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.45,
                             color=ColorBGR.green)
+            cv2.putText(out_obj_frame, text=f'Predicted (Scene)', org=(out_obj_frame.shape[1] - 300, 20),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+                        color=ColorBGR.green)
+            # Put three nearest words from corpus to prediction vector
+            pred_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
+                                               space='corpus')
+            for index, instance in enumerate(pred_nearest_objects[:3]):
+                cv2.putText(out_obj_frame, text=str(instance), org=(out_obj_frame.shape[1] - 150, 50 + 20 * index),
+                            fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.45,
+                            color=ColorBGR.magenta)
+            cv2.putText(out_obj_frame, text=f'Predicted (Corpus)', org=(out_obj_frame.shape[1] - 150, 20),
+                        fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+                        color=ColorBGR.magenta)
+
         except Exception as e:
-            print(traceback.format_exc())
+            e
+            # print(traceback.format_exc())
 
     cv2.putText(outframe, text=f'RED: 3 Nearest Objects', org=(10, 120),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                 color=ColorBGR.red)
 
-    # cv2.putText(outframe, text=f'CYAN: Background Objects', org=(10, 140),
-    #             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
-    #             color=ColorBGR.cyan)
+    cv2.putText(outframe, text=f'CYAN: Background Objects', org=(10, 140),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+                color=ColorBGR.cyan)
 
     # Testing the effect of each stage of processing objhand feature
     # cv2.putText(outframe, text=f'RED: Pre-sampling', org=(10, 120),
@@ -253,13 +284,13 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
                     color=(0, 255, 0))
 
     if get_img:
-        return outframe
+        return outframe, out_obj_frame
 
     # embedding image on axis to align
     fig, ax = plt.subplots(nrows=1, ncols=1)
     ax.imshow(cv2.cvtColor(outframe, cv2.COLOR_BGR2RGB))
     plt.close(fig)
-    return fig
+    return fig, out_obj_frame
 
 
 def impose_rainbow_events(ax, fig):
@@ -304,28 +335,221 @@ def impose_line_boundaries(ax, fig):
     ax.legend(lines, labels, loc='upper right')
 
 
-def plot_diagnostic_readouts(frame_slider, run_select, title='', get_img=False):
-    fig, ax = plt.subplots()
+def plot_boundaries(ax, fig):
+    num_colors = 0
+    num_colors = max(num_colors, sem_readouts['e_hat'].max())
+    cmap = ListedColormap(cc.glasbey_dark[:num_colors + 1])
+    semmin = 0
+    semmax = num_colors
+    cmap1 = ListedColormap(cc.glasbey_dark[semmin:semmax + 1])
+    norm = mpl.colors.Normalize(vmin=semmin, vmax=semmax + 1, clip=False)
+    cbar1_ax = fig.add_axes([.91, .1, .02, .8])
+    cbar1 = mpl.colorbar.ColorbarBase(ax=cbar1_ax, cmap=cmap1, norm=norm)
+    r1 = cbar1.vmax - cbar1.vmin
+    cbar1.set_ticks([((cbar1.vmin + r1) / (semmax + 1)) * (0.5 + i) for i in range(semmin, semmax + 1)])
+    cbar1.set_ticklabels(range(semmin, semmax + 1))
+    cbar1.set_label('SEM Events')
+
+    boundaries = sem_readouts['boundaries']
+    e_hat = sem_readouts['e_hat']
+    for i, (b, e) in enumerate(zip(boundaries, e_hat)):
+        if b != 0:
+            second = i / frame_interval + offset
+            if b == 1:  # Switch to an old event
+                ax.axvline(second, linestyle=(0, (5, 10)), alpha=0.3, color=cmap(1. * e / num_colors), label='Old Event')
+            elif b == 2:  # Create a new event
+                ax.axvline(second, linestyle='solid', alpha=0.3, color=cmap(1. * e / num_colors), label='New Event')
+            elif b == 3:  # Restart the current event
+                ax.axvline(second, linestyle='dotted', alpha=0.3, color=cmap(1. * e / num_colors), label='Restart Event')
+    linestyles = ['dashed', 'solid', 'dotted']
+    lines = [Line2D([0], [0], color='black', linewidth=1, linestyle=ls) for ls in linestyles]
+    labels = ['Old Event', 'New Event', 'Restart Event']
+    ax.legend(lines, labels, loc='upper right')
+
+
+def plot_diagnostic_readouts(frame_slider, run_select, get_img=False, ax=None, fig=None):
+    if ax is None and fig is None:
+        fig, ax = plt.subplots(figsize=(8, 3))
     ax.plot(gaussian_filter1d(gt_freqs, 1), label='Subject Boundaries')
     ax.set_xlabel('Time (second)')
     ax.set_ylabel('Boundary Probability')
     ax.axvline(frame_slider / fps, linewidth=2, alpha=0.5, color='r')
-    ax.set_title('Diagnostic Readouts ' + run_select)
-
-    impose_rainbow_events(ax, fig)
-    impose_line_boundaries(ax, fig)
-    #     impose_metrics(ax, fig)
-
+    ax.set_title(f"SEM's and humans' boundaries for {run_select}")
+    plot_boundaries(ax=ax, fig=fig)
     if get_img:
-        from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-        #         canvas = FigureCanvas(fig)
-        #         canvas.draw()
         fig.canvas.draw()
         image_from_plot = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
         plt.close(fig)
         return image_from_plot
-    plt.close(fig)
+    # plt.close()
     return fig
+
+
+def plot_pe(run_select, tag_select, epoch_select, frame_slider, get_img=True, ax=None, fig=None):
+    # print('Plot Prediction Error')
+    if ax is None and fig is None:
+        fig, ax = plt.subplots(figsize=(8, 3))
+    fig.suptitle(f'{tag_select} - {run_select}')
+    df = pd.DataFrame(
+        columns=['pe', 'pe_w',
+                 # 'pe_w2', 'pe_w3', 'pe_w3_yoke',
+                 'feature_change', 'prediction_change', 'second', 'epoch'])
+
+    prediction_change = np.linalg.norm(np.vstack([np.zeros(shape=(1, sem_readouts['x_hat'].shape[1])),
+                                                  (sem_readouts['x_hat'][1:] - sem_readouts['x_hat'][:-1])]), axis=1)
+
+    input_feature = inputdf.x_train_pca.to_numpy() / np.sqrt(inputdf.x_train_pca.shape[1])
+    feature_change = np.linalg.norm(np.vstack([np.zeros(shape=(1, input_feature.shape[1])),
+                                               (input_feature[1:] - input_feature[:-1])]), axis=1)
+    df1 = pd.DataFrame({'pe': sem_readouts['pe'], 'pe_w': sem_readouts['pe_w'] if 'oct' in tag_select else sem_readouts['pe'],
+                        # 'pe_w2': v['pe_w2'] if 'oct' in tag_select else v['pe'],
+                        # 'pe_w3': v['pe_w3'] if 'oct' in tag_select else v['pe'],
+                        # 'pe_w3_yoke': v['pe_yoke'] if 'oct' in tag_select else v['pe'],
+                        'feature_change': feature_change,
+                        'prediction_change': prediction_change,
+                        'second': inputdf.appear_post.index / 25,
+                        'epoch': epoch_select}, index=inputdf.appear_post.index)
+    df = df.append(df1)
+    df.epoch = pd.to_numeric(df.epoch, errors='coerce')
+
+    ax.plot(df['second'], df['pe'])
+    ax.set_xlabel('Time (second)')
+    ax.set_ylabel('Prediction Error')
+    ax.axvline(frame_slider / fps, linewidth=2, alpha=0.5, color='r')
+    ax.set_title('Prediction Error for ' + run_select)
+    plot_boundaries(ax=ax, fig=fig)
+    if get_img:
+        fig.canvas.draw()
+        image_from_plot = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
+        plt.close(fig)
+        return image_from_plot
+    # plt.close()
+    return fig
+
+
+def plot_pe_and_diag(run_select, tag_select, epoch_select, frame_slider, get_img=True):
+    fig, axes = plt.subplots(nrows=2, figsize=(8, 9), sharex=True)
+    plot_diagnostic_readouts(frame_slider, run_select, ax=axes[1], fig=fig, get_img=False)
+    plot_pe(run_select, tag_select, epoch_select, frame_slider, ax=axes[0], fig=fig, get_img=False)
+    # plt.savefig('test.png')
+    if get_img:
+        fig.canvas.draw()
+        image_from_plot = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
+        plt.close(fig)
+        return image_from_plot
+
+
+def draw_static_body(frame_number, skel_df, prop='speed'):
+    # frame_number : video frame to select skeleton joints
+    # skel_df : df of skeleton joint coordinates
+    # prop : string, property of joint to draw. One of: ['speed', 'acceleration', 'dist_from_J1']
+
+    # Find scale factor of video frame. Original skeleton 2D dimensions are 1080 x 1920
+    # s = frame.shape[0] / 1080.0
+    # ys = frame.shape[1]/1920.0
+    # xs=1.0
+    # ys=1.0
+    bodybase = './outline.png'
+    frame = cv2.imread(bodybase, 1)
+    r = skel_df[skel_df['frame'] == frame_number]
+
+    j_coords = [(150, 275),  # 0 SpineBase
+                (150, 175),  # 1 SpineMid
+                (150, 90),  # 2 Neck
+                (150, 50),  # 3 Head
+                (200, 130),  # 4 ShoulderLeft
+                (220, 210),  # 5 ElbowLeft
+                (245, 265),  # 6 WristLeft
+                (260, 300),  # 7 HandLeft
+                (100, 130),  # 8 ShoulderRight
+                (80, 210),  # 9 ElbowRight
+                (55, 265),  # 10 WristRight
+                (40, 300),  # 11 HandRight
+                (190, 275),  # 12 HipLeft
+                (185, 420),  # 13 KneeLeft
+                (185, 500),  # 14 AnkleLeft
+                (185, 550),  # 15 FootLeft
+                (110, 275),  # 16 HipRight
+                (115, 420),  # 17 KneeRight
+                (105, 500),  # 18 AnkleRight
+                (105, 550),  # 19 FootRight
+                (150, 130),  # 20 SpineShoulder
+                (270, 330),  # 21 HandTipLeft
+                (290, 300),  # 22 ThumbLeft
+                (30, 330),  # 23 HandTipRight
+                (10, 300),  # 24 ThumbRight
+                ]
+    for j in range(25):
+        jmax = combined_runs['J' + str(j) + '_' + prop].quantile(.95)
+        jmin = combined_runs['J' + str(j) + '_' + prop].quantile(.05)
+        jval = r['J' + str(j) + '_' + prop].values[0]
+        if jval < jmin:
+            jval = jmin
+        if jval > jmax:
+            jval = jmax
+        if jmax == jmin:
+            # J1 to J1
+            p = 0
+        else:
+            p = (jval - jmin) / (jmax - jmin)
+        cv2.circle(frame, j_coords[j], 15, (0, 255 * p, 255 - 255 * p), -1)
+    cv2.putText(frame, text=f'{prop}', org=(10, 45),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.55,
+                color=(255, 255, 255))
+    return frame
+
+
+def draw_interhand_features(frame_number, skel_df, feature, location, frame=None):
+    # frame_number : video frame to select skeleton joints
+    # skel_df : df of skeleton joint coordinates
+    # feature : string, property of joint to draw. One of: ['interhand_dist', 'interhand_speed', 'interhand_acceleration']
+    # location : coordinates of where to draw feature
+    # Find scale factor of video frame. Original skeleton 2D dimensions are 1080 x 1920
+    # s = frame.shape[0] / 1080.0
+    # ys = frame.shape[1]/1920.0
+    # xs=1.0
+    # ys=1.0
+    # bodybase='/Users/bezdek/Desktop/outline.jpeg'
+    r = skel_df[skel_df['frame'] == frame_number]
+    jmax = combined_runs[feature].quantile(.95)
+    jmin = combined_runs[feature].quantile(.05)
+    jval = r[feature].values[0]
+    if jval < jmin:
+        jval = jmin
+    if jval > jmax:
+        jval = jmax
+    p = (jval - jmin) / (jmax - jmin)
+    cv2.circle(frame, (location[0] + 40, location[1] + 40), 15, (0, 255 * p, 255 - 255 * p), -1)
+    cv2.putText(frame, text=feature, org=(location),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.55,
+                color=(255, 255, 255))
+
+    return frame
+
+
+def draw_skeleton_ball(frame_slider):
+    try:
+        frame = np.zeros((600, 200, 3))
+        for f, l in [('interhand_dist', (10, 20)),
+                     ('interhand_speed', (10, 100)),
+                     ('interhand_acceleration', (10, 200))]:
+            frame = draw_interhand_features(frame_slider, skel_df, f, l, frame)
+        frame = frame.astype(np.uint8)
+        outframe = cv2.hconcat([draw_static_body(frame_slider, skel_df, prop='speed'),
+                                draw_static_body(frame_slider, skel_df, prop='acceleration'),
+                                draw_static_body(frame_slider, skel_df, prop='dist_from_J1'),
+                                frame])
+    except Exception as e:
+        outframe = np.zeros((600, 1100, 3))
+        cv2.putText(outframe, 'No skeleton data', (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+        # logging.error(f'{traceback.format_exc()}')
+
+    # add frameID
+    cv2.putText(outframe, text=f'Run: {run_select} FrameID: {frame_slider}', org=(10, 20),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.55,
+                color=(255, 255, 255))
+
+    return outframe
 
 
 def draw_video():
@@ -334,30 +558,71 @@ def draw_video():
         os.makedirs('output/videos')
     if os.path.exists(output_video_path):
         print('Video already drawn!!! Deleting...')
+        # return
         os.remove(output_video_path)
     print(f'Drawing {output_video_path}')
 
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     # cv2_writer = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
     #                              frameSize=(640, 480), isColor=True)
-    cv2_writer_long = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
-                                      # frameSize=(640, 720),
-                                      frameSize=(640, 480),
-                                      isColor=True)
+    # cv2_writer_long = cv2.VideoWriter(output_video_path[:-4] + '_input.avi', fourcc=fourcc, fps=15,
+    #                                   # frameSize=(640, 720),
+    #                                   frameSize=(640, 480),
+    #                                   isColor=True)
+    # cv2_writer_obj = cv2.VideoWriter(output_video_path[:-4] + '_obj.avi', fourcc=fourcc, fps=15,
+    #                                  frameSize=(640, 480),
+    #                                  isColor=True)
+    # cv2_writer_diag = cv2.VideoWriter(output_video_path[:-4] + '_diagnostic.avi', fourcc=fourcc, fps=15,
+    #                                   frameSize=(640, 240),
+    #                                   isColor=True)
+    # cv2_writer_pe = cv2.VideoWriter(output_video_path[:-4] + '_pe.avi', fourcc=fourcc, fps=15,
+    #                                 frameSize=(640, 240),
+    #                                 isColor=True)
+    # cv2_writer_combined = cv2.VideoWriter(output_video_path[:-4] + '_combined.avi', fourcc=fourcc, fps=15,
+    #                                       frameSize=(640, 480),
+    #                                       isColor=True)
+    # cv2_writer_ball = cv2.VideoWriter(output_video_path[:-4] + '_ball.avi', fourcc=fourcc, fps=15,
+    #                                       frameSize=(640, 480),
+    #                                       isColor=True)
+    cv2_writer_comp = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
+                                          frameSize=(1280, 960),
+                                          isColor=True)
+    count = 0
     for frame_id, frame in anchored_frames.items():
-        img = draw_frame_resampled(frame_id, skel_checkbox=True, obj_checkbox=True, run_select=run_select, get_img=True,
-                                   black=False)
-        # if img is None:
-        #     continue
+        count += 1
+        if count % 1000 == 0:
+            print(f' Processed {frame_id} for {run_select}...')
+        # if frame_id > 1000:
+        #     break
+        img, out_obj_frame = draw_frame_resampled(frame_id, skel_checkbox=True, obj_checkbox=True, run_select=run_select,
+                                                  get_img=True,
+                                                  black=False)
+        out_obj_frame = cv2.resize(out_obj_frame, dsize=(640, 240))
         img = cv2.resize(img, dsize=(640, 480))
-        # cv2_writer.write(img)
-        # diagnostic = plot_diagnostic_readouts(frame_id, run_select, title='', get_img=True)
+        # diagnostic = plot_diagnostic_readouts(frame_id, run_select, get_img=True)
         # diagnostic = cv2.resize(diagnostic, dsize=(640, 240))
-        # concat = np.concatenate([img, diagnostic], axis=0)
-        # cv2_writer_long.write(concat)
-        cv2_writer_long.write(img)
+        # pe = plot_pe(run_select, tag, epoch, frame_slider=frame_id)
+        # pe = cv2.resize(pe, dsize=(640, 240))
+        pe_and_diag = plot_pe_and_diag(run_select, tag, epoch, frame_id, get_img=True)
+        pe_and_diag = cv2.resize(pe_and_diag, dsize=(640, 720))
+        skeleton_ball = draw_skeleton_ball(frame_slider=frame_id)
+        skeleton_ball = cv2.resize(skeleton_ball, dsize=(640, 480))
+        combined = cv2.hconcat([cv2.vconcat([img, skeleton_ball]), cv2.vconcat([out_obj_frame, pe_and_diag])])
+        # cv2.imwrite('test.png', skeleton_ball)
+        # diagnostic = np.concatenate([pe, diagnostic], axis=0)
+        # cv2_writer_long.write(img)
+        # cv2_writer_obj.write(out_obj_frame)
+        # cv2_writer_diag.write(diagnostic)
+        # cv2_writer_pe.write(pe)
+        # cv2_writer_combined.write(pe_and_diag)
+        cv2_writer_comp.write(combined)
     # cv2_writer.release()
-    cv2_writer_long.release()
+    # cv2_writer_long.release()
+    # cv2_writer_obj.release()
+    # cv2_writer_diag.release()
+    # cv2_writer_pe.release()
+    # cv2_writer_combined.release()
+    cv2_writer_comp.release()
     print(f'Done {output_video_path}')
 
 
@@ -408,6 +673,10 @@ if __name__ == "__main__":
     skel_df_unscaled['frame'] = skel_df_unscaled.index
     pred_skel_df['frame'] = pred_skel_df.index
     pca_input_df['frame'] = pca_input_df.index
+    # combined sampled runs to extract global, drawing ball plots
+    combined_runs = pd.read_csv('sampled_skel_features.csv')
+    combined_runs['J1_dist_from_J1'] = np.zeros(shape=(len(combined_runs), 1))
+
     for i in range(25):
         new_column = f'J{i}_Tracked'
         skel_df_unscaled[new_column] = 'Inferred'
@@ -423,18 +692,35 @@ if __name__ == "__main__":
         # if None in categories:
         #     categories.remove(None)
         #
-        # word2vec = dict()
-        # for category in categories:
-        #     r = np.zeros(shape=(1, pred_objhand.shape[1]))
-        #     try:
-        #         r += glove_vectors[category]
-        #     except Exception as e:
-        #         words = category.split(' ')
-        #         for w in words:
-        #             w = w.replace('(', '').replace(')', '')
-        #             r += glove_vectors[w]
-        #         r /= len(words)
-        #     word2vec[category] = r
+        # corpus categories
+        corpus_categories = pkl.load(open('corpus_categories.pkl', 'rb'))
+        corpus_word2vec = dict()
+        for category in corpus_categories:
+            r = np.zeros(shape=(1, pred_objhand.shape[1]))
+            try:
+                r += glove_vectors[category]
+            except Exception as e:
+                words = category.split(' ')
+                for w in words:
+                    w = w.replace('(', '').replace(')', '')
+                    r += glove_vectors[w]
+                r /= len(words)
+            corpus_word2vec[category] = r
+
+        # scene categories
+        scene_categories = pkl.load(open('scene_categories.pkl', 'rb'))
+        scene_word2vec = dict()
+        for category in scene_categories[run_select + '_kinect']:
+            r = np.zeros(shape=(1, pred_objhand.shape[1]))
+            try:
+                r += glove_vectors[category]
+            except Exception as e:
+                words = category.split(' ')
+                for w in words:
+                    w = w.replace('(', '').replace(')', '')
+                    r += glove_vectors[w]
+                r /= len(words)
+            scene_word2vec[category] = r
 
     draw_video()
     t2 = time.perf_counter()
