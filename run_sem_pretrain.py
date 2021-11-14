@@ -23,6 +23,10 @@ import re
 from scipy.ndimage import gaussian_filter1d
 import scipy.stats as stats
 
+import ray
+# this setting seems to limit # active threads for each ray actor method.
+ray.init(num_cpus=16)
+
 sys.path.append('../pysot')
 sys.path.append('../SEM2')
 from sklearn.decomposition import PCA
