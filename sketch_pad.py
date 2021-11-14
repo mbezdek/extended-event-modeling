@@ -564,13 +564,14 @@ df[df['tag'] == 'mar_04_individual_3'][select_columns].sort_values('pearson_r')
 
 ### FIXING mismatch tracking
 # re-scale videos
-#ffmpeg -i data\small_videos\1.3.4_kinect_trim.mp4 -s 960x540 -c:a copy 1.3.4_kinect_trim_960_540.mp4
-#ffmpeg -i data\small_videos\6.2.1_kinect_trim.mp4 -s 960x540 -c:a copy 6.2.1_kinect_trim_960_540.mp4
+# ffmpeg -i data\small_videos\1.3.4_kinect_trim.mp4 -s 960x540 -c:a copy 1.3.4_kinect_trim_960_540.mp4
+# ffmpeg -i data\small_videos\6.2.1_kinect_trim.mp4 -s 960x540 -c:a copy 6.2.1_kinect_trim_960_540.mp4
 
 # re-scale label files
 import pandas as pd
 import cv2
 from shutil import copyfile
+
 modified_runs = open('scaled_down_runs.txt', 'rt').readlines()
 modified_runs = [r.strip() for r in modified_runs]
 for run in modified_runs:
@@ -637,6 +638,7 @@ import pickle as pkl
 import matplotlib.pyplot as plt
 import seaborn as sns
 import glob
+
 df_pe = pd.DataFrame(columns=['run', 'epoch', 'pe', 'pe_w', 'pe_w2', 'pe_w3', 'pe_york'])
 for i in range(20):
     files = glob.glob(f'output/run_sem/oct_11_multi_worlds_grid_lr1E-03_alfa1E-02_lmda1E+06/*diagnostic_{i}.pkl')
@@ -650,7 +652,7 @@ for i in range(20):
     else:
         print(f'no files for epoch {i}')
 
-fig, axes = plt.subplots(nrows=1, ncols=5, figsize=(4*5, 4), squeeze=False, sharex=True, sharey=True)
+fig, axes = plt.subplots(nrows=1, ncols=5, figsize=(4 * 5, 4), squeeze=False, sharex=True, sharey=True)
 i = 0
 df_pe['epoch'] = df_pe['epoch'].astype(int)
 for r in df_pe.columns:
@@ -659,3 +661,76 @@ for r in df_pe.columns:
         axes[0][i].set_title(f'{r}')
         i += 1
 plt.savefig('multi_worlds.png')
+
+# scree plots
+import pandas as pd
+import pickle as pkl
+import glob
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.decomposition import PCA
+from joblib import Parallel, delayed
+
+files = glob.glob('output/run_sem/oct_22_global_std_skel/*.pkl')
+tag = 'oct_22_global_std_skel'
+pca_tag = 'all'
+sample = 500
+
+
+def load_and_sample(path, sample):
+    input_df = pkl.load(open(path, 'rb'))
+    if pca_tag == '' or pca_tag == 'all':
+        # use scene as a default, since sep 22
+        data_frames = [input_df.appear_post, input_df.optical_post, input_df.skel_post, input_df.objhand_post,
+                       input_df.scene_post]
+    elif pca_tag == 'objhand_only':
+        data_frames = [input_df.objhand_post]
+    elif pca_tag == 'skel_only':
+        data_frames = [input_df.skel_post]
+    elif pca_tag == 'skel_objhand_only' or pca_tag == 'objhand_skel_only':
+        data_frames = [input_df.skel_post, input_df.objhand_post]
+    else:
+        raise Exception(f'Unclear which features to include!!!')
+    if 'motion' in tag:
+        data_frames.append(input_df.objspeed_post)
+    input_df = pd.concat(data_frames, axis=1)
+    print(f'Path={path}, len={len(input_df)}')
+    return input_df.sample(n=sample)
+
+
+input_dfs = Parallel(n_jobs=4)(delayed(load_and_sample)(path, sample=sample) for path in files)
+
+
+def fit_and_plot(df, components, title=''):
+    pca = PCA(n_components=len(df.columns), whiten=True).fit(df)
+    sns.lineplot(data=pca.explained_variance_ratio_)
+    plt.title(f'{title}' + f'Ori={len(df.columns)} Cut={components}',
+              f'Var_explained={pca.explained_variance_ratio_[:components].sum():.2f}')
+    plt.show()
+
+
+combined_runs = pd.concat(input_dfs, axis=0)
+appear_df = pd.concat([input_df.iloc[:, :2] for input_df in input_dfs], axis=0)
+optical_df = pd.concat([input_df.iloc[:, 2:4] for input_df in input_dfs], axis=0)
+skel_df = pd.concat([input_df.iloc[:, 4:-100] for input_df in input_dfs], axis=0)
+emb_df = pd.concat([input_df.iloc[:, -100:] for input_df in input_dfs], axis=0)
+fit_and_plot(combined_runs, 30, title='PCA for Concatenated Features')
+fit_and_plot(skel_df, 14, title='PCA for Skel Features')
+fit_and_plot(emb_df, 14, title='PCA for ObjHand+AllObj Features')
+fit_and_plot(appear_df, 1, title='PCA for Appear')
+fit_and_plot(optical_df, 1, title='PCA for Appear')
+
+# get categories
+import glob
+import os
+import pandas as pd
+files = glob.glob('output/objhand/*.csv')
+run_to_categories = dict()
+for f in files:
+    df = pd.read_csv(f)
+    cat = df.filter(regex='dist').columns
+    run_to_categories[os.path.basename(f).split('_')[0] + '_kinect'] = set([''.join(c for c in x.split('_')[0] if not c.isdigit())
+ for x in cat])
+
+import pickle as pkl
+pkl.dump(run_to_categories, open('scene_categories.pkl', 'wb'))
