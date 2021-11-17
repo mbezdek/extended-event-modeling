@@ -1,0 +1,8 @@
+6.1.9 oct_22_h30_global_std_skel_grid_lr1E-03_alfa1E+00_lmda1E+04 77
+2.4.10 oct_22_h30_global_std_skel_grid_lr1E-03_alfa1E+00_lmda1E+04 77
+3.3.9 oct_22_h30_global_std_skel_grid_lr1E-03_alfa1E+00_lmda1E+04 77
+1.2.9 oct_22_h30_global_std_skel_grid_lr1E-03_alfa1E+00_lmda1E+04 77
+6.1.9 oct_22_h30_global_std_skel_grid_lr1E-03_alfa1E+00_lmda1E+04 7
+2.4.10 oct_22_h30_global_std_skel_grid_lr1E-03_alfa1E+00_lmda1E+04 7
+3.3.9 oct_22_h30_global_std_skel_grid_lr1E-03_alfa1E+00_lmda1E+04 7
+1.2.9 oct_22_h30_global_std_skel_grid_lr1E-03_alfa1E+00_lmda1E+04 7
