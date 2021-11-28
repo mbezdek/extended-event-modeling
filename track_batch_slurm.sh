@@ -22,10 +22,10 @@
 #for run in 3.1.1_C1 3.1.2_C1 3.1.3_C1 3.3.4_C1 3.3.5_C1 3.3.6_C1 3.4.7_C1 3.4.8_C1 3.4.9_C1 3.4.10_C1; do
 #for run in 4.3.1_C1 4.3.2_C1 4.3.3_C1 4.4.4_C1 4.4.5_C1 4.4.6_C1 6.1.7_C1 6.1.8_C1 6.1.9_C1 6.1.10_C1; do
 #for run in 6.2.1_C1 6.2.2_C1 6.2.3_C1 6.3.4_C1 6.3.5_C1 6.3.6_C1; do
-tag=" _aug_02"
+tag=" _nov_16"
 while read run; do
   echo $run
   export run=$run
   export tag=$tag
   sbatch --export=ALL track_v100_slurm.sh -J ${run}${tag}
-done < rerun_tracking_runs.txt
+done < all_runs.txt
