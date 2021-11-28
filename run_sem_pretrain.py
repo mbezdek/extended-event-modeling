@@ -1,6 +1,7 @@
 seed = 1111
 print(f'Setting seeds {seed}')
 import random
+
 random.seed(seed)
 import numpy as np
 
@@ -24,6 +25,7 @@ from scipy.ndimage import gaussian_filter1d
 import scipy.stats as stats
 
 import ray
+
 # this setting seems to limit # active threads for each ray actor method.
 ray.init(num_cpus=16)
 
@@ -582,22 +584,36 @@ class SEMContext:
             x_train = self.combine_df.to_numpy(copy=True)
             # PCA transform input features. Also, get inverted vector for visualization
             if int(self.configs.pca):
-                if int(self.configs.use_shared_pca):
+                if int(self.configs.use_ind_feature_pca):
+                    # TODO: cross check with get_pca_from_all_runs.py to make sure features' positions are correct
+                    pca_appear = pkl.load(open(f'{self.configs.pca_tag}_appear_pca.pkl', 'rb'))
+                    x_train_pca_appear = pca_appear.transform(x_train[:, :2])
+                    pca_optical = pkl.load(open(f'{self.configs.pca_tag}_optical_pca.pkl', 'rb'))
+                    x_train_pca_optical = pca_optical.transform(x_train[:, 2:4])
+                    pca_skel = pkl.load(open(f'{self.configs.pca_tag}_skel_pca.pkl', 'rb'))
+                    x_train_pca_skel = pca_skel.transform(x_train[:, 4:-100])
+                    pca_emb = pkl.load(open(f'{self.configs.pca_tag}_emb_pca.pkl', 'rb'))
+                    x_train_pca_emb = pca_emb.transform(x_train[:, -100:])
+                    x_train_pca = np.hstack([x_train_pca_appear, x_train_pca_optical, x_train_pca_skel, x_train_pca_emb])
+
+                    x_train_inverted_appear = pca_appear.inverse_transform(x_train_pca[:, :1])
+                    x_train_inverted_optical = pca_optical.inverse_transform(x_train_pca[:, 1:2])
+                    x_train_inverted_skel = pca_skel.inverse_transform(x_train_pca[:, 2:16])
+                    x_train_inverted_emb = pca_emb.inverse_transform(x_train_pca[:, 16:])
+                    x_train_inverted = np.hstack(
+                        [x_train_inverted_appear, x_train_inverted_optical, x_train_inverted_skel, x_train_inverted_emb])
+                else:
                     pca = pkl.load(open(f'{self.configs.pca_tag}_pca.pkl', 'rb'))
                     if x_train.shape[1] != pca.n_features_:
                         logger.error(
                             f'MISMATCH: pca.n_features_ = {pca.n_features_} vs. input features={x_train.shape[1]}!!!')
                         raise
                     x_train_pca = pca.transform(x_train)
-                else:
-                    pca = PCA(int(self.configs.pca_dim), whiten=True)
-                    x_train_pca = pca.fit_transform(x_train)
-                # x_train = np.hstack([x_train[:, :2], x_train_pca])
+
+                    x_train_inverted = pca.inverse_transform(x_train_pca)
                 x_train = x_train_pca
                 df_x_train = pd.DataFrame(data=x_train, index=self.data_frames.skel_post.index)
                 setattr(self.data_frames, 'x_train_pca', df_x_train)
-                x_train_inverted = pca.inverse_transform(x_train_pca)
-                # x_train_inverted = np.hstack([x_train[:, :2], x_train_inverted])
                 df_x_train_inverted = pd.DataFrame(data=x_train_inverted, index=self.data_frames.skel_post.index,
                                                    columns=self.combine_df.columns)
                 setattr(self.data_frames, 'x_train_inverted', df_x_train_inverted)
@@ -609,24 +625,30 @@ class SEMContext:
             # the memory allocation, to which self.combine_df refer -> change to be safer
             # x_train /= np.sqrt(x_train.shape[1])
             # x_train is already has unit variance for all features (pca whitening) -> scale to have unit length.
-            # I read in SEM's comment that it should be useful to have unit length stimulus.
+            # In SEM's comment, it should be useful to have unit length stimulus.
             x_train = x_train / np.sqrt(x_train.shape[1])
-            # appear, x_train = np.split(x_train, [2], axis=1)  # remove appear features
-            # This function train and change sem event models
             # x_train = np.random.permutation(x_train)
             # Comment this chunk to generate cached features faster
+            # This function train and change sem event models
             self.run_sem_and_plot(x_train)
             if store_dataframes:
                 # Transform predicted vectors to the original vector space for visualization
                 if int(self.configs.pca):
                     x_inferred_pca = self.sem_model.results.x_hat
-                    # x_inferred_inverted = np.hstack([appear, x_inferred_inverted])  # concat appear feature as if it's used for consistency
                     # Scale back to PCA whitening results
                     x_inferred_pca = x_inferred_pca * np.sqrt(x_train.shape[1])
                     df_x_inferred = pd.DataFrame(data=x_inferred_pca, index=self.data_frames.skel_post.index)
                     setattr(self.data_frames, 'x_inferred_pca', df_x_inferred)
-                    x_inferred_inverted = pca.inverse_transform(x_inferred_pca)
-                    # x_inferred_inverted = np.hstack([x_inferred_pca[:, :2], x_inferred_inverted])
+                    if int(self.configs.use_ind_feature_pca):
+                        x_inferred_inverted_appear: np.ndarray = pca_appear.inverse_transform(x_inferred_pca[:, :1])
+                        x_inferred_inverted_optical = pca_optical.inverse_transform(x_inferred_pca[:, 1:2])
+                        x_inferred_inverted_skel = pca_skel.inverse_transform(x_inferred_pca[:, 2:16])
+                        x_inferred_inverted_emb = pca_emb.inverse_transform(x_inferred_pca[:, 16:])
+                        x_inferred_inverted = np.hstack(
+                            [x_inferred_inverted_appear, x_inferred_inverted_optical, x_inferred_inverted_skel,
+                             x_inferred_inverted_emb])
+                    else:
+                        x_inferred_inverted = pca.inverse_transform(x_inferred_pca)
                     df_x_inferred_inverted = pd.DataFrame(data=x_inferred_inverted, index=self.data_frames.skel_post.index,
                                                           columns=self.combine_df.columns)
                     setattr(self.data_frames, 'x_inferred_inverted', df_x_inferred_inverted)

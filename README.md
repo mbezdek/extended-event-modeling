@@ -11,12 +11,11 @@ This repository manages code for:
 ### Install anaconda
 Follow instructions to install conda: https://www.anaconda.com/products/individual
 ### Install packages
-Note: Because of an attempt to use one environment file that can run on Windows, OSX, Linux, 
-this version of `environment.yml` is constructed to be generic (e.g. tensorflow=2 
-instead of tensorflow=2.1.0 because conda for OSX only has tensorflow 2.0.0 version) \
-Update note: tensorflow version in environment.yml has been changed to 2.1.0, OSX users should change tensorflow version to 2.0.0 before running following commands \
-```conda env create -f environment.yml```\
-```conda activate sem-pysot-37```
+Install environment to run tracking algorithm \
+```conda env create -f environment_tracking.yml```\
+Install environment to run SEM \
+```conda env create -f environment_sem_Windows.yml```\
+or ```conda env create -f environment_sem_MacOS.yml```\
 
 ### Install pysot for tracking
 ```cd ..```
@@ -37,7 +36,7 @@ After installing MVS 2017, open Cross Tools Command Prompt VS 2017 and run: \
 Be aware of changes because this command will pull the latest version of SEM \
 ```git clone git@github.com:NguyenThanhTan/SEM2.git  ``` \
 Export the Path to SEM \
-```export PYTHONPATH="${PYTHONPATH}:/Users/sophie/Documents/SEM2"```\
+```export PYTHONPATH="${PYTHONPATH}:/Users/{USERNAME}/Documents/SEM2"```\
 
 
 

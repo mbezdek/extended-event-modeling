@@ -52,14 +52,42 @@ def load_and_sample(path, sample):
 input_dfs = Parallel(n_jobs=16)(delayed(load_and_sample)(path, sample=sample) for path in input_paths)
 combined_runs = pd.concat(input_dfs, axis=0)
 print(f'Total data points to PCA: {len(combined_runs)}')
-# run pca and save pca pickle
+# run pca and save pca pickles
 pca = PCA(n_components=n_components, whiten=True)
 
 pca.fit(combined_runs)
 
 print(f"pca.components_.shape={pca.components_.shape}")
-
 print(f'Saving {tag}_{pca_tag}_{n_components}_pca.pkl')
 with open(f'{tag}_{pca_tag}_{n_components}_pca.pkl', 'wb') as f:
+    pkl.dump(pca, f)
+
+# TODO: cross-check with run_sem_pretrain.py to make sure features' positions are correct
+pca = PCA(n_components=1, whiten=True)
+pca.fit(combined_runs.iloc[:, :2])
+print(f"pca.components_.shape={pca.components_.shape}")
+print(f'Saving {tag}_{pca_tag}_{n_components}_appear_pca.pkl')
+with open(f'{tag}_{pca_tag}_{n_components}_appear_pca.pkl', 'wb') as f:
+    pkl.dump(pca, f)
+
+pca = PCA(n_components=1, whiten=True)
+pca.fit(combined_runs.iloc[:, 2:4])
+print(f"pca.components_.shape={pca.components_.shape}")
+print(f'Saving {tag}_{pca_tag}_{n_components}_optical_pca.pkl')
+with open(f'{tag}_{pca_tag}_{n_components}_optical_pca.pkl', 'wb') as f:
+    pkl.dump(pca, f)
+
+pca = PCA(n_components=14, whiten=True)
+pca.fit(combined_runs.iloc[:, 4:-100])
+print(f"pca.components_.shape={pca.components_.shape}")
+print(f'Saving {tag}_{pca_tag}_{n_components}_skel_pca.pkl')
+with open(f'{tag}_{pca_tag}_{n_components}_skel_pca.pkl', 'wb') as f:
+    pkl.dump(pca, f)
+
+pca = PCA(n_components=14, whiten=True)
+pca.fit(combined_runs.iloc[:, -100:])
+print(f"pca.components_.shape={pca.components_.shape}")
+print(f'Saving {tag}_{pca_tag}_{n_components}_emb_pca.pkl')
+with open(f'{tag}_{pca_tag}_{n_components}_emb_pca.pkl', 'wb') as f:
     pkl.dump(pca, f)
 print('Done!')
