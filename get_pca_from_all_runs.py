@@ -11,13 +11,22 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--cache_tag", default='may_20_alfa0_appear_cont_individual')
 parser.add_argument("--n_sample", default=200, type=int)
 parser.add_argument("--n_components", default=30, type=int)
+# TODO: cross-check with run_sem_pretrain.py to make sure features' positions are correct
+parser.add_argument("--appear_components", default=2, type=int)
+parser.add_argument("--optical_components", default=1, type=int)
+parser.add_argument("--skel_components", default=14, type=int)
+parser.add_argument("--emb_components", default=13, type=int)
 parser.add_argument("--pca_tag", default='all', type=str)
 args = parser.parse_args()
 
 tag = args.cache_tag
 sample = args.n_sample
 pca_tag = args.pca_tag
-n_components = args.n_components
+appear_components = args.appear_components
+optical_components = args.optical_components
+skel_components = args.skel_components
+emb_components = args.emb_components
+n_components = appear_components + optical_components + skel_components + emb_components
 
 print(f'Cache Tag is: {tag}')
 print(f'Sample for each run is: {sample}')
@@ -62,29 +71,28 @@ print(f'Saving {tag}_{pca_tag}_{n_components}_pca.pkl')
 with open(f'{tag}_{pca_tag}_{n_components}_pca.pkl', 'wb') as f:
     pkl.dump(pca, f)
 
-# TODO: cross-check with run_sem_pretrain.py to make sure features' positions are correct
-pca = PCA(n_components=1, whiten=True)
+pca = PCA(n_components=appear_components, whiten=True)
 pca.fit(combined_runs.iloc[:, :2])
 print(f"pca.components_.shape={pca.components_.shape}")
 print(f'Saving {tag}_{pca_tag}_{n_components}_appear_pca.pkl')
 with open(f'{tag}_{pca_tag}_{n_components}_appear_pca.pkl', 'wb') as f:
     pkl.dump(pca, f)
 
-pca = PCA(n_components=1, whiten=True)
+pca = PCA(n_components=optical_components, whiten=True)
 pca.fit(combined_runs.iloc[:, 2:4])
 print(f"pca.components_.shape={pca.components_.shape}")
 print(f'Saving {tag}_{pca_tag}_{n_components}_optical_pca.pkl')
 with open(f'{tag}_{pca_tag}_{n_components}_optical_pca.pkl', 'wb') as f:
     pkl.dump(pca, f)
 
-pca = PCA(n_components=14, whiten=True)
+pca = PCA(n_components=skel_components, whiten=True)
 pca.fit(combined_runs.iloc[:, 4:-100])
 print(f"pca.components_.shape={pca.components_.shape}")
 print(f'Saving {tag}_{pca_tag}_{n_components}_skel_pca.pkl')
 with open(f'{tag}_{pca_tag}_{n_components}_skel_pca.pkl', 'wb') as f:
     pkl.dump(pca, f)
 
-pca = PCA(n_components=14, whiten=True)
+pca = PCA(n_components=emb_components, whiten=True)
 pca.fit(combined_runs.iloc[:, -100:])
 print(f"pca.components_.shape={pca.components_.shape}")
 print(f'Saving {tag}_{pca_tag}_{n_components}_emb_pca.pkl')

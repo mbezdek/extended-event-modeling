@@ -671,8 +671,8 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 from joblib import Parallel, delayed
 
-files = glob.glob('output/run_sem/oct_22_global_std_skel/*.pkl')
-tag = 'oct_22_global_std_skel'
+tag = 'dec_6_rotated_skel'
+files = glob.glob(f'output/run_sem/{tag}/*.pkl')
 pca_tag = 'all'
 sample = 500
 
@@ -704,9 +704,11 @@ input_dfs = Parallel(n_jobs=4)(delayed(load_and_sample)(path, sample=sample) for
 def fit_and_plot(df, components, title=''):
     pca = PCA(n_components=len(df.columns), whiten=True).fit(df)
     sns.lineplot(data=pca.explained_variance_ratio_)
-    plt.title(f'{title}' + f'Ori={len(df.columns)} Cut={components}',
+    plt.title(f'{title} \n' + f'Ori={len(df.columns)}, Cut={components}, ' +
               f'Var_explained={pca.explained_variance_ratio_[:components].sum():.2f}')
-    plt.show()
+    plt.savefig(f'{title}.png')
+    plt.close()
+    # plt.show()
 
 
 combined_runs = pd.concat(input_dfs, axis=0)
@@ -716,9 +718,9 @@ skel_df = pd.concat([input_df.iloc[:, 4:-100] for input_df in input_dfs], axis=0
 emb_df = pd.concat([input_df.iloc[:, -100:] for input_df in input_dfs], axis=0)
 fit_and_plot(combined_runs, 30, title='PCA for Concatenated Features')
 fit_and_plot(skel_df, 14, title='PCA for Skel Features')
-fit_and_plot(emb_df, 14, title='PCA for ObjHand+AllObj Features')
-fit_and_plot(appear_df, 1, title='PCA for Appear')
-fit_and_plot(optical_df, 1, title='PCA for Appear')
+fit_and_plot(emb_df, 13, title='PCA for ObjHand+AllObj Features')
+fit_and_plot(appear_df, 2, title='PCA for Appear')
+fit_and_plot(optical_df, 1, title='PCA for Optical')
 
 # get categories
 import glob

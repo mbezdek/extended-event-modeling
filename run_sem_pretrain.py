@@ -27,7 +27,8 @@ import scipy.stats as stats
 import ray
 
 # this setting seems to limit # active threads for each ray actor method.
-ray.init(num_cpus=16)
+# uncomment this line to run cached features
+ray.init(num_cpus=12)
 
 sys.path.append('../pysot')
 sys.path.append('../SEM2')
@@ -72,11 +73,11 @@ def preprocess_optical(vid_csv, standardize=True):
 
 def preprocess_skel(skel_csv, use_position=0, standardize=True):
     skel_df = pd.read_csv(skel_csv, index_col='frame')
-    skel_df.drop(['sync_time', 'raw_time', 'body', 'J1_dist_from_J1'], axis=1, inplace=True)
+    skel_df.drop(['sync_time', 'raw_time', 'body', 'J1_dist_from_J1', 'J1_3D_rel_X', 'J1_3D_rel_Y', 'J1_3D_rel_Z'], axis=1, inplace=True)
     if use_position:
-        keeps = ['accel', 'speed', 'dist', 'interhand', '2D']
+        keeps = ['accel', 'speed', 'dist', 'interhand', '2D', 'rel']
     else:
-        keeps = ['accel', 'speed', 'dist', 'interhand']
+        keeps = ['accel', 'speed', 'dist', 'interhand', 'rel']
 
     # for c in skel_df.columns:
     #     if contain_substr(c, keeps):
@@ -98,7 +99,7 @@ def preprocess_skel(skel_csv, use_position=0, standardize=True):
             skel_df.drop([c], axis=1, inplace=True)
     if standardize:
         # load sampled skel features, 200 samples for each video.
-        combined_runs = pd.read_csv('sampled_skel_features.csv')
+        combined_runs = pd.read_csv('sampled_skel_features_dec_6.csv')
         # mask outliers with N/A
         select_indices = (skel_df < combined_runs.quantile(.95)) & (skel_df > combined_runs.quantile(.05))
         skel_df = skel_df[select_indices]
@@ -596,10 +597,14 @@ class SEMContext:
                     x_train_pca_emb = pca_emb.transform(x_train[:, -100:])
                     x_train_pca = np.hstack([x_train_pca_appear, x_train_pca_optical, x_train_pca_skel, x_train_pca_emb])
 
-                    x_train_inverted_appear = pca_appear.inverse_transform(x_train_pca[:, :1])
-                    x_train_inverted_optical = pca_optical.inverse_transform(x_train_pca[:, 1:2])
-                    x_train_inverted_skel = pca_skel.inverse_transform(x_train_pca[:, 2:16])
-                    x_train_inverted_emb = pca_emb.inverse_transform(x_train_pca[:, 16:])
+                    indices = [pca_appear.n_components,
+                               pca_appear.n_components + pca_optical.n_components,
+                               pca_appear.n_components + pca_optical.n_components + pca_skel.n_components,
+                               pca_appear.n_components + pca_optical.n_components + pca_skel.n_components + pca_emb.n_components]
+                    x_train_inverted_appear = pca_appear.inverse_transform(x_train_pca[:, :indices[0]])
+                    x_train_inverted_optical = pca_optical.inverse_transform(x_train_pca[:, indices[0]:indices[1]])
+                    x_train_inverted_skel = pca_skel.inverse_transform(x_train_pca[:, indices[1]:indices[2]])
+                    x_train_inverted_emb = pca_emb.inverse_transform(x_train_pca[:, indices[2]:])
                     x_train_inverted = np.hstack(
                         [x_train_inverted_appear, x_train_inverted_optical, x_train_inverted_skel, x_train_inverted_emb])
                 else:
@@ -921,6 +926,7 @@ if __name__ == "__main__":
     context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, tag=tag, configs=args, sampler=sampler)
     try:
         context_sem.read_train_valid_list()
+        # change is_eval to False if running to cache features
         context_sem.iterate(is_eval=True)
     except Exception as e:
         with open('output/run_sem/sem_error.txt', 'a') as f:
