@@ -645,10 +645,14 @@ class SEMContext:
                     df_x_inferred = pd.DataFrame(data=x_inferred_pca, index=self.data_frames.skel_post.index)
                     setattr(self.data_frames, 'x_inferred_pca', df_x_inferred)
                     if int(self.configs.use_ind_feature_pca):
-                        x_inferred_inverted_appear: np.ndarray = pca_appear.inverse_transform(x_inferred_pca[:, :1])
-                        x_inferred_inverted_optical = pca_optical.inverse_transform(x_inferred_pca[:, 1:2])
-                        x_inferred_inverted_skel = pca_skel.inverse_transform(x_inferred_pca[:, 2:16])
-                        x_inferred_inverted_emb = pca_emb.inverse_transform(x_inferred_pca[:, 16:])
+                        indices = [pca_appear.n_components,
+                                   pca_appear.n_components + pca_optical.n_components,
+                                   pca_appear.n_components + pca_optical.n_components + pca_skel.n_components,
+                                   pca_appear.n_components + pca_optical.n_components + pca_skel.n_components + pca_emb.n_components]
+                        x_inferred_inverted_appear: np.ndarray = pca_appear.inverse_transform(x_inferred_pca[:, :indices[0]])
+                        x_inferred_inverted_optical = pca_optical.inverse_transform(x_inferred_pca[:, indices[0]:indices[1]])
+                        x_inferred_inverted_skel = pca_skel.inverse_transform(x_inferred_pca[:, indices[1]:indices[2]])
+                        x_inferred_inverted_emb = pca_emb.inverse_transform(x_inferred_pca[:, indices[2]:])
                         x_inferred_inverted = np.hstack(
                             [x_inferred_inverted_appear, x_inferred_inverted_optical, x_inferred_inverted_skel,
                              x_inferred_inverted_emb])
