@@ -110,7 +110,7 @@ def get_binned_prediction(boundaries, second_interval=1, sample_per_second=30) -
     return np.array(time_boundaries, dtype=bool)
 
 
-def get_point_biserial(boundaries_binned, binned_comp) -> float:
+def get_point_biserial(boundaries_binned, binned_comp, scale=True) -> float:
     M_1 = np.mean(binned_comp[boundaries_binned != 0])
     M_0 = np.mean(binned_comp[boundaries_binned == 0])
 
@@ -120,7 +120,22 @@ def get_point_biserial(boundaries_binned, binned_comp) -> float:
 
     s = np.std(binned_comp)
     r_pb = (M_1 - M_0) / s * np.sqrt(n_1 * n_0 / (float(n) ** 2))
-    return r_pb
+    if scale:
+        num_boundaries = boundaries_binned.astype(bool).sum()
+        fake_upper = np.zeros(np.shape(binned_comp), dtype=bool)
+        fake_upper[np.argsort(binned_comp)[-num_boundaries:]] = True
+        M_1 = np.mean(binned_comp[fake_upper != 0])
+        M_0 = np.mean(binned_comp[fake_upper == 0])
+        r_upper = (M_1 - M_0) / s * np.sqrt(n_1 * n_0 / (float(n) ** 2))
+        
+        fake_lower = np.zeros(np.shape(binned_comp), dtype=bool)
+        fake_lower[np.argsort(binned_comp)[:num_boundaries]] = True
+        M_1 = np.mean(binned_comp[fake_lower != 0])
+        M_0 = np.mean(binned_comp[fake_lower == 0])
+        r_lower = (M_1 - M_0) / s * np.sqrt(n_1 * n_0 / (float(n) ** 2))
+        return (r_pb - r_lower) / (r_upper - r_lower)
+    else:
+        return r_pb
 
 
 class ReadoutDataframes:

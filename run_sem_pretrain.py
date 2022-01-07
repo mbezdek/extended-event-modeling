@@ -840,7 +840,7 @@ class SEMContext:
         gt_freqs = gaussian_filter1d(gt_freqs, 2)
         last = min(len(pred_boundaries), len(gt_freqs))
         # compute biserial correlation and pearson_r of model boundaries
-        bicorr = get_point_biserial(pred_boundaries[:last], gt_freqs[:last])
+        bicorr = get_point_biserial(pred_boundaries[:last], seg_video.gt_freqs[:last])
         pred_boundaries_gaussed = gaussian_filter1d(pred_boundaries.astype(float), 1)
         pearson_r, p = stats.pearsonr(pred_boundaries_gaussed[:last], gt_freqs[:last])
         percentile = percentileofscore(biserials, bicorr)
