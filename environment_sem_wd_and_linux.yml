@@ -1,4 +1,4 @@
-name: tf-37
+name: sem-and-viz
 channels:
   - defaults
   - conda-forge
@@ -29,5 +29,8 @@ dependencies:
   - pip
   - panel=0.11.3
   - holoviews=1.14.5
+  - plotly
+  - python-kaleido
+  - hvplot
   - pip:
-      - ray[default]==1.5.1
+      - ray[default]==1.8.0
