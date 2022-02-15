@@ -31,6 +31,8 @@ from matplotlib.colors import ListedColormap
 import colorcet as cc
 import matplotlib as mpl
 from matplotlib.lines import Line2D
+import math
+from scipy.spatial.transform import Rotation as R
 
 
 def remove_number(string):
@@ -130,8 +132,24 @@ def get_nearest(emb_vector: List, space='glove'):
         return res
 
 
-def drawobj(instances, frame, odf, color=(255, 0, 0), thickness=1, draw_name=False):
+def drawobj(instances, frame, odf, color=(255, 0, 0), thickness=1, draw_name=False, tint=False, draw_rect=True):
     s = frame.shape[0] / 1080.0
+    def contain_number(string: str):
+        for i in range(100):
+            if str(i) in string:
+                return 1
+        return 0
+    tmp = []
+    for i, ins in enumerate(instances):
+        if contain_number(ins):
+            tmp.append(ins)
+            continue
+        else:
+            # choose the nearest instance of the category
+            all_instances = odf.filter(like=ins).dropna().filter(like='dist_z')
+            if len(all_instances.columns):
+                tmp.append(all_instances.idxmax(axis='columns').values[0].replace('_dist_z', ''))
+    instances = tmp
     for i in instances:
         xmin = odf[i + '_x'] * s
         ymin = odf[i + '_y'] * s
@@ -142,9 +160,25 @@ def drawobj(instances, frame, odf, color=(255, 0, 0), thickness=1, draw_name=Fal
             color_scaled = tuple(map(int, np.array(color) * conf_score))
         except:
             color_scaled = (0, 0, 255)
-        cv2.rectangle(frame, pt1=(int(xmin), int(ymin)),
-                      pt2=(int(xmax), int(ymax)),
-                      color=color_scaled, thickness=thickness)
+        if draw_rect:
+            cv2.rectangle(frame, pt1=(int(xmin), int(ymin)),
+                          pt2=(int(xmax), int(ymax)),
+                          color=color_scaled, thickness=thickness)
+        if tint:
+            frame = frame.astype(int)
+
+            def colorize(image, hue, saturation=1):
+                """ Add color of the given hue to an RGB image.
+
+                By default, set the saturation to 1 so that the colors pop!
+                """
+                hsv = color.rgb2hsv(image)
+                hsv[:, :, 1] = saturation
+                hsv[:, :, 0] = hue
+                return color.hsv2rgb(hsv)
+            frame[int(ymin): int(ymax), int(xmin): int(xmax), 1:] += int(50 * conf_score)
+            frame = np.clip(frame, 0, 255)
+            frame = frame.astype(np.uint8)
         if draw_name:
             cv2.putText(frame, text=i,
                         org=(int(xmin), int(ymax - 5)),
@@ -216,7 +250,7 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             #                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
             #                 color=ColorBGR.blue)
             out_obj_frame = np.zeros(shape=(outframe.shape[0] // 2, outframe.shape[1], outframe.shape[2]), dtype=np.uint8)
-            # Put three nearest works from glove to input vector
+            # Put three nearest words from scene to input vector
             input_nearest_objects = get_nearest(
                 [np.array(inputdf.x_train_inverted.loc[frame_slider, inputdf.objhand_post.columns].values, dtype=np.float32)],
                 space='scene')
@@ -227,13 +261,16 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             cv2.putText(out_obj_frame, text=f'Input (Scene)', org=(out_obj_frame.shape[1] - 450, 20),
                         fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                         color=ColorBGR.red)
-            # Put three nearest words from glove to prediction vector
+            # Put three nearest words from scene to prediction vector
             pred_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
                                                space='scene')
             for index, instance in enumerate(pred_nearest_objects[:3]):
                 cv2.putText(out_obj_frame, text=str(instance), org=(out_obj_frame.shape[1] - 300, 50 + 20 * index),
                             fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.45,
                             color=ColorBGR.green)
+            # draw boxes for objects predicted to be near the hand
+            instances = [pr[0] for pr in pred_nearest_objects]
+            outframe = drawobj(instances[:3], outframe, odf_z, color=ColorBGR.green, draw_name=False, tint=True, draw_rect=False)
             cv2.putText(out_obj_frame, text=f'Predicted (Scene)', org=(out_obj_frame.shape[1] - 300, 20),
                         fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                         color=ColorBGR.green)
@@ -259,6 +296,9 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
     cv2.putText(outframe, text=f'CYAN: Background Objects', org=(10, 140),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                 color=ColorBGR.cyan)
+    cv2.putText(outframe, text=f'Tinted: Predicted Nearest Objects', org=(10, 160),
+                fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+                color=ColorBGR.yellow)
 
     # Testing the effect of each stage of processing objhand feature
     # cv2.putText(outframe, text=f'RED: Pre-sampling', org=(10, 120),
@@ -552,6 +592,113 @@ def draw_skeleton_ball(frame_slider):
     return outframe
 
 
+def calc_joint_rel_position(df):
+    # left shoulder : J4
+    # right shoulder : J8
+    # df : skeleton tracking dataframe with 3D joint coordinates
+    # returns df with columns for joints translated to SpineMid as origin and shoulders rotated to same Z value
+    # Translate all joints to J1 as origin:
+    for j in range(25):
+        for dim in ['X', 'Y', 'Z']:
+            df[f'J{j}_3D_rel_{dim}'] = df[f'J{j}_3D_{dim}'] - df[f'J1_3D_{dim}']
+    # calculate angle for rotation and rotate around the Y-axis:
+    rotation_radians = math.atan2(df['J4_3D_rel_Z'] - df['J8_3D_rel_Z'], df['J4_3D_rel_X'] - df['J8_3D_rel_X'])
+    rotation_vector = rotation_radians * np.array([0, 1, 0])  # Y-axis
+    rotation = R.from_rotvec(rotation_vector)
+    for j in range(25):
+        jxout = 'J' + str(j) + '_3D_rel_X'
+        jyout = 'J' + str(j) + '_3D_rel_Y'
+        jzout = 'J' + str(j) + '_3D_rel_Z'
+        df[jxout], df[jyout], df[jzout] = rotation.apply((df[jxout], df[jyout], df[jzout]))
+    return df
+
+
+def anim_event_series(e_array, view, title=''):
+    # PARAMETERS:
+    # e_series: array of 25 joints in X,Y,Z depth space
+    #    i.e., [X1,X2,X3,...,X25,Y1,Y2,Y3,...,Y25,Z1,Z2,Z3,...,Z25],
+    #    with a row for each timepoint of joint positions recorded.
+    #
+    # out_file: output name for the animation. HTML format works.
+    # view: front or side
+    # t: frame id
+
+    # plt.rcParams['animation.ffmpeg_path'] = '/home/n.tan/.conda/envs/tf-37-new/bin/ffmpeg'
+    fig = plt.figure()
+    ax = fig.add_subplot(projection='3d')
+    if view == 'front':
+        ax.view_init(elev=5., azim=270.)  # frontward
+    elif view == 'side':
+        ax.view_init(elev=5., azim=180.)  # side
+    # ax = Axes3D(fig)
+    # Setting the axes properties
+    ax.set_xlim3d([-1.5, 1.0])
+    ax.set_xlabel('X')
+    ax.set_zlim3d([-1.5, 1.0])
+    ax.set_zlabel('Y')
+    ax.set_ylim3d([-1.5, 1.0])
+    ax.set_ylabel('Z')
+    ax.set_title(title)
+
+    # def update_graph(t):
+    #     plt.cla()
+    #     print(t)
+    if view == 'front':
+        ax.view_init(elev=5., azim=270.)  # frontward
+    elif view == 'side':
+        ax.view_init(elev=5., azim=180.)  # side
+        # ax.set_xlim3d([-1.5, 1.0])
+        # ax.set_xlabel('X')
+        # ax.set_zlim3d([-1.5, 1.0])
+        # ax.set_zlabel('Y')
+        # ax.set_ylim3d([-1.5, 1.0])
+        # ax.set_ylabel('Z')
+
+    x = [(-1) * i for i in e_array[0:25]]
+    # x = e_series[t, 0:25]
+    y = e_array[25:50]
+    z = e_array[50:75]
+
+    # Plotting bones by connecting the joints
+    spine_x = [x[i] for i in [3, 2, 20, 1, 0]]
+    spine_y = [y[i] for i in [3, 2, 20, 1, 0]]
+    spine_z = [z[i] for i in [3, 2, 20, 1, 0]]
+    ax.plot(spine_x, spine_z, spine_y, color='b')
+
+    l_arm_x = [x[i] for i in [20, 4, 5, 6, 7, 21]]
+    l_arm_y = [y[i] for i in [20, 4, 5, 6, 7, 21]]
+    l_arm_z = [z[i] for i in [20, 4, 5, 6, 7, 21]]
+    ax.plot(l_arm_x, l_arm_z, l_arm_y, color='b')
+
+    r_arm_x = [x[i] for i in [20, 8, 9, 10, 11, 23]]
+    r_arm_y = [y[i] for i in [20, 8, 9, 10, 11, 23]]
+    r_arm_z = [z[i] for i in [20, 8, 9, 10, 11, 23]]
+    ax.plot(r_arm_x, r_arm_z, r_arm_y, color='b')
+
+    l_leg_x = [x[i] for i in [0, 12, 13, 14, 15]]
+    l_leg_y = [y[i] for i in [0, 12, 13, 14, 15]]
+    l_leg_z = [z[i] for i in [0, 12, 13, 14, 15]]
+    ax.plot(l_leg_x, l_leg_z, l_leg_y, color='b')
+
+    r_leg_x = [x[i] for i in [0, 16, 17, 18, 19]]
+    r_leg_y = [y[i] for i in [0, 16, 17, 18, 19]]
+    r_leg_z = [z[i] for i in [0, 16, 17, 18, 19]]
+    ax.plot(r_leg_x, r_leg_z, r_leg_y, color='b')
+
+    fig.canvas.draw()
+    image_from_plot = cv2.cvtColor(np.asarray(fig.canvas.buffer_rgba()), cv2.COLOR_RGBA2BGR)
+    plt.close(fig)
+    return image_from_plot
+
+    # Creating the Animation object
+    # line_ani = animation.FuncAnimation(fig, update_graph, len(e_series),
+    #                                    interval=1, blit=False)
+    # writervideo = animation.FFMpegWriter(fps=3, codec='xvid')
+    # writervideo = animation.MovieWriter(fps=3)
+    # line_ani.save('output/videos/test.png', writer='imagemagick')
+    # line_ani.save(out_file, writer=writervideo)
+
+
 def draw_video():
     output_video_path = f'output/videos/{run_select}_{tag}_{epoch}.avi'
     if not os.path.exists(f'output/videos'):
@@ -585,29 +732,74 @@ def draw_video():
     #                                       frameSize=(640, 480),
     #                                       isColor=True)
     cv2_writer_comp = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
-                                          frameSize=(1280, 960),
+                                          frameSize=(1280, 640),
                                           isColor=True)
     count = 0
+    def align(index, indices, window=3):
+        for i in range(index, index + window):
+            if i in indices:
+                return i
+        for i in range(index, index - window, -1):
+            if i in indices:
+                return i
+        return -1
     for frame_id, frame in anchored_frames.items():
+        old_id = frame_id
+        indices = list(set(pca_input_df.index).intersection(set(skel_df.index)))
+        frame_id = align(frame_id, indices)
+        if frame_id == -1:
+            continue
+        del anchored_frames[old_id]
+        anchored_frames[frame_id] = frame
         count += 1
-        if count % 1000 == 0:
-            print(f' Processed {frame_id} for {run_select}...')
-        # if frame_id > 1000:
+        # if frame_id > 5000:
         #     break
+
+        def get_side_and_front(df, frame_id, title=''):
+            x_array = df.filter(like='rel_X').loc[frame_id].to_numpy()
+            y_array = df.filter(like='rel_Y').loc[frame_id].to_numpy()
+            z_array = df.filter(like='rel_Z').loc[frame_id].to_numpy()
+            e_array = np.hstack([x_array, y_array, z_array])
+            if len(e_array) == 72:
+                e_array = np.insert(e_array, 1, 0)
+                e_array = np.insert(e_array, 26, 0)
+                e_array = np.insert(e_array, 51, 0)
+            else:
+                assert len(e_array) == 75, f'len(e_array)={len(e_array)} is not 72 or 75'
+            side_3d = anim_event_series(e_array=e_array, view='side', title=title)
+            front_3d = anim_event_series(e_array=e_array, view='front', title=title)
+            return side_3d, front_3d
+
+        # side_before_preprocess, front_before_preprocess = get_side_and_front(skel_df, frame_id,
+        #                                                                      title='Before Preprocessing')
+        # before_preprocess = cv2.hconcat([side_before_preprocess, front_before_preprocess])
+        # before_preprocess = cv2.resize(before_preprocess, dsize=(640, 320))
+        # side_before_pca, front_before_pca = get_side_and_front(skel_df_unscaled, frame_id, title='Before Pca')
+        # before_pca = cv2.hconcat([side_before_pca, front_before_pca])
+        # before_pca = cv2.resize(before_pca, dsize=(640, 320))
+        side_after_pca, front_after_pca = get_side_and_front(pca_input_df, frame_id, title='After Pca')
+        after_pca = cv2.hconcat([side_after_pca, front_after_pca])
+        after_pca = cv2.resize(after_pca, dsize=(640, 320))
+        side_pred, front_pred = get_side_and_front(pred_skel_df, frame_id, title="SEM's Prediction")
+        prediction = cv2.hconcat([side_pred, front_pred])
+        prediction = cv2.resize(prediction, dsize=(640, 320))
+
         img, out_obj_frame = draw_frame_resampled(frame_id, skel_checkbox=True, obj_checkbox=True, run_select=run_select,
                                                   get_img=True,
                                                   black=False)
-        out_obj_frame = cv2.resize(out_obj_frame, dsize=(640, 240))
-        img = cv2.resize(img, dsize=(640, 480))
+        # out_obj_frame = cv2.resize(out_obj_frame, dsize=(640, 320))
+        img = cv2.resize(img, dsize=(640, 320))
         # diagnostic = plot_diagnostic_readouts(frame_id, run_select, get_img=True)
-        # diagnostic = cv2.resize(diagnostic, dsize=(640, 240))
+        # diagnostic = cv2.resize(diagnostic, dsize=(640, 320))
         # pe = plot_pe(run_select, tag, epoch, frame_slider=frame_id)
         # pe = cv2.resize(pe, dsize=(640, 240))
         pe_and_diag = plot_pe_and_diag(run_select, tag, epoch, frame_id, get_img=True)
-        pe_and_diag = cv2.resize(pe_and_diag, dsize=(640, 720))
-        skeleton_ball = draw_skeleton_ball(frame_slider=frame_id)
-        skeleton_ball = cv2.resize(skeleton_ball, dsize=(640, 480))
-        combined = cv2.hconcat([cv2.vconcat([img, skeleton_ball]), cv2.vconcat([out_obj_frame, pe_and_diag])])
+        pe_and_diag = cv2.resize(pe_and_diag, dsize=(640, 320))
+        # skeleton_ball = draw_skeleton_ball(frame_slider=frame_id)
+        # skeleton_ball = cv2.resize(skeleton_ball, dsize=(640, 480))
+        # combined = cv2.hconcat([cv2.vconcat([img, skeleton_ball]), cv2.vconcat([out_obj_frame, pe_and_diag])])
+        combined = cv2.hconcat([cv2.vconcat([img, after_pca]),
+                                cv2.vconcat([pe_and_diag, prediction])])
         # cv2.imwrite('test.png', skeleton_ball)
         # diagnostic = np.concatenate([pe, diagnostic], axis=0)
         # cv2_writer_long.write(img)
@@ -616,12 +808,6 @@ def draw_video():
         # cv2_writer_pe.write(pe)
         # cv2_writer_combined.write(pe_and_diag)
         cv2_writer_comp.write(combined)
-    # cv2_writer.release()
-    # cv2_writer_long.release()
-    # cv2_writer_obj.release()
-    # cv2_writer_diag.release()
-    # cv2_writer_pe.release()
-    # cv2_writer_combined.release()
     cv2_writer_comp.release()
     print(f'Done {output_video_path}')
 
@@ -641,9 +827,12 @@ if __name__ == "__main__":
     run_select = run_select.replace('_kinect', '')
     second_interval = 1  # interval to group boundaries
     frame_per_second = 3  # sampling rate to input to SEM
-    fps = 25.0  # kinect videos
+    cv2_reader = cv2.VideoCapture(f'data/small_videos/{run_select}_kinect_trim.mp4')
+    fps = cv2_reader.get(cv2.CAP_PROP_FPS)
+    # fps = 25.0  # kinect videos
     frame_interval = frame_per_second * second_interval
     skel_df = pd.read_csv(f'output/skel/{run_select}_kinect_skel_features.csv')
+    skel_df.set_index('frame', drop=False, inplace=True)
     objhand_df = pd.read_csv(os.path.join(f'output/objhand/{run_select}_kinect_objhand.csv'))
     anchored_frames = joblib.load(f'output/run_sem/frames/{run_select}_kinect_trimmar_20_individual_depth_scene_frames.joblib')
     inputdf = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_inputdf_{epoch}.pkl', 'rb'))
@@ -666,9 +855,18 @@ if __name__ == "__main__":
     pred_skel_df = pred_skel_df.loc[:, skel_df_post.columns]
     pca_input_df = pca_input_df.loc[:, skel_df_post.columns]
 
-    skel_df_unscaled = skel_df_unscaled * skel_df[skel_df_post.columns].std() + skel_df[skel_df_post.columns].mean()
-    pred_skel_df = pred_skel_df * skel_df[skel_df_post.columns].std() + skel_df[skel_df_post.columns].mean()
-    pca_input_df = pca_input_df * skel_df[skel_df_post.columns].std() + skel_df[skel_df_post.columns].mean()
+    # TODO: cross-check with run_sem_pretrain for consistency
+    # load sampled skel features, 200 samples for each video.
+    combined_runs = pd.read_csv('sampled_skel_features_dec_6.csv')
+    # standardize using global statistics
+    select_indices = (combined_runs < combined_runs.quantile(.95)) & (combined_runs > combined_runs.quantile(.05))
+    combined_runs_q = combined_runs[select_indices]
+    stats = combined_runs_q.describe().loc[['mean', 'std']]
+    # skel_df = (skel_df - stats.loc['mean', skel_df.columns]) / stats.loc['std', skel_df.columns]
+
+    skel_df_unscaled = skel_df_unscaled * stats.loc['std', skel_df_post.columns] + stats.loc['mean', skel_df_post.columns]
+    pred_skel_df = pred_skel_df * stats.loc['std', skel_df_post.columns] + stats.loc['mean', skel_df_post.columns]
+    pca_input_df = pca_input_df * stats.loc['std', skel_df_post.columns] + stats.loc['mean', skel_df_post.columns]
 
     skel_df_unscaled['frame'] = skel_df_unscaled.index
     pred_skel_df['frame'] = pred_skel_df.index
