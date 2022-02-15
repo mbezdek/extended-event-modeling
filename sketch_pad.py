@@ -418,9 +418,9 @@ for d in diagnostics:
     with open(f'{d}', 'rb') as f:
         sem_readouts = pkl.load(f)
     with open(f'{d}', 'wb') as f:
-        diag = DiagnosticResults()
-        diag.__dict__ = sem_readouts.__dict__
-        pkl.dump(diag, f)
+        inputdf = DiagnosticResults()
+        inputdf.__dict__ = sem_readouts.__dict__
+        pkl.dump(inputdf, f)
 
 for all_lik, new_lik, repeat_lik in zip(sem_readouts['frame_dynamics']['old_lik'], sem_readouts['frame_dynamics']['new_lik'],
                                         sem_readouts['frame_dynamics']['repeat_lik']):
@@ -726,13 +726,132 @@ fit_and_plot(optical_df, 1, title='PCA for Optical')
 import glob
 import os
 import pandas as pd
+
 files = glob.glob('output/objhand/*.csv')
 run_to_categories = dict()
 for f in files:
     df = pd.read_csv(f)
     cat = df.filter(regex='dist').columns
     run_to_categories[os.path.basename(f).split('_')[0] + '_kinect'] = set([''.join(c for c in x.split('_')[0] if not c.isdigit())
- for x in cat])
+                                                                            for x in cat])
 
 import pickle as pkl
 pkl.dump(run_to_categories, open('scene_categories.pkl', 'wb'))
+
+## Compare PE across tags among different components
+# define tag and pca tag
+import pandas as pd
+import glob
+import pickle as pkl
+import numpy as np
+
+
+
+# tag = 'jan_25_lr_normal_grid_lr1E-03_alfa1E-01_lmda1E+05'
+pca_tag = 'dec_6_rotated_skel_all_30'
+
+# load pca to get n_components
+pca_appear = pkl.load(open(f'{pca_tag}_appear_pca.pkl', 'rb'))
+pca_optical = pkl.load(open(f'{pca_tag}_optical_pca.pkl', 'rb'))
+pca_skel = pkl.load(open(f'{pca_tag}_skel_pca.pkl', 'rb'))
+pca_emb = pkl.load(open(f'{pca_tag}_emb_pca.pkl', 'rb'))
+indices = [pca_appear.n_components,
+           pca_appear.n_components + pca_optical.n_components,
+           pca_appear.n_components + pca_optical.n_components + pca_skel.n_components,
+           pca_appear.n_components + pca_optical.n_components + pca_skel.n_components + pca_emb.n_components]
+
+# create a dataframe to cache
+pe_types = ['pe', 'pe_w', 'pe_w2']
+df_pe = pd.DataFrame(columns=['run', 'tag', 'epoch'] +
+                             sum([[f'{pe_type}_appear', f'{pe_type}_optical', f'{pe_type}_skel', f'{pe_type}_emb', f'{pe_type}']
+                                 for pe_type in pe_types], []))
+
+tag = 'jan_10_no_skel_grid_lr1E-03_alfa1E-01_lmda1E+05'
+# for each epoch, glob all existed runs
+for e in range(30):
+    files = glob.glob(f'output/run_sem/{tag}/*{tag}*inputdf_{e}.pkl')
+    # manipulate each file
+    for f in files:
+        print(f'Processing file {f}')
+        inputdf = pkl.load(open(f'{f}', 'rb'))
+        diag = pkl.load(open(f"{f.replace('inputdf', 'diagnostic')}", 'rb'))
+        run = f.split('/')[-1].split('_')[0]
+
+        # split pe into typed pe
+        def split_pe(name='pe'):
+            pe = (diag[f"x_hat{name.replace('pe', '')}"] * np.sqrt(inputdf.x_train_pca.shape[1])) - inputdf.x_train_pca
+            pe_array = pe.apply(np.linalg.norm, axis=0).to_numpy()
+            pe_appear = pe_array[:indices[0]]
+            pe_optical = pe_array[indices[0]:indices[1]]
+            pe_skel = pe_array[indices[1]:indices[2]]
+            pe_emb = pe_array[indices[2]:]
+            return np.average(pe_appear), np.average(pe_optical), np.average(pe_skel), np.average(pe_emb), np.average(pe_array)
+        concat_pe = []
+        # compute typed pe and add to a dataframe
+        for name in pe_types:
+            pe_appear, pe_optical, pe_skel, pe_emb, pe_all = split_pe(name)
+            concat_pe.extend([pe_appear, pe_optical, pe_skel, pe_emb, pe_all])
+        row = [f'{run}', f'{tag}', f'{e}'] + concat_pe
+        # print(f'appending {row}')
+        df_pe.loc[len(df_pe.index)] = row
+df_pe.to_csv(f'df_pe_{tag}.csv', index=False)
+
+# plotting
+df_new = pd.read_csv(f'df_pe_{tag}.csv', index_col=None)
+pe1 = 'pe'
+pe2 = 'pe_w'
+df_new.plot(
+    kind='scatter',
+    x='epoch',
+    y=[f'{pe1}', f'{pe2}'],
+    backend='plotly',
+    width=500,
+    trendline="lowess",
+).write_image(f'{pe1}_and_{pe2}.png')
+
+
+import pandas as pd
+import os
+import plotly.express as px
+import cv2
+import numpy as np
+from utils import SegmentationVideo, get_point_biserial
+
+grain = 'coarse'
+
+df = pd.read_csv('output/run_sem/results_purity_coverage.csv')
+df = df[~df['tag'].isna()]
+df = df[~df['bicorr'].isna()]
+df = df.dropna(axis=0)
+df = df[(df.tag == 'feb_11_cleaned_segmentation_grid_lr1E-03_alfa1E-01_lmda1E+05') & (df.grain == grain)]
+
+if not os.path.exists('output/low_correlation_runs'):
+    os.makedirs('output/low_correlation_runs')
+
+data_frame = pd.read_csv('e148_META_RawSegmentation_clean.csv')
+df_compare = pd.DataFrame(columns=['bicorr', 'type', 'run'])
+for e in range(50, 55):
+    df_e = df[(df['percentile'] < 5) & (df['epoch'] == e)]
+    # df_e = df[(df['epoch'] == e)]
+    for run in list(set(df_e.run)):
+        video_path = run + '_trim.mp4'
+        seg_video = SegmentationVideo(data_frame=data_frame, video_path=video_path)
+        seg_video.get_human_segments(n_annotators=100, condition=grain, second_interval=1)
+        # this function aggregate subject boundaries, apply a gaussian kernel and calculate correlations for subjects
+        capture = cv2.VideoCapture(os.path.join('data/small_videos/', f'{video_path}'))
+        end_frame = capture.get(cv2.CAP_PROP_FRAME_COUNT)
+        fps = capture.get(cv2.CAP_PROP_FPS)
+        last = int(end_frame / fps)
+        number_boundaries = int(df_e[df_e.run == run]['number_boundaries'])
+        biserials = seg_video.get_biserial_subjects(second_interval=1, end_second=last)
+        for b in biserials:
+            df_compare.loc[len(df_compare), :] = [b, 'human', run]
+            random_boundaries = np.zeros(shape=(last,), dtype=bool)
+            random_indices = np.random.choice(range(last), size=number_boundaries, replace=False)
+            random_boundaries[random_indices] = 1
+            b = get_point_biserial(random_boundaries, seg_video.gt_freqs)
+            df_compare.loc[len(df_compare), :] = [b, 'random', run]
+        df_compare.loc[len(df_compare), :] = [float(df_e[df_e.run == run].bicorr), 'sem', run]
+
+# df = df[(df['epoch'] <= 51) & df.epoch >= 31]
+fig = px.strip(df_compare, y='bicorr', x='type', color='run')
