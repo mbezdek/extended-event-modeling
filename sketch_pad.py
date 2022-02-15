@@ -828,7 +828,7 @@ df = df[(df.tag == 'feb_11_cleaned_segmentation_grid_lr1E-03_alfa1E-01_lmda1E+05
 if not os.path.exists('output/low_correlation_runs'):
     os.makedirs('output/low_correlation_runs')
 
-data_frame = pd.read_csv('e148_META_RawSegmentation_clean.csv')
+data_frame = pd.read_csv('seg_data_analysis_clean.csv')
 df_compare = pd.DataFrame(columns=['bicorr', 'type', 'run'])
 for e in range(50, 55):
     df_e = df[(df['percentile'] < 5) & (df['epoch'] == e)]
