@@ -40,7 +40,6 @@ from utils import SegmentationVideo, get_binned_prediction, get_point_biserial, 
     logger, parse_config, contain_substr, ReadoutDataframes, Sampler, get_coverage, get_purity, event_label_to_interval
 from joblib import Parallel, delayed
 import gensim.downloader
-import random
 from typing import List, Dict
 from copy import deepcopy
 
@@ -73,7 +72,8 @@ def preprocess_optical(vid_csv, standardize=True):
 
 def preprocess_skel(skel_csv, use_position=0, standardize=True):
     skel_df = pd.read_csv(skel_csv, index_col='frame')
-    skel_df.drop(['sync_time', 'raw_time', 'body', 'J1_dist_from_J1', 'J1_3D_rel_X', 'J1_3D_rel_Y', 'J1_3D_rel_Z'], axis=1, inplace=True)
+    skel_df.drop(['sync_time', 'raw_time', 'body', 'J1_dist_from_J1', 'J1_3D_rel_X', 'J1_3D_rel_Y', 'J1_3D_rel_Z'], axis=1,
+                 inplace=True)
     if use_position:
         keeps = ['accel', 'speed', 'dist', 'interhand', '2D', 'rel']
     else:
@@ -448,10 +448,19 @@ class SEMContext:
             else:
                 self.train_dataset = self.train_list
             self.training()
-            if is_eval:
+            if is_eval and self.current_epoch % 5 == 1:
+            # if is_eval and self.current_epoch % 5 == 0:
                 logger.info('Evaluating')
                 self.evaluating()
             # break
+            # LR annealing
+            # if self.current_epoch % 10 == 0:
+            #     self.sem_model.general_event_model.decrease_lr()
+            #     self.sem_model.general_event_model_x2.decrease_lr()
+            #     self.sem_model.general_event_model_x3.decrease_lr()
+            #     self.sem_model.general_event_model_yoke.decrease_lr()
+            #     for k, e in self.sem_model.event_models.items():
+            #         e.decrease_lr.remote()
 
     def training(self):
         # TODO: can be refactored for simplicity
@@ -520,7 +529,7 @@ class SEMContext:
         self.run = run
         self.movie = run + '_trim.mp4'
         self.title = os.path.join(self.tag, os.path.basename(self.movie[:-4]) + self.tag)
-        self.grain = 'coarse'
+        # self.grain = 'coarse'
         # FPS is used to pad prediction boundaries, should be inferred from run
         if 'kinect' in run:
             self.fps = 25
@@ -673,7 +682,7 @@ class SEMContext:
             # with open('output/run_sem/' + self.title + f'_inputdf_{self.current_epoch}.pkl', 'wb') as f:
             #     pkl.dump(self.data_frames, f)
 
-            logger.info(f'Done SEM {self.run}!!!\n')
+            logger.info(f'Done SEM {self.run}. is_train={self.is_train}!!!\n')
             with open('output/run_sem/sem_complete.txt', 'a') as f:
                 f.write(self.run + f'_{tag}' + '\n')
             # sem's Results() is initialized and different for each run
@@ -755,7 +764,7 @@ class SEMContext:
                                                                        scene_embs],
                                                                       rate=self.configs.rate, fps=self.fps)
         for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post', 'scene_post'], data_frames):
-        # for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post'], data_frames):
+            # for feature, df in zip(['appear_post', 'optical_post', 'skel_post', 'objhand_post'], data_frames):
             setattr(readout_dataframes, feature, df)
         self.last_frame = readout_dataframes.skel_post.index[-1]
         self.first_frame = first_frame
@@ -766,18 +775,30 @@ class SEMContext:
         # self.categories = categories
         self.categories_z = categories_z
 
-    def run_sem_and_plot(self, x_train):
-        """
-        This method run SEM and plot
-        :param x_train:
-        :return:
-        """
-        self.sem_model.run(x_train, train=self.is_train, **self.run_kwargs)
+    def calculate_correlation(self, pred_boundaries, grain='coarse'):
+        # Process segmentation data (ground_truth)
+        data_frame = pd.read_csv(self.configs.seg_path)
+        seg_video = SegmentationVideo(data_frame=data_frame, video_path=self.movie)
+        seg_video.get_human_segments(n_annotators=100, condition=grain, second_interval=self.second_interval)
+        # Compare SEM boundaries versus participant boundaries
+        last = min(len(pred_boundaries), self.end_second)
+        # this function aggregate subject boundaries, apply a gaussian kernel and calculate correlations for subjects
+        biserials = seg_video.get_biserial_subjects(second_interval=self.second_interval, end_second=last)
+        # compute biserial correlation and pearson_r of model boundaries
+        bicorr = get_point_biserial(pred_boundaries[:last], seg_video.gt_freqs[:last])
+        pred_boundaries_gaussed = gaussian_filter1d(pred_boundaries.astype(float), 2)
+        pearson_r, p = stats.pearsonr(pred_boundaries_gaussed[:last], seg_video.gt_freqs[:last])
+        percentile = percentileofscore(biserials, bicorr)
+        logger.info(f'Tag={tag}: Bicorr={bicorr:.3f} cor. Percentile={percentile:.3f},  '
+                    f'Subjects_median={np.nanmedian(biserials):.3f}')
+
+        return bicorr, percentile, pearson_r, seg_video
+
+    def compute_clustering_metrics(self):
         start_second = self.first_frame / self.fps
         event_to_intervals = event_label_to_interval(self.sem_model.results.e_hat, start_second)
         df = pd.read_csv('./event_annotation_timing.csv')
         run_df = df[df['run'] == self.run.split('_')[0]]
-
         # calculate coverage
         coverage_df = pd.DataFrame(
             columns=['annotated_event', 'annotated_length', 'sem_max_overlap', 'max_coverage', 'epoch', 'run', 'tag', 'is_train'])
@@ -786,7 +807,6 @@ class SEMContext:
             coverage_df.loc[len(coverage_df.index)] = [ann_event, annotations['endsec'] - annotations['startsec'],
                                                        max_coverage_event, max_coverage,
                                                        self.current_epoch, self.run, self.tag, self.is_train]
-
         # calculate purity
         purity_df = pd.DataFrame(
             columns=['sem_event', 'sem_length', 'annotated_max_overlap', 'max_purity', 'epoch', 'run', 'tag', 'is_train'])
@@ -800,23 +820,36 @@ class SEMContext:
         average_coverage = np.average(coverage_df['max_coverage'], weights=coverage_df['annotated_length'])
         average_purity = np.average(purity_df['max_purity'], weights=purity_df['sem_length'])
 
+        return average_purity, average_coverage
+
+    def run_sem_and_plot(self, x_train):
+        """
+        This method run SEM and plot
+        :param x_train:
+        :return:
+        """
+        self.sem_model.run(x_train, train=self.is_train, **self.run_kwargs)
+        # set k_prev to None in order to run the next video
+        self.sem_model.k_prev = None
+        # set x_prev to None in order to train the general event
+        self.sem_model.x_prev = None
+
+        # Process results returned by SEM
+        average_purity, average_coverage = self.compute_clustering_metrics()
+
+        # Logging some information about types of boundaries
         switch_old = (self.sem_model.results.boundaries == 1).sum()
         switch_new = (self.sem_model.results.boundaries == 2).sum()
         switch_current = (self.sem_model.results.boundaries == 3).sum()
         logger.info(f'Total # of OLD switches: {switch_old}')
         logger.info(f'Total # of NEW switches: {switch_new}')
         logger.info(f'Total # of RESTART switches: {switch_current}')
-        # Added on june_20
         entropy = stats.entropy(self.sem_model.results.c) / np.log((self.sem_model.results.c > 0).sum())
-        # set k_prev to None in order to run the next video
-        # added on may_28
-        self.sem_model.k_prev = None
-        # set x_prev to None in order to train the general event
-        # added on june_29
-        self.sem_model.x_prev = None
-        # Process results returned by SEM
+
         pred_boundaries = get_binned_prediction(self.sem_model.results.boundaries, second_interval=self.second_interval,
                                                 sample_per_second=self.sample_per_second)
+        # switching between video, not a real boundary
+        pred_boundaries[0] = 0
         # Padding prediction boundaries, could be changed to have higher resolution but not necessary
         pred_boundaries = np.hstack([[0] * round(self.first_frame / self.fps / self.second_interval), pred_boundaries]).astype(
             int)
@@ -824,48 +857,45 @@ class SEMContext:
         logger.info(f'Total # of event models: {len(self.sem_model.event_models) - 1}')
         threshold = 600
         active_event_models = np.count_nonzero(self.sem_model.c > threshold)
-
         logger.info(f'Total # of event models active more than {threshold // 3}s: {active_event_models}')
-        with open('output/run_sem/' + self.title + f'_diagnostic_{self.current_epoch}.pkl', 'wb') as f:
-            pkl.dump(self.sem_model.results.__dict__, f)
 
-        # Process segmentation data (ground_truth)
-        data_frame = pd.read_csv(self.configs.seg_path)
-        seg_video = SegmentationVideo(data_frame=data_frame, video_path=self.movie)
-        seg_video.get_segments(n_annotators=100, condition=self.grain, second_interval=self.second_interval)
-        biserials = seg_video.get_biserial_subjects(second_interval=self.second_interval, end_second=self.end_second)
-        # logger.info(f'Subjects mean_biserial={np.nanmean(biserials):.3f}')
-        # Compare SEM boundaries versus participant boundaries
-        gt_freqs = seg_video.gt_freqs
-        gt_freqs = gaussian_filter1d(gt_freqs, 2)
-        last = min(len(pred_boundaries), len(gt_freqs))
-        # compute biserial correlation and pearson_r of model boundaries
-        bicorr = get_point_biserial(pred_boundaries[:last], seg_video.gt_freqs[:last])
-        pred_boundaries_gaussed = gaussian_filter1d(pred_boundaries.astype(float), 1)
-        pearson_r, p = stats.pearsonr(pred_boundaries_gaussed[:last], gt_freqs[:last])
-        percentile = percentileofscore(biserials, bicorr)
-        logger.info(f'Tag={tag}: Bicorr={bicorr:.3f} cor. Percentile={percentile:.3f},  '
-                    f'Subjects_median={np.nanmedian(biserials):.3f}')
-        with open('output/run_sem/' + self.title + '_gtfreqs.pkl', 'wb') as f:
-            pkl.dump(gt_freqs, f)
-        plot_diagnostic_readouts(gt_freqs, self.sem_model.results, frame_interval=self.second_interval * self.sample_per_second,
-                                 offset=self.first_frame / self.fps / self.second_interval,
-                                 title=self.title + f'_diagnostic_{self.grain}_{self.current_epoch}',
-                                 bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
-
-        plot_pe(self.sem_model.results, frame_interval=self.second_interval * self.sample_per_second,
-                offset=self.first_frame / self.fps / self.second_interval,
-                title=self.title + f'_PE_{self.grain}_{self.current_epoch}')
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
         with open('output/run_sem/results_purity_coverage.csv', 'a') as f:
             writer = csv.writer(f)
             # len adds 1, and the buffer model adds 1 => len() - 2
-            writer.writerow([self.run, self.grain, bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
+            bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries, grain='coarse')
+            with open('output/run_sem/' + self.title + '_gtfreqs_coarse.pkl', 'wb') as f:
+                pkl.dump(seg_video.gt_freqs, f)
+            writer.writerow([self.run, 'coarse', bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
                              self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
                              std_pe, pearson_r, self.is_train,
                              switch_old, switch_new, switch_current, entropy,
                              average_purity, average_coverage])
+            bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries, grain='fine')
+            with open('output/run_sem/' + self.title + '_gtfreqs_fine.pkl', 'wb') as f:
+                pkl.dump(seg_video.gt_freqs, f)
+            writer.writerow([self.run, 'fine', bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
+                             self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
+                             std_pe, pearson_r, self.is_train,
+                             switch_old, switch_new, switch_current, entropy,
+                             average_purity, average_coverage])
+
+        plot_diagnostic_readouts(seg_video.gt_freqs, self.sem_model.results,
+                                 frame_interval=self.second_interval * self.sample_per_second,
+                                 offset=self.first_frame / self.fps / self.second_interval,
+                                 title=self.title + f'_diagnostic_fine_{self.current_epoch}',
+                                 bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
+
+        plot_pe(self.sem_model.results, frame_interval=self.second_interval * self.sample_per_second,
+                offset=self.first_frame / self.fps / self.second_interval,
+                title=self.title + f'_PE_fine_{self.current_epoch}')
+
+        # logging results
+        with open('output/run_sem/' + self.title + f'_diagnostic_{self.current_epoch}.pkl', 'wb') as f:
+            pkl.dump(self.sem_model.results.__dict__, f)
+        with open('output/run_sem/' + self.title + '_gtfreqs.pkl', 'wb') as f:
+            pkl.dump(seg_video.gt_freqs, f)
 
 
 if __name__ == "__main__":

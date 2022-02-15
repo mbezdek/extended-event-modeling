@@ -413,7 +413,7 @@ def infer_on_video(args, run, tag):
                 # Process segmentation data (ground_truth)
                 data_frame = pd.read_csv(args.seg_path)
                 seg_video = SegmentationVideo(data_frame=data_frame, video_path=movie)
-                seg_video.get_segments(n_annotators=100, condition=grain, second_interval=second_interval)
+                seg_video.get_human_segments(n_annotators=100, condition=grain, second_interval=second_interval)
                 biserials = seg_video.get_biserial_subjects(second_interval=second_interval, end_second=end_second)
                 # logger.info(f'Subjects mean_biserial={np.nanmean(biserials):.3f}')
                 # Compare SEM boundaries versus participant boundaries

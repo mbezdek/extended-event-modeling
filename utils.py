@@ -11,6 +11,7 @@ from typing import List, Dict, Tuple
 import argparse
 import configparser
 import coloredlogs
+from scipy.ndimage import gaussian_filter1d
 
 # Set-up logger
 logger = logging.getLogger(__name__)
@@ -98,10 +99,7 @@ def get_frequency_ground_truth(second_boundaries, second_interval=1,
     return frequency, bins
 
 
-def get_binned_prediction(boundaries, second_interval=1, sample_per_second=30) -> np.ndarray:
-    # e_hat = np.argmax(boundaries, axis=1)
-    # TODO: change to [0] for the first frame after done modeling
-    # frame_boundaries = np.concatenate([[0], e_hat[1:] != e_hat[:-1]])
+def get_binned_prediction(boundaries, second_interval=1, sample_per_second=3) -> np.ndarray:
     frame_boundaries = boundaries.astype(bool).astype(int)
     frame_interval = round(second_interval * sample_per_second)
     # Sum for each interval
@@ -162,6 +160,8 @@ class SegmentationVideo:
 
     def __init__(self, data_frame, video_path):
         video_path = video_path.replace('kinect', 'C1').replace('C2', 'C1')
+        if 'trim' not in video_path:
+            video_path = video_path + '_trim'
         self.data_frame = data_frame[
             data_frame['movie1'] == os.path.splitext(os.path.basename(video_path))[0]]
         self.n_participants = 0
@@ -182,20 +182,25 @@ class SegmentationVideo:
         list_of_segments = np.array(list_of_segments)
         return list_of_segments
 
-    def get_biserial_subjects(self, second_interval=1, end_second=555):
+    def get_biserial_subjects(self, second_interval=1, end_second=555, boundary_range=(1, 555)):
         self.biserials = []
         all_seg_points = np.hstack(self.seg_points)
         self.gt_boundaries, _ = get_frequency_ground_truth(all_seg_points,
                                                            second_interval=second_interval,
                                                            end_second=end_second)
         self.gt_freqs = self.gt_boundaries / self.n_participants
+        self.gt_freqs = gaussian_filter1d(self.gt_freqs, 2)
         for seg_point in self.seg_points:
             participant_seg, _ = get_frequency_ground_truth(seg_point,
                                                             second_interval=second_interval,
                                                             end_second=end_second)
-            if sum(participant_seg) == 0:
-                logger.info(f'Subject has no segments within end_second={end_second}')
+            # if sum(participant_seg) == 0:
+            #     logger.info(f'Subject has no segments within end_second={end_second}')
+            #     continue
+            if sum(participant_seg) < boundary_range[0] or sum(participant_seg) > boundary_range[1]:
+                logger.info(f'Subject has {sum(participant_seg)}, outside of {boundary_range}')
                 continue
+
             point = get_point_biserial(participant_seg.astype(bool), self.gt_freqs)
             if not np.isnan(point):  # some participants yield null bicorr
                 self.biserials.append(point)
@@ -208,7 +213,8 @@ class SegmentationVideo:
             if len(seg) > 0:
                 new_seg = np.array([])
                 # For an interval, each participant have at most one vote
-                for i in range(0, round(max(seg)) + 1, second_interval):
+                for i in range(0, round(min(max(seg), 1500)) + 1, second_interval):
+                    # seg is a list of timepoints, averaging all timepoints within a second
                     if seg[(seg > i) & (seg < i + 1)].shape[0]:
                         new_seg = np.hstack([new_seg, seg[(seg > i) & (seg < i + 1)].mean()])
             else:
@@ -234,7 +240,7 @@ class SegmentationVideo:
         self.seg_points = new_seg_points
         self.n_participants = len(self.seg_points)
 
-    def get_segments(self, n_annotators=100, condition='coarse', second_interval=1) -> List:
+    def get_human_segments(self, n_annotators=100, condition='coarse', second_interval=1) -> List:
         """
         This method extract a list of segmentations, each according to an annotator
         :param n_annotators: number of annotators to return
@@ -603,7 +609,7 @@ def get_coverage(annotated_event: pd.Series, event_to_intervals: Dict):
         if c >= max_coverage:
             max_coverage = c
             max_coverage_event = sem_event
-    print(f"Max coverage for {annotated_event['evname']} is SEM's event {max_coverage_event} with {max_coverage}")
+    # print(f"Max coverage for {annotated_event['evname']} is SEM's event {max_coverage_event} with {max_coverage}")
     return annotated_event['evname'], max_coverage_event, max_coverage
 
 
@@ -617,7 +623,7 @@ def get_purity(sem_event: int, sem_intervals: List, run_df: pd.DataFrame):
         if c >= max_purity:
             max_purity = c
             max_purity_ann_event = annotated_event['evname']
-    print(f"Max purity for SEM's event {sem_event} is annotated event {max_purity_ann_event} with {max_purity}")
+    # print(f"Max purity for SEM's event {sem_event} is annotated event {max_purity_ann_event} with {max_purity}")
     return sem_event, max_purity_ann_event, max_purity
 
 

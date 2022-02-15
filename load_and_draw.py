@@ -38,7 +38,7 @@ def draw_segmentations(input_video_path, input_segmentation, output_dir, output_
     # calculate segmentation points according to fps
     # consider only one annotation
     condition = 'coarse'
-    seg_points = seg_video.get_segments(n_annotators=100, condition=condition)
+    seg_points = seg_video.get_human_segments(n_annotators=100, condition=condition)
     seg_points = np.hstack(seg_points)
     # get canvas drawn with segmentation points
     canvas_agg = Canvas(rows=3, columns=1)

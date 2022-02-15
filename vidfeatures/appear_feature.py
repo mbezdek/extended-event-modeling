@@ -35,7 +35,7 @@ def plot_appear_features(args, run, tag):
     # calculate segmentation points according to fps
     # consider only one annotation
     condition = 'coarse'
-    seg_points = seg_video.get_segments(n_annotators=100, condition=condition)
+    seg_points = seg_video.get_human_segments(n_annotators=100, condition=condition)
     seg_points = np.hstack(seg_points)
     # Plot participant boundaries and appear/disappear timepoints
     canvas_agg = Canvas(rows=1, columns=1)
