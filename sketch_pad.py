@@ -830,9 +830,9 @@ if not os.path.exists('output/low_correlation_runs'):
 
 data_frame = pd.read_csv('seg_data_analysis_clean.csv')
 df_compare = pd.DataFrame(columns=['bicorr', 'type', 'run'])
-for e in range(50, 55):
-    df_e = df[(df['percentile'] < 5) & (df['epoch'] == e)]
-    # df_e = df[(df['epoch'] == e)]
+for e in range(50, 52):
+    # df_e = df[(df['percentile'] < 5) & (df['epoch'] == e)]
+    df_e = df[(df['epoch'] == e)]
     for run in list(set(df_e.run)):
         video_path = run + '_trim.mp4'
         seg_video = SegmentationVideo(data_frame=data_frame, video_path=video_path)

@@ -163,7 +163,7 @@ class SegmentationVideo:
         if 'trim' not in video_path:
             video_path = video_path + '_trim'
         self.data_frame = data_frame[
-            data_frame['movie1'] == os.path.splitext(os.path.basename(video_path))[0]]
+            data_frame['Movie'] == os.path.splitext(os.path.basename(video_path))[0]]
         self.n_participants = 0
         self.biserials = None
         self.seg_points = None
@@ -248,11 +248,16 @@ class SegmentationVideo:
         :param second_interval: interval to bin segmentations
         :return:
         """
-        seg = self.data_frame[self.data_frame['condition'] == condition]
-        logger.info(f'Total of participants {len(seg)}')
+        seg = self.data_frame[self.data_frame['Condition'] == condition]
         # parse annotations, from string to a list of breakpoints for each annotation
-        seg_processed = seg['segment1'].apply(SegmentationVideo.string_to_segments)
-        self.seg_points = seg_processed.values[:n_annotators]
+        annotators = list(set(seg.workerId))
+        logger.info(f'Total of participants {len(annotators)}')
+        seg_points = []
+        for a in annotators:
+            tmp = seg[seg.workerId == a].Sec.to_numpy()
+            seg_points.append(tmp)
+        # seg_processed = seg['segment1'].apply(SegmentationVideo.string_to_segments)
+        self.seg_points = seg_points[:n_annotators]
         self.preprocess_segments(second_interval=second_interval)
         return self.seg_points
 

@@ -892,6 +892,11 @@ class SEMContext:
                 title=self.title + f'_PE_fine_{self.current_epoch}')
 
         # logging results
+        self.sem_model.results.first_frame = self.first_frame
+        self.sem_model.results.end_second = self.end_second
+        self.sem_model.results.fps = self.fps
+        self.sem_model.results.current_epoch = self.current_epoch
+        self.sem_model.results.is_train = self.is_train
         with open('output/run_sem/' + self.title + f'_diagnostic_{self.current_epoch}.pkl', 'wb') as f:
             pkl.dump(self.sem_model.results.__dict__, f)
         with open('output/run_sem/' + self.title + '_gtfreqs.pkl', 'wb') as f:
@@ -965,4 +970,4 @@ if __name__ == "__main__":
     except Exception as e:
         with open('output/run_sem/sem_error.txt', 'a') as f:
             f.write(traceback.format_exc() + '\n')
-            print(traceback.format_exc(e))
+            print(traceback.format_exc())

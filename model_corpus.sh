@@ -9,7 +9,7 @@
 
 
 cd /scratch/n.tan/extended-event-modeling/
-source activate tf-37
+source activate sem-and-viz
 export PYTHONPATH=${PYTHONPATH}:/scratch/n.tan/SEM2
 
 #python vidfeatures/object_hand_features.py -c configs/config_objhand_features.ini
