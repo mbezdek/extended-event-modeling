@@ -783,6 +783,7 @@ class SEMContext:
         # Compare SEM boundaries versus participant boundaries
         last = min(len(pred_boundaries), self.end_second)
         # this function aggregate subject boundaries, apply a gaussian kernel and calculate correlations for subjects
+        seg_video.get_gt_freqs(second_interval=self.second_interval, end_second=last)
         biserials = seg_video.get_biserial_subjects(second_interval=self.second_interval, end_second=last)
         # compute biserial correlation and pearson_r of model boundaries
         bicorr = get_point_biserial(pred_boundaries[:last], seg_video.gt_freqs[:last])

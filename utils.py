@@ -182,14 +182,21 @@ class SegmentationVideo:
         list_of_segments = np.array(list_of_segments)
         return list_of_segments
 
-    def get_biserial_subjects(self, second_interval=1, end_second=555, boundary_range=(1, 555)):
-        self.biserials = []
+    def get_gt_freqs(self, second_interval=1, end_second=555):
         all_seg_points = np.hstack(self.seg_points)
         self.gt_boundaries, _ = get_frequency_ground_truth(all_seg_points,
                                                            second_interval=second_interval,
                                                            end_second=end_second)
         self.gt_freqs = self.gt_boundaries / self.n_participants
         self.gt_freqs = gaussian_filter1d(self.gt_freqs, 2)
+
+        return self.gt_freqs
+
+    def get_biserial_subjects(self, second_interval=1, end_second=555, number_boundary_range=(1, 555)):
+        self.biserials = []
+        if self.gt_freqs is None:
+            self.get_gt_freqs(second_interval=second_interval, end_second=end_second)
+
         for seg_point in self.seg_points:
             participant_seg, _ = get_frequency_ground_truth(seg_point,
                                                             second_interval=second_interval,
@@ -197,8 +204,8 @@ class SegmentationVideo:
             # if sum(participant_seg) == 0:
             #     logger.info(f'Subject has no segments within end_second={end_second}')
             #     continue
-            if sum(participant_seg) < boundary_range[0] or sum(participant_seg) > boundary_range[1]:
-                logger.info(f'Subject has {sum(participant_seg)}, outside of {boundary_range}')
+            if sum(participant_seg) < number_boundary_range[0] or sum(participant_seg) > number_boundary_range[1]:
+                logger.info(f'Subject has {sum(participant_seg)} boundaries, outside of {number_boundary_range}')
                 continue
 
             point = get_point_biserial(participant_seg.astype(bool), self.gt_freqs)
@@ -236,7 +243,7 @@ class SegmentationVideo:
             else:
                 empty += 1
         assert len(self.seg_points) == empty + out_lier + len(new_seg_points)
-        logger.info(f'{empty} Empty participants and {out_lier} Outlier participants')
+        # logger.info(f'{empty} Empty participants and {out_lier} Outlier participants')
         self.seg_points = new_seg_points
         self.n_participants = len(self.seg_points)
 
@@ -251,7 +258,7 @@ class SegmentationVideo:
         seg = self.data_frame[self.data_frame['Condition'] == condition]
         # parse annotations, from string to a list of breakpoints for each annotation
         annotators = list(set(seg.workerId))
-        logger.info(f'Total of participants {len(annotators)}')
+        # logger.info(f'Total of participants {len(annotators)}')
         seg_points = []
         for a in annotators:
             tmp = seg[seg.workerId == a].Sec.to_numpy()
