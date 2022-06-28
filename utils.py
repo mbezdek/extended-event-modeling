@@ -162,6 +162,8 @@ class SegmentationVideo:
         video_path = video_path.replace('kinect', 'C1').replace('C2', 'C1')
         if 'trim' not in video_path:
             video_path = video_path + '_trim'
+        if 'C1' not in video_path:
+            video_path = video_path + '_C1'
         self.data_frame = data_frame[
             data_frame['Movie'] == os.path.splitext(os.path.basename(video_path))[0]]
         self.n_participants = 0

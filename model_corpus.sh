@@ -11,6 +11,7 @@
 cd /scratch/n.tan/extended-event-modeling/
 source activate sem-and-viz
 export PYTHONPATH=${PYTHONPATH}:/scratch/n.tan/SEM2
+export SEED=$7
 
 #python vidfeatures/object_hand_features.py -c configs/config_objhand_features.ini
 #python job_split.py 1

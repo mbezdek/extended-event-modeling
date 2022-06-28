@@ -1,4 +1,6 @@
-seed = 1111
+import os
+seed = int(os.environ.get('SEED', '1111'))
+# seed = 1111
 print(f'Setting seeds {seed}')
 import random
 

@@ -735,22 +735,15 @@ def draw_video():
                                           frameSize=(1280, 640),
                                           isColor=True)
     count = 0
-    def align(index, indices, window=3):
-        for i in range(index, index + window):
-            if i in indices:
-                return i
-        for i in range(index, index - window, -1):
-            if i in indices:
-                return i
-        return -1
+
     for frame_id, frame in anchored_frames.items():
-        old_id = frame_id
-        indices = list(set(pca_input_df.index).intersection(set(skel_df.index)))
-        frame_id = align(frame_id, indices)
-        if frame_id == -1:
-            continue
-        del anchored_frames[old_id]
-        anchored_frames[frame_id] = frame
+        # old_id = frame_id
+        # indices = list(set(pca_input_df.index).intersection(set(skel_df.index)))
+        # frame_id = align(frame_id, indices)
+        # if frame_id == -1:
+        #     continue
+        # del anchored_frames[old_id]
+        # anchored_frames[frame_id] = frame
         count += 1
         # if frame_id > 5000:
         #     break
@@ -919,6 +912,25 @@ if __name__ == "__main__":
                     r += glove_vectors[w]
                 r /= len(words)
             scene_word2vec[category] = r
+
+    # align frame id from anchored frames to frame id from output
+    def align(index, indices, window=3):
+        for i in range(index, index + window):
+            if i in indices:
+                return i
+        for i in range(index, index - window, -1):
+            if i in indices:
+                return i
+        return -1
+    new_anchored_frames = dict()
+    indices = list(set(pca_input_df.index).intersection(set(skel_df.index)))
+    for frame_id, frame in anchored_frames.items():
+        frame_id = align(frame_id, indices)
+        if frame_id == -1:
+            continue
+        # del anchored_frames[old_id]
+        new_anchored_frames[frame_id] = frame
+    anchored_frames = new_anchored_frames
 
     draw_video()
     t2 = time.perf_counter()
