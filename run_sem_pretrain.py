@@ -28,7 +28,7 @@ import scipy.stats as stats
 import ray
 
 # this setting seems to limit # active threads for each ray actor method.
-# uncomment this line to run cached features
+# comment this line to run cached features
 ray.init(num_cpus=12)
 
 sys.path.append('../pysot')
@@ -106,8 +106,11 @@ def preprocess_skel(skel_csv, use_position=0, standardize=True):
         select_indices = (skel_df < combined_runs.quantile(.95)) & (skel_df > combined_runs.quantile(.05))
         skel_df = skel_df[select_indices]
         qualified_columns = (select_indices.sum() > int(len(skel_df) * 0.8))
-        assert qualified_columns.sum() / len(qualified_columns) > 0.9, \
-            f"Video {skel_csv} has {len(qualified_columns) - qualified_columns.sum()} un-qualified columns!!!"
+        if qualified_columns.sum() / len(qualified_columns) <= 0.8:
+            logger.info(f"Video {skel_csv} has {len(qualified_columns) - qualified_columns.sum()} un-qualified columns!!!")
+            open(f'filtered_runs_.8_.8.txt', 'a').write(f"{skel_csv}\n")
+        # assert qualified_columns.sum() / len(qualified_columns) > 0.9, \
+        #     f"Video {skel_csv} has {len(qualified_columns) - qualified_columns.sum()} un-qualified columns!!!"
         # fill N/A
         skel_df = skel_df.ffill()
 
@@ -133,11 +136,13 @@ def get_emb(category_weights, emb_dim):
         try:
             r += glove_vectors[category]
         except Exception as e:
+            # if this object is not in glove, use separate words with equal contribution
             words = category.split(' ')
             for w in words:
                 w = w.replace('(', '').replace(')', '')
                 r += glove_vectors[w]
             r /= len(words)
+        # weighted average
         average += r * prob
     return average
 
@@ -175,7 +180,7 @@ def get_embs_and_categories(objhand_df: pd.DataFrame, emb_dim=100, num_objects=3
     return obj_handling_embs, categories
 
 
-def preprocess_objhand(objhand_csv, standardize=True, use_depth=False, num_objects=3, feature='objhand'):
+def preprocess_objhand(objhand_csv, standardize=False, use_depth=False, num_objects=3, feature='objhand'):
     objhand_df = pd.read_csv(objhand_csv, index_col='frame')
 
     def filter_objhand():
@@ -450,7 +455,7 @@ class SEMContext:
             else:
                 self.train_dataset = self.train_list
             self.training()
-            if is_eval and self.current_epoch % 5 == 1:
+            if is_eval and self.current_epoch % 10 == 1:
             # if is_eval and self.current_epoch % 5 == 0:
                 logger.info('Evaluating')
                 self.evaluating()
@@ -690,6 +695,7 @@ class SEMContext:
             # sem's Results() is initialized and different for each run
         except Exception as e:
             with open('output/run_sem/sem_error.txt', 'a') as f:
+                logger.error(f'{e}')
                 f.write(self.run + f'_{tag}' + '\n')
                 f.write(traceback.format_exc() + '\n')
             print(traceback.format_exc())
@@ -969,7 +975,10 @@ if __name__ == "__main__":
     try:
         context_sem.read_train_valid_list()
         # change is_eval to False if running to cache features
+        # context_sem.iterate(is_eval=False)
         context_sem.iterate(is_eval=True)
+        with open('output/run_sem/tag_complete.txt', 'a') as f:
+            f.write(f'{context_sem.tag} completed after {context_sem.current_epoch} epochs' + '\n')
     except Exception as e:
         with open('output/run_sem/sem_error.txt', 'a') as f:
             f.write(traceback.format_exc() + '\n')
