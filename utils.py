@@ -20,7 +20,8 @@ logger.setLevel(os.environ.get('LOGLEVEL', logging.INFO))
 c_handler = logging.StreamHandler()
 LOGFORMAT = '%(name)s - %(levelname)s - %(message)s'
 # c_handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
-c_handler.setFormatter(coloredlogs.ColoredFormatter(LOGFORMAT))
+c_handler.setFormatter(logging.Formatter(LOGFORMAT))
+# c_handler.setFormatter(coloredlogs.ColoredFormatter(LOGFORMAT))
 logger.addHandler(c_handler)
 
 
