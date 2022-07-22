@@ -1,7 +1,6 @@
 import os
 seed = int(os.environ.get('SEED', '1111'))
 # seed = 1111
-print(f'Setting seeds {seed}')
 import random
 
 random.seed(seed)
@@ -45,6 +44,7 @@ import gensim.downloader
 from typing import List, Dict
 from copy import deepcopy
 
+logger.info(f'Setting seeds {seed}')
 # glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
 with open('gen_sim_glove_50.pkl', 'rb') as f:
     glove_vectors = pkl.load(f)
