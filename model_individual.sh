@@ -9,7 +9,8 @@
 
 
 cd /scratch/n.tan/extended-event-modeling/
-source activate tf-37
+source activate sem-and-viz
+export PYTHONPATH=${PYTHONPATH}:/scratch/n.tan/SEM2
 
 #rm intersect_features.txt appear_complete.txt objhand_complete.txt skel_complete.txt vid_complete.txt
 #rm output/run_sem/* output/vid/* output/objhand/* output/appear/* output/skel/*
