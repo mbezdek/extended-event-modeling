@@ -855,3 +855,44 @@ for e in range(50, 52):
 
 # df = df[(df['epoch'] <= 51) & df.epoch >= 31]
 fig = px.strip(df_compare, y='bicorr', x='type', color='run')
+
+import glob
+track_complete = open('track_complete.txt', 'r').readlines()
+track_complete = [x for x in track_complete if "Stats" not in x]
+track_complete = [x.strip() for x in track_complete]
+all_tracks = open('all_runs.txt', 'r').readlines()
+all_tracks = [x.strip() for x in all_tracks if "C1" in x]
+next_8 = list(set(all_tracks).difference(set(track_complete)))[:8]
+open('next_8.txt', 'w').writelines('\n'.join(next_8))
+
+import cv2
+import pandas as pd
+import numpy as np
+from utils import CV2VideoReader
+from joblib import Parallel, delayed
+movies = ['6.3.9_C1_trim.mp4', '2.4.1_C1_trim.mp4', '3.1.3_C1_trim.mp4', '1.2.3_C1_trim.mp4']
+# for m in movies:
+def gen_stats(m):
+    df = pd.DataFrame(columns=['time(s)', 'pixel_change_mean', 'pixel_change_var', 'luminance_mean', 'luminance_var'])
+    cv2_video_reader = CV2VideoReader('data/small_videos/' + m)
+    fps = cv2_video_reader.fps
+    frame_id = 0
+    prev_frame = None
+    while cv2_video_reader.capture.isOpened():
+        frame_id += 1
+        # if frame_id > 400:
+        #     break
+        ret, frame = cv2_video_reader.read_frame()
+        if not ret:
+            print('End of video stream, ret is False!')
+            break
+        if frame_id > 1:
+            lum = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)[..., 2]
+            pixel_change = frame - prev_frame
+            df.loc[len(df)] = [frame_id / fps, np.mean(pixel_change), np.var(pixel_change), np.mean(lum), np.var(lum)]
+        prev_frame = frame
+    df.to_csv(f'{m[:-4]}.csv', index=False)
+    print(f'Done {m}!')
+    cv2_video_reader.capture.release()
+Parallel(n_jobs=4)(delayed(gen_stats)(m) for m in movies)
+

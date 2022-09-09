@@ -28,4 +28,4 @@ while read run; do
   export run=$run
   export tag=$tag
   sbatch --export=ALL track_v100_slurm.sh -J ${run}${tag}
-done < all_runs.txt
+done < next_8.txt

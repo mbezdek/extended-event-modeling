@@ -54,8 +54,13 @@ def load_and_sample(path, sample):
     if 'motion' in tag:
         data_frames.append(input_df.objspeed_post)
     input_df = pd.concat(data_frames, axis=1)
-    print(f'Path={path}, len={len(input_df)}')
-    return input_df.sample(n=sample)
+    try:
+        res = input_df.sample(n=sample)
+        return res
+    except Exception as e:
+        print(f'Failed: Path={path}, len={len(input_df)}')
+        return pd.DataFrame()
+    # return input_df.sample(n=sample)
 
 
 input_dfs = Parallel(n_jobs=16)(delayed(load_and_sample)(path, sample=sample) for path in input_paths)

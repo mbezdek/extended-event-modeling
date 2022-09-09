@@ -289,14 +289,14 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
             e
             # print(traceback.format_exc())
 
-    cv2.putText(outframe, text=f'RED: 3 Nearest Objects', org=(10, 120),
+    cv2.putText(outframe, text=f'RED: 3 Nearest Objects (GT)', org=(10, 20),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                 color=ColorBGR.red)
 
-    cv2.putText(outframe, text=f'CYAN: Background Objects', org=(10, 140),
+    cv2.putText(outframe, text=f'CYAN: Background Objects (GT)', org=(10, 40),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                 color=ColorBGR.cyan)
-    cv2.putText(outframe, text=f'Tinted: Predicted Nearest Objects', org=(10, 160),
+    cv2.putText(outframe, text=f'TINTED: Predicted Nearest Objects', org=(10, 60),
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                 color=ColorBGR.yellow)
 
@@ -318,8 +318,17 @@ def draw_frame_resampled(frame_slider, skel_checkbox, obj_checkbox, run_select, 
                 color=(0, 255, 0))
     # add Segmentation flag
     index = pred_objhand.index.get_indexer([frame_slider])[0]
-    if sem_readouts['e_hat'][index] != sem_readouts['e_hat'][index - 1]:
-        cv2.putText(outframe, text='SEGMENT', org=(10, 220),
+    # if sem_readouts['e_hat'][index] != sem_readouts['e_hat'][index - 1]:
+    if sem_readouts['boundaries'][index] == 1:
+            cv2.putText(outframe, text='SWITCH TO OLD', org=(10, 220),
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+                    color=(0, 255, 0))
+    if sem_readouts['boundaries'][index] == 2:
+        cv2.putText(outframe, text='CREATE NEW', org=(10, 220),
+                    fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
+                    color=(0, 255, 0))
+    if sem_readouts['boundaries'][index] == 3:
+        cv2.putText(outframe, text='RESTART CURRENT', org=(10, 220),
                     fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                     color=(0, 255, 0))
 
@@ -396,25 +405,26 @@ def plot_boundaries(ax, fig):
         if b != 0:
             second = i / frame_interval + offset
             if b == 1:  # Switch to an old event
-                ax.axvline(second, linestyle=(0, (5, 10)), alpha=0.3, color=cmap(1. * e / num_colors), label='Old Event')
+                ax.axvline(second, linestyle=(0, (5, 10)), linewidth=1, alpha=1, color=cmap(1. * e / num_colors), label='Old Event')
             elif b == 2:  # Create a new event
-                ax.axvline(second, linestyle='solid', alpha=0.3, color=cmap(1. * e / num_colors), label='New Event')
+                ax.axvline(second, linestyle='solid', linewidth=1, alpha=1, color=cmap(1. * e / num_colors), label='New Event')
             elif b == 3:  # Restart the current event
-                ax.axvline(second, linestyle='dotted', alpha=0.3, color=cmap(1. * e / num_colors), label='Restart Event')
+                ax.axvline(second, linestyle='dotted', linewidth=1, alpha=1, color=cmap(1. * e / num_colors), label='Restart Event')
     linestyles = ['dashed', 'solid', 'dotted']
     lines = [Line2D([0], [0], color='black', linewidth=1, linestyle=ls) for ls in linestyles]
-    labels = ['Old Event', 'New Event', 'Restart Event']
+    labels = ['Switch to an Old Event', 'Switch to a New Event', 'Restart the Current Event']
     ax.legend(lines, labels, loc='upper right')
 
 
 def plot_diagnostic_readouts(frame_slider, run_select, get_img=False, ax=None, fig=None):
     if ax is None and fig is None:
-        fig, ax = plt.subplots(figsize=(8, 3))
+        fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(gaussian_filter1d(gt_freqs, 1), label='Subject Boundaries')
     ax.set_xlabel('Time (second)')
     ax.set_ylabel('Boundary Probability')
-    ax.axvline(frame_slider / fps, linewidth=2, alpha=0.5, color='r')
-    ax.set_title(f"SEM's and humans' boundaries for {run_select}")
+    ax.set_ylim([0, max(gt_freqs) + max(gt_freqs) * 0.2])
+    ax.axvline(frame_slider / fps, linewidth=3, alpha=0.5, color='r')
+    ax.set_title(f"SEM's and humans' boundaries for activity {run_select}")
     plot_boundaries(ax=ax, fig=fig)
     if get_img:
         fig.canvas.draw()
@@ -468,9 +478,9 @@ def plot_pe(run_select, tag_select, epoch_select, frame_slider, get_img=True, ax
 
 
 def plot_pe_and_diag(run_select, tag_select, epoch_select, frame_slider, get_img=True):
-    fig, axes = plt.subplots(nrows=2, figsize=(8, 9), sharex=True)
-    plot_diagnostic_readouts(frame_slider, run_select, ax=axes[1], fig=fig, get_img=False)
-    plot_pe(run_select, tag_select, epoch_select, frame_slider, ax=axes[0], fig=fig, get_img=False)
+    fig, axes = plt.subplots(nrows=1, figsize=(8, 4.5), sharex='all', squeeze=False)
+    plot_diagnostic_readouts(frame_slider, run_select, ax=axes[0][0], fig=fig, get_img=False)
+    # plot_pe(run_select, tag_select, epoch_select, frame_slider, ax=axes[0], fig=fig, get_img=False)
     # plt.savefig('test.png')
     if get_img:
         fig.canvas.draw()
@@ -732,7 +742,7 @@ def draw_video():
     #                                       frameSize=(640, 480),
     #                                       isColor=True)
     cv2_writer_comp = cv2.VideoWriter(output_video_path, fourcc=fourcc, fps=15,
-                                          frameSize=(1280, 640),
+                                          frameSize=(1600, 900),
                                           isColor=True)
     count = 0
 
@@ -745,7 +755,7 @@ def draw_video():
         # del anchored_frames[old_id]
         # anchored_frames[frame_id] = frame
         count += 1
-        # if frame_id > 5000:
+        # if frame_id > 400:
         #     break
 
         def get_side_and_front(df, frame_id, title=''):
@@ -766,28 +776,28 @@ def draw_video():
         # side_before_preprocess, front_before_preprocess = get_side_and_front(skel_df, frame_id,
         #                                                                      title='Before Preprocessing')
         # before_preprocess = cv2.hconcat([side_before_preprocess, front_before_preprocess])
-        # before_preprocess = cv2.resize(before_preprocess, dsize=(640, 320))
+        # before_preprocess = cv2.resize(before_preprocess, dsize=(800, 450))
         # side_before_pca, front_before_pca = get_side_and_front(skel_df_unscaled, frame_id, title='Before Pca')
         # before_pca = cv2.hconcat([side_before_pca, front_before_pca])
-        # before_pca = cv2.resize(before_pca, dsize=(640, 320))
-        side_after_pca, front_after_pca = get_side_and_front(pca_input_df, frame_id, title='After Pca')
+        # before_pca = cv2.resize(before_pca, dsize=(800, 450))
+        side_after_pca, front_after_pca = get_side_and_front(pca_input_df, frame_id, title='Ground Truth (GT)')
         after_pca = cv2.hconcat([side_after_pca, front_after_pca])
-        after_pca = cv2.resize(after_pca, dsize=(640, 320))
+        after_pca = cv2.resize(after_pca, dsize=(800, 450))
         side_pred, front_pred = get_side_and_front(pred_skel_df, frame_id, title="SEM's Prediction")
         prediction = cv2.hconcat([side_pred, front_pred])
-        prediction = cv2.resize(prediction, dsize=(640, 320))
+        prediction = cv2.resize(prediction, dsize=(800, 450))
 
         img, out_obj_frame = draw_frame_resampled(frame_id, skel_checkbox=True, obj_checkbox=True, run_select=run_select,
                                                   get_img=True,
                                                   black=False)
-        # out_obj_frame = cv2.resize(out_obj_frame, dsize=(640, 320))
-        img = cv2.resize(img, dsize=(640, 320))
+        # out_obj_frame = cv2.resize(out_obj_frame, dsize=(800, 450))
+        img = cv2.resize(img, dsize=(800, 450))
         # diagnostic = plot_diagnostic_readouts(frame_id, run_select, get_img=True)
-        # diagnostic = cv2.resize(diagnostic, dsize=(640, 320))
+        # diagnostic = cv2.resize(diagnostic, dsize=(800, 450))
         # pe = plot_pe(run_select, tag, epoch, frame_slider=frame_id)
         # pe = cv2.resize(pe, dsize=(640, 240))
         pe_and_diag = plot_pe_and_diag(run_select, tag, epoch, frame_id, get_img=True)
-        pe_and_diag = cv2.resize(pe_and_diag, dsize=(640, 320))
+        pe_and_diag = cv2.resize(pe_and_diag, dsize=(800, 450))
         # skeleton_ball = draw_skeleton_ball(frame_slider=frame_id)
         # skeleton_ball = cv2.resize(skeleton_ball, dsize=(640, 480))
         # combined = cv2.hconcat([cv2.vconcat([img, skeleton_ball]), cv2.vconcat([out_obj_frame, pe_and_diag])])
