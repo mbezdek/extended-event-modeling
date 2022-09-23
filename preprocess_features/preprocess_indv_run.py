@@ -302,8 +302,8 @@ class FeatureProcessor:
         return skel_df
 
     def save_df_dict(self) -> None:
-        if not os.path.exists('output/preprocessed_features'):
-            os.mkdir('output/preprocessed_features')
+        if not os.path.exists('../output/preprocessed_features'):
+            os.mkdir('../output/preprocessed_features')
         logger.info(f"Saving output/preprocessed_features/{self.run}_{self.feature_tag}.pkl")
         pkl.dump(self.df_dict, open(f'output/preprocessed_features/{self.run}_{self.feature_tag}.pkl', 'wb'))
         logger.info(f"Saved output/preprocessed_features/{self.run}_{self.feature_tag}.pkl")

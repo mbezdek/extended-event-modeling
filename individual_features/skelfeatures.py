@@ -170,7 +170,7 @@ if __name__ == '__main__':
     with open('results_skel_features.json', 'w') as f:
         json.dump(results, f)
 
-    from pool_skel_features_all_run import pool_features
+    from preprocess_features.pool_skel_features_all_run import pool_features
     pool_features(complete_skel_path=f'skel_complete_{args.feature_tag}.txt',
                   output_stats_path=f'output/sampled_skel_features_{args.feature_tag}.csv',
                   tag=args.feature_tag)

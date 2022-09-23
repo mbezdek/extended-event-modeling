@@ -736,7 +736,7 @@ for f in files:
                                                                             for x in cat])
 
 import pickle as pkl
-pkl.dump(run_to_categories, open('scene_categories.pkl', 'wb'))
+pkl.dump(run_to_categories, open('visualization/scene_categories.pkl', 'wb'))
 
 ## Compare PE across tags among different components
 # define tag and pca tag
@@ -905,3 +905,18 @@ for f in features:
     for x in files:
         if 'kinect_objhand' in x or 'kinect_skel' in x or 'kinect_video' in x or 'kinect_appear' in x:
             os.rename(x, x[:x.find('t_')+1] + '_july_18' + x[x.find('t_')+1:])
+
+# upload files
+import subprocess
+file_names = glob.glob('output/run_sem/frames/*frames.joblib')
+# file_names = file_names[:4]
+
+
+def upload(name):
+    print(f'Uploading {name}...')
+    subprocess.run(['scp', f'{name}', 'n.tan@login3-02.chpc.wustl.edu:/scratch/n.tan/extended-event-modeling/output/run_sem/frames/'])
+
+    print(f'Done {name}!')
+
+
+Parallel(n_jobs=8)(delayed(upload)(file_name) for file_name in file_names)

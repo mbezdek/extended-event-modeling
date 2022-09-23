@@ -711,8 +711,8 @@ def anim_event_series(e_array, view, title=''):
 
 def draw_video():
     output_video_path = f'output/videos/{run_select}_{tag}_{epoch}.avi'
-    if not os.path.exists(f'output/videos'):
-        os.makedirs('output/videos')
+    if not os.path.exists(f'../output/videos'):
+        os.makedirs('../output/videos')
     if os.path.exists(output_video_path):
         print('Video already drawn!!! Deleting...')
         # return

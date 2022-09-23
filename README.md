@@ -5,7 +5,7 @@ This repository manages code for:
 - Training and validating SEM
 - Diagnostic scripts
 
-Submitted manuscript: https://psyarxiv.com/pt6hx/
+Submitted manuscript: https://psyarxiv.com/pt6hx/ \
 OSF repository: https://osf.io/39qwz/
 
 ## Installation
@@ -17,10 +17,10 @@ Install environment to run tracking algorithm \
 ```conda env create -f environment_tracking.yml```\
 Install environment to run SEM \
 ```conda env create -f environment_sem_Windows.yml```\
-or ```conda env create -f environment_sem_MacOS.yml```\
+or ```conda env create -f environment_sem_MacOS.yml```
 
 ### Install pysot for tracking
-```cd ..```
+```cd ..```\
 ```git clone https://github.com/STVIR/pysot``` \
 ```cd pysot``` \
 ```python setup.py build_ext --inplace```\
@@ -37,7 +37,7 @@ After installing MVS 2017, open Cross Tools Command Prompt VS 2017 and run: \
 ### Install SEM from github repository 
 ```git clone git@github.com:NguyenThanhTan/SEM2.git  ``` \
 Export the Path to SEM \
-```export PYTHONPATH="${PYTHONPATH}:/Users/{USERNAME}/Documents/SEM2"```\
+```export PYTHONPATH="${PYTHONPATH}:/Users/{USERNAME}/Documents/SEM2"```
 
 
 
@@ -59,7 +59,7 @@ Remember after you install ffmpeg, add that path to PATH, example: https://www.a
 ## Data preparation
 
 From semi-annotated object locations (one frame every ten seconds), we use Siamese to track forward and backward in time, 
-then use an algorithm to merge these tracks. Script to run tracking algorithm:\ 
+then use an algorithm to merge these tracks. Script to run tracking algorithm:
 
 ```python tracking/tracking.py -c configs/config_tracking.ini```
 
