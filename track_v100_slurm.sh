@@ -4,8 +4,9 @@
 #SBATCH -p gpu
 #SBATCH --gres=gpu:1
 #SBATCH --mem=8G
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --mincpus=8
+#SBATCH --output=%j.tracking.%x.out
 
 echo $run
 echo $tag

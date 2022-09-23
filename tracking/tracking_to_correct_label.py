@@ -540,19 +540,19 @@ if __name__ == '__main__':
         INPUT_VIDEO_PATH = os.path.join(args.input_video_dir, args.run + f'_trim.mp4')
         # INPUT_LABEL_PATH = os.path.join(args.input_label_dir, args.run + f'_labels_fixed.csv')
         INPUT_LABEL_PATH = os.path.join(args.input_label_dir, args.run + f'_labels.csv')
-        OUTPUT_VIDEO_FW = os.path.join(args.output_video_dir, args.run + f'_{args.tag}_fw.avi')
-        OUTPUT_VIDEO_BW = os.path.join(args.output_video_dir, args.run + f'_{args.tag}_bw.avi')
+        OUTPUT_VIDEO_FW = os.path.join(args.output_video_dir, args.run + f'_{args.feature_tag}_fw.avi')
+        OUTPUT_VIDEO_BW = os.path.join(args.output_video_dir, args.run + f'_{args.feature_tag}_bw.avi')
         OUTPUT_VIDEO_MERGED = os.path.join(args.output_video_dir,
-                                           args.run + f'_{args.tag}_merged.avi')
+                                           f"{args.run}_{args.feature_tag}_merged.avi")
         OUTPUT_CSV_PATH = os.path.join(args.output_csv_dir, args.run + f'_r50.csv')
 
         cv2_video_reader = CV2VideoReader(INPUT_VIDEO_PATH)
-        cv2_video_writer_fw = CV2VideoWriter(output_video_path=OUTPUT_VIDEO_FW,
-                                             width=cv2_video_reader.width,
-                                             height=cv2_video_reader.height, fps=120)
-        cv2_video_writer_bw = CV2VideoWriter(output_video_path=OUTPUT_VIDEO_BW,
-                                             width=cv2_video_reader.width,
-                                             height=cv2_video_reader.height, fps=120)
+        # cv2_video_writer_fw = CV2VideoWriter(output_video_path=OUTPUT_VIDEO_FW,
+        #                                      width=cv2_video_reader.width,
+        #                                      height=cv2_video_reader.height, fps=120)
+        # cv2_video_writer_bw = CV2VideoWriter(output_video_path=OUTPUT_VIDEO_BW,
+        #                                      width=cv2_video_reader.width,
+        #                                      height=cv2_video_reader.height, fps=120)
         cv2_video_writer_merged = CV2VideoWriter(output_video_path=OUTPUT_VIDEO_MERGED,
                                                  width=cv2_video_reader.width,
                                                  height=cv2_video_reader.height, fps=120)
@@ -633,8 +633,8 @@ if __name__ == '__main__':
                             track_wrapper.release_tracker()
                 torch.cuda.empty_cache()
 
-        cv2_video_writer_bw.writer.release()
-        cv2_video_writer_fw.writer.release()
+        # cv2_video_writer_bw.writer.release()
+        # cv2_video_writer_fw.writer.release()
         cv2_video_writer_merged.writer.release()
         cv2_video_reader.capture.release()
 
@@ -648,6 +648,8 @@ if __name__ == '__main__':
                 f.write(log_str[index:] + '\n')
 
     except Exception as error:
+        cv2_video_writer_merged.writer.release()
+        cv2_video_reader.capture.release()
         error_str = repr(error)
         with open('track_error.txt', 'a') as f:
             f.write(args.run + '\n')

@@ -28,15 +28,13 @@ def plot_appear_features(args, run, tag):
     disappear_points = changing_points[changing_points['disappear'] != 0]['frame'] / fps
     disappear_points = disappear_points.to_numpy()
     # Process segmentation data (ground_truth)
-    data_frame = pd.read_csv('database.200731.1.csv')
-    input_video_path = ('_').join(
+    data_frame = pd.read_csv('seg_data_analysis_clean.csv')
+    input_video_path = '_'.join(
         os.path.basename(input_csv_tracking).split('_')[:-1]) + '_trim.mp4'
     seg_video = SegmentationVideo(data_frame=data_frame, video_path=input_video_path)
-    # calculate segmentation points according to fps
-    # consider only one annotation
-    condition = 'coarse'
-    seg_points = seg_video.get_human_segments(n_annotators=100, condition=condition)
-    seg_points = np.hstack(seg_points)
+    seg_video.get_human_segments(n_annotators=100, condition='coarse')
+    seg_points = seg_video.get_gt_freqs()
+
     # Plot participant boundaries and appear/disappear timepoints
     canvas_agg = Canvas(rows=1, columns=1)
     h, b, _ = canvas_agg.axes[0].hist(seg_points, bins=99, alpha=0.5)[:]
@@ -53,10 +51,8 @@ def plot_appear_features(args, run, tag):
 
 def gen_appear_features(args, run, tag):
     try:
-        args.run = run
-        args.tag = tag
         logger.info(f'Config {args}')
-        output_csv_appear = os.path.join(args.output_csv_appear, run + '_appear.csv')
+        output_csv_appear = os.path.join(args.output_csv_appear, f"{run}_{tag}_appear.csv")
         input_csv_tracking = os.path.join(args.input_csv_tracking, run + '_r50.csv')
         csv_headers = ['frame', 'appear', 'disappear']
         with open(output_csv_appear, 'w') as g:
@@ -98,13 +94,13 @@ def gen_appear_features(args, run, tag):
                 writer = csv.writer(g)
                 writer.writerow(result_csv_row)
 
-        plot_appear_features(args, run, tag)
+        # plot_appear_features(args, run, tag)
         logger.info(f'Done Appear {run}')
-        with open('appear_complete.txt', 'a') as f:
+        with open(f'appear_complete_{tag}.txt', 'a') as f:
             f.write(run + '\n')
         return input_csv_tracking, output_csv_appear
     except Exception as e:
-        with open('appear_error.txt', 'a') as f:
+        with open(f'appear_error_{tag}.txt', 'a') as f:
             f.write(run + '\n')
             f.write(repr(e) + '\n')
             f.write(traceback.format_exc() + '\n')
@@ -123,10 +119,13 @@ if __name__ == '__main__':
         runs = [args.run]
 
     # runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
-    tag = '_dec_28'
     # input_tracking_csv, output_tracking_csv = gen_appear_features(args, runs[0], tag)
+    if os.path.exists(f'appear_complete_{args.feature_tag}.txt'):
+        os.remove(f'appear_complete_{args.feature_tag}.txt')
+    if os.path.exists(f'appear_error_{args.feature_tag}.txt'):
+        os.remove(f'appear_error_{args.feature_tag}.txt')
     res = Parallel(n_jobs=16)(delayed(
-        gen_appear_features)(args, run, tag) for run in runs)
+        gen_appear_features)(args, run, args.feature_tag) for run in runs)
     input_tracking_csvs, output_appear_csvs = zip(*res)
     results = dict()
     for i, run in enumerate(runs):

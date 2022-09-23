@@ -1,4 +1,4 @@
-name: sem-and-viz
+name: sem-viz-jupyter
 channels:
   - defaults
   - conda-forge
@@ -26,6 +26,9 @@ dependencies:
   - statsmodels
   - ipython
   - jupyter
+  - jupyterlab
+  - nodejs
+  - jupytext
   - pip
   - panel=0.11.3
   - holoviews=1.14.5
@@ -33,4 +36,5 @@ dependencies:
   - python-kaleido
   - hvplot
   - pip:
+      - vidgear
       - ray[default]==1.8.0

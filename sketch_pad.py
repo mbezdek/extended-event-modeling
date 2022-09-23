@@ -552,7 +552,7 @@ def get_pearson_r(run, tag, epoch):
     return r
 
 
-df['pearson_r'] = df.apply(lambda x: get_pearson_r(x.run, x.tag, x.current_epoch), axis=1)
+df['pearson_r'] = df.apply(lambda x: get_pearson_r(x.run, x.feature_tag, x.current_epoch), axis=1)
 # Showing that conditioning on n_event_models is a bad idea
 agg = df.groupby('chapter').mean()
 fig, axs = plt.subplots(ncols=2)
@@ -823,7 +823,7 @@ df = pd.read_csv('output/run_sem/results_purity_coverage.csv')
 df = df[~df['tag'].isna()]
 df = df[~df['bicorr'].isna()]
 df = df.dropna(axis=0)
-df = df[(df.tag == 'feb_11_cleaned_segmentation_grid_lr1E-03_alfa1E-01_lmda1E+05') & (df.grain == grain)]
+df = df[(df.feature_tag == 'feb_11_cleaned_segmentation_grid_lr1E-03_alfa1E-01_lmda1E+05') & (df.grain == grain)]
 
 if not os.path.exists('output/low_correlation_runs'):
     os.makedirs('output/low_correlation_runs')
@@ -896,3 +896,12 @@ def gen_stats(m):
     cv2_video_reader.capture.release()
 Parallel(n_jobs=4)(delayed(gen_stats)(m) for m in movies)
 
+import glob
+import os
+
+features = ['vid', 'skel', 'appear', 'objhand']
+for f in features:
+    files = glob.glob(f'output/{f}/*.csv')
+    for x in files:
+        if 'kinect_objhand' in x or 'kinect_skel' in x or 'kinect_video' in x or 'kinect_appear' in x:
+            os.rename(x, x[:x.find('t_')+1] + '_july_18' + x[x.find('t_')+1:])

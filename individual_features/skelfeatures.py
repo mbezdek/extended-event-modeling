@@ -3,7 +3,7 @@ import sys
 import numpy as np
 import traceback
 
-sys.path.append('.')
+sys.path.append('../skelfeatures')
 sys.path.append('../pysot')
 import pandas as pd
 import os
@@ -107,12 +107,10 @@ def gen_skel_feature(args, run, tag):
         else:
             fps = 30
             skel_csv_in = os.path.join(args.skel_csv_in, run + '_skel.csv')
-        args.run = run
-        args.tag = tag
         logger.info(f'Config {args}')
         # Load skeleton dataframe
         skel_csv_out = os.path.join(args.skel_csv_out,
-                                    run + '_skel_features.csv')
+                                    f'{run}_{tag}_skel_features.csv')
         skeldf = pd.read_csv(skel_csv_in)
         sync_time = skeldf['sync_time'].copy()
         skeldf = skeldf.rolling(7).mean()
@@ -133,11 +131,11 @@ def gen_skel_feature(args, run, tag):
 
         logger.info(f'Done Skel {run}')
         print(f'Done Skel {run}')
-        with open('skel_complete.txt', 'a') as f:
+        with open(f'skel_complete_{tag}.txt', 'a') as f:
             f.write(run + '\n')
         return skel_csv_in, skel_csv_out
     except Exception as e:
-        with open('skel_error.txt', 'a') as f:
+        with open(f'skel_error_{tag}.txt', 'a') as f:
             f.write(run + '\n')
             f.write(repr(e) + '\n')
             f.write(traceback.format_exc() + '\n')
@@ -158,13 +156,21 @@ if __name__ == '__main__':
 
     # runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
     # runs = ['1.1.5_C1', '4.4.5_C1']
-    tag = '_dec_28'
     # skel_in_csv, skel_out_csv = gen_skel_feature(args, runs[0], tag)
-    res = Parallel(n_jobs=24)(delayed(
-        gen_skel_feature)(args, run, tag) for run in runs)
+    if os.path.exists(f'skel_complete_{args.feature_tag}.txt'):
+        os.remove(f'skel_complete_{args.feature_tag}.txt')
+    if os.path.exists(f'skel_error_{args.feature_tag}.txt'):
+        os.remove(f'skel_error_{args.feature_tag}.txt')
+    res = Parallel(n_jobs=16)(delayed(
+        gen_skel_feature)(args, run, args.feature_tag) for run in runs)
     skel_in_csvs, skel_out_csvs = zip(*res)
     results = dict()
     for i, run in enumerate(runs):
         results[run] = dict(skel_in_csv=skel_in_csvs[i], skel_out_csv=skel_out_csvs[i])
     with open('results_skel_features.json', 'w') as f:
         json.dump(results, f)
+
+    from pool_skel_features_all_run import pool_features
+    pool_features(complete_skel_path=f'skel_complete_{args.feature_tag}.txt',
+                  output_stats_path=f'output/sampled_skel_features_{args.feature_tag}.csv',
+                  tag=args.feature_tag)

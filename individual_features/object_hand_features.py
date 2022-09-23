@@ -17,6 +17,9 @@ import glob
 import joblib
 import cv2
 import logging
+import warnings
+
+warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
 # Set-up logger
 logger = logging.getLogger(__name__)
@@ -26,6 +29,7 @@ c_handler = logging.StreamHandler()
 LOGFORMAT = '%(name)s - %(levelname)s - %(message)s'
 c_handler.setFormatter(logging.Formatter(LOGFORMAT))
 logger.addHandler(c_handler)
+
 
 def get_depth_region_sparse(pixelwise_matrix, mask_matrix, xmin, xmax, ymin, ymax):
     # Coordinates range from 0-1079
@@ -145,11 +149,9 @@ def gen_objhand_feature(args, run, tag):
         else:
             fps = 30
             skel_csv = os.path.join(args.input_skel_csv, run + '_skel.csv')
-        args.run = run
-        args.tag = tag
         logger.info(f'Config {args}')
         track_csv = os.path.join(args.input_track_csv, run + '_r50.csv')
-        output_csv = os.path.join(args.output_objhand_csv, run + '_objhand.csv')
+        output_csv = os.path.join(args.output_objhand_csv, f"{run}_{tag}_objhand.csv")
         # Read tracking result
         track_df = pd.read_csv(track_csv)
         # Scale tracking results to match skeleton, which in 1920x1080. Replace scale=2 to fix variant dimension runs,
@@ -180,10 +182,16 @@ def gen_objhand_feature(args, run, tag):
                                                            flags=cv2.CALIB_USE_INTRINSIC_GUESS)
 
         # ------Iterate through key frames and calculate 3D coordinates for objects------
-        all_arrays = glob.glob(f"output/depth/{run.replace('_kinect', '')}/*.joblib")
-        key_frame_ids = list(set([int(os.path.basename(arr).split('_')[0]) for arr in all_arrays]))
+        all_arrays_pixel = glob.glob(f"output/depth/{run.replace('_kinect', '')}/*_mask_array.joblib")
+        all_arrays_mask = glob.glob(f"output/depth/{run.replace('_kinect', '')}/*_pixel_array.joblib")
+        pixel_ids = list(set([int(os.path.basename(arr).split('_')[0]) for arr in all_arrays_pixel]))
+        mask_ids = list(set([int(os.path.basename(arr).split('_')[0]) for arr in all_arrays_mask]))
+        intersection_ids = list(set(pixel_ids).intersection(set(mask_ids)))
+        assert len(intersection_ids) > 0, "{run}: No intersection!! (1.3.2 has no depth)"
+        union_ids = list(set(pixel_ids).union(set(mask_ids)))
+        logger.info(f"Intersection over Union: {len(intersection_ids)} / {len(union_ids)}")
         depth_df = pd.DataFrame(index=track_df.index, columns=['3D_x', '3D_y', 'z'], dtype=np.float)
-        for frame_id in sorted(key_frame_ids):
+        for frame_id in sorted(intersection_ids):
             pixel_array = joblib.load(f"output/depth/{run.replace('_kinect', '')}/{frame_id}_pixel_array.joblib")
             mask_array = joblib.load(f"output/depth/{run.replace('_kinect', '')}/{frame_id}_mask_array.joblib")
             # For each key frame, select existing objects and calculate depth
@@ -302,11 +310,11 @@ def gen_objhand_feature(args, run, tag):
                 if (np.all(pd.notnull(x))) else np.nan, axis=1)
         resampledf.to_csv(output_csv, index=False)
         logger.info(f'Done Objhand {run}')
-        with open('objhand_complete.txt', 'a') as f:
+        with open(f'objhand_complete_{tag}.txt', 'a') as f:
             f.write(run + '\n')
         return track_csv, skel_csv, output_csv
     except Exception as e:
-        with open('objhand_error.txt', 'a') as f:
+        with open(f'objhand_error_{tag}.txt', 'a') as f:
             f.write(run + '\n')
             f.write(repr(e) + '\n')
             f.write(traceback.format_exc() + '\n')
@@ -392,12 +400,15 @@ if __name__ == '__main__':
 
     # runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
     # runs = ['1.1.5_C1', '4.4.5_C1']
-    tag = 'feb_12'
+    if os.path.exists(f'objhand_complete_{args.feature_tag}.txt'):
+        os.remove(f'objhand_complete_{args.feature_tag}.txt')
+    if os.path.exists(f'objhand_error_{args.feature_tag}.txt'):
+        os.remove(f'objhand_error_{args.feature_tag}.txt')
     if '.txt' not in args.run:
-        gen_objhand_feature(args, runs[0], tag)
+        gen_objhand_feature(args, runs[0], args.feature_tag)
     else:
         res = Parallel(n_jobs=16)(delayed(
-            gen_objhand_feature)(args, run, tag) for run in runs)
+            gen_objhand_feature)(args, run, args.feature_tag) for run in runs)
         track_csvs, skel_csvs, output_csvs = zip(*res)
         results = dict()
         for i, run in enumerate(runs):

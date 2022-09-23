@@ -126,7 +126,7 @@ def get_point_biserial(boundaries_binned, binned_comp, scale=True) -> float:
         M_1 = np.mean(binned_comp[fake_upper != 0])
         M_0 = np.mean(binned_comp[fake_upper == 0])
         r_upper = (M_1 - M_0) / s * np.sqrt(n_1 * n_0 / (float(n) ** 2))
-        
+
         fake_lower = np.zeros(np.shape(binned_comp), dtype=bool)
         fake_lower[np.argsort(binned_comp)[:num_boundaries]] = True
         M_1 = np.mean(binned_comp[fake_lower != 0])
@@ -663,3 +663,43 @@ def event_label_to_interval(event_label: np.ndarray, start_second):
             prev += 1
         event_to_intervals[e].append((start / 3 + start_second, prev / 3 + start_second))
     return event_to_intervals
+
+
+class DictObj:
+    def __init__(self, in_dict: dict):
+        """
+        This is a helper class to translate a nested dictionary to an object, easy reference/access
+        :param in_dict:
+        """
+        self.appear_post = None
+        self.optical_post = None
+        self.skel_post = None
+        self.objhand_post = None
+        self.scene_post = None
+        self.categories_z = None
+        self.combined_resampled_df = None
+        assert isinstance(in_dict, dict)
+        for key, val in in_dict.items():
+            if isinstance(val, (list, tuple)):
+                setattr(self, key, [DictObj(x) if isinstance(x, dict) else x for x in val])
+            else:
+                setattr(self, key, DictObj(val) if isinstance(val, dict) else val)
+
+
+def merge_feature_lists(txt_out="intersect_features.txt"):
+    with open('appear_complete.txt', 'r') as f:
+        appears = f.readlines()
+
+    with open('vid_complete.txt', 'r') as f:
+        vids = f.readlines()
+
+    with open('skel_complete.txt', 'r') as f:
+        skels = f.readlines()
+
+    with open('objhand_complete.txt', 'r') as f:
+        objhands = f.readlines()
+
+    sem_runs = set(appears).intersection(set(skels)).intersection(set(vids)).intersection(
+        set(objhands))
+    with open(txt_out, 'w') as f:
+        f.writelines(sem_runs)
