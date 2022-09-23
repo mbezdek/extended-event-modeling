@@ -27,5 +27,5 @@ while read run; do
   echo $run
   export run=$run
   export tag=$tag
-  sbatch --export=ALL track_v100_slurm.sh -J ${run}${tag}
+  sbatch --export=ALL track_slurm.sh -J ${run}${tag}
 done < next_8.txt
