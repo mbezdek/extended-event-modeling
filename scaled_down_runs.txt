@@ -1,3 +1,0 @@
-6.2.1_kinect
-6.2.5_kinect
-6.2.7_kinect

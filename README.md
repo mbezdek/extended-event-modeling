@@ -5,6 +5,9 @@ This repository manages code for:
 - Training and validating SEM
 - Diagnostic scripts
 
+Submitted manuscript: https://psyarxiv.com/pt6hx/
+OSF repository: https://osf.io/39qwz/
+
 ## Installation
 
 ### Install anaconda
