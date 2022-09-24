@@ -1,12 +1,13 @@
 import sys
-
+import os
 import numpy as np
 import traceback
 
-sys.path.append('../skelfeatures')
-sys.path.append('../pysot')
+dir_name, filename = os.path.split(os.path.abspath(__file__))
+sys.path.append(dir_name)
+print('cwd', os.getcwd())
+sys.path.append(os.getcwd())
 import pandas as pd
-import os
 import json
 from joblib import Parallel, delayed
 from utils import logger, parse_config, contain_substr
@@ -161,14 +162,10 @@ if __name__ == '__main__':
         os.remove(f'skel_complete_{args.feature_tag}.txt')
     if os.path.exists(f'skel_error_{args.feature_tag}.txt'):
         os.remove(f'skel_error_{args.feature_tag}.txt')
-    res = Parallel(n_jobs=16)(delayed(
+    if not os.path.exists(args.skel_csv_out):
+        os.makedirs(args.skel_csv_out)
+    res = Parallel(n_jobs=8, prefer="threads")(delayed(
         gen_skel_feature)(args, run, args.feature_tag) for run in runs)
-    skel_in_csvs, skel_out_csvs = zip(*res)
-    results = dict()
-    for i, run in enumerate(runs):
-        results[run] = dict(skel_in_csv=skel_in_csvs[i], skel_out_csv=skel_out_csvs[i])
-    with open('results_skel_features.json', 'w') as f:
-        json.dump(results, f)
 
     from preprocess_features.pool_skel_features_all_run import pool_features
     pool_features(complete_skel_path=f'skel_complete_{args.feature_tag}.txt',

@@ -52,7 +52,9 @@ def parse_config():
     parser.set_defaults(**defaults)
     # These arguments can be overridden by command line
     parser.add_argument("--run")
-    parser.add_argument("--tag")
+    parser.add_argument("--sem_tag")
+    parser.add_argument("--track_tag")
+    parser.add_argument("--feature_tag")
     parser.add_argument("--train")
     parser.add_argument("--valid")
     parser.add_argument("--alfa")

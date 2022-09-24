@@ -361,11 +361,11 @@ class SEMContext:
                     pkl.dump(self.df_object.__dict__, f)
 
             logger.info(f'Done SEM {self.run} at {self.current_epoch} epoch. is_train={self.is_train}!!!\n')
-            with open('../output/run_sem/sem_complete.txt', 'a') as f:
+            with open(f'sem_complete_{self.sem_tag}', 'a') as f:
                 f.write(self.run + f'_{self.sem_tag}' + '\n')
             # sem's Results() is initialized and different for each run
         except Exception as e:
-            with open('../output/run_sem/sem_error.txt', 'a') as f:
+            with open(f'sem_error_{self.sem_tag}.txt', 'a') as f:
                 logger.error(f'{e}')
                 f.write(self.run + f'_{self.sem_tag}' + '\n')
                 f.write(traceback.format_exc() + '\n')
@@ -426,8 +426,8 @@ class SEMContext:
             sem_length = sum([interval[1] - interval[0] for interval in sem_intervals])
             purity_df.loc[len(purity_df.index)] = [sem_event, sem_length, max_purity_ann_event, max_purity,
                                                    self.current_epoch, self.run, self.sem_tag, self.is_train]
-        purity_df.to_csv(path_or_buf='../output/run_sem/purity.csv', index=False, header=False, mode='a')
-        coverage_df.to_csv(path_or_buf='../output/run_sem/coverage.csv', index=False, header=False, mode='a')
+        purity_df.to_csv(path_or_buf='output/run_sem/purity.csv', index=False, header=False, mode='a')
+        coverage_df.to_csv(path_or_buf='output/run_sem/coverage.csv', index=False, header=False, mode='a')
         average_coverage = np.average(coverage_df['max_coverage'], weights=coverage_df['annotated_length'])
         average_purity = np.average(purity_df['max_purity'], weights=purity_df['sem_length'])
 
@@ -472,7 +472,7 @@ class SEMContext:
 
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
-        with open('../output/run_sem/results_purity_coverage.csv', 'a') as f:
+        with open('output/run_sem/results_purity_coverage.csv', 'a') as f:
             writer = csv.writer(f)
             # len adds 1, and the buffer model adds 1 => len() - 2
             bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries, grain='coarse')
@@ -518,23 +518,23 @@ if __name__ == "__main__":
     args = parse_config()
     logger.info(f'Config: {args}')
 
-    if not os.path.exists('../output/run_sem/results_purity_coverage.csv'):
+    if not os.path.exists('output/run_sem/results_purity_coverage.csv'):
         csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'active_event_models', 'epoch',
                        'number_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train',
                        'switch_old', 'switch_new', 'switch_current', 'entropy',
                        'purity', 'coverage']
-        with open('../output/run_sem/results_purity_coverage.csv', 'w') as f:
+        with open('output/run_sem/results_purity_coverage.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
-    if not os.path.exists('../output/run_sem/purity.csv'):
+    if not os.path.exists('output/run_sem/purity.csv'):
         csv_headers = ['sem_event', 'sem_length', 'annotated_max_overlap', 'max_purity', 'epoch', 'run', 'tag', 'is_train']
-        with open('../output/run_sem/purity.csv', 'w') as f:
+        with open('output/run_sem/purity.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
-    if not os.path.exists('../output/run_sem/coverage.csv'):
+    if not os.path.exists('output/run_sem/coverage.csv'):
         csv_headers = ['annotated_event', 'annotated_length', 'sem_max_overlap', 'max_coverage', 'epoch', 'run', 'tag',
                        'is_train']
-        with open('../output/run_sem/coverage.csv', 'w') as f:
+        with open('output/run_sem/coverage.csv', 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
 
@@ -565,9 +565,9 @@ if __name__ == "__main__":
         # change is_eval to False if running to cache features
         # context_sem.iterate(is_eval=False)
         context_sem.iterate(is_eval=True)
-        with open('../output/run_sem/tag_complete.txt', 'a') as f:
+        with open('tag_complete.txt', 'a') as f:
             f.write(f'{context_sem.sem_tag} completed after {context_sem.current_epoch} epochs' + '\n')
     except Exception as e:
-        with open('../output/run_sem/sem_error.txt', 'a') as f:
+        with open(f'tag_error_{context_sem.sem_tag}.txt', 'a') as f:
             f.write(traceback.format_exc() + '\n')
             print(traceback.format_exc())

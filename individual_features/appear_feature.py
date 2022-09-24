@@ -124,12 +124,7 @@ if __name__ == '__main__':
         os.remove(f'appear_complete_{args.feature_tag}.txt')
     if os.path.exists(f'appear_error_{args.feature_tag}.txt'):
         os.remove(f'appear_error_{args.feature_tag}.txt')
-    res = Parallel(n_jobs=16)(delayed(
+    if not os.path.exists(args.output_csv_appear):
+        os.makedirs(args.output_csv_appear)
+    res = Parallel(n_jobs=8, prefer="threads")(delayed(
         gen_appear_features)(args, run, args.feature_tag) for run in runs)
-    input_tracking_csvs, output_appear_csvs = zip(*res)
-    results = dict()
-    for i, run in enumerate(runs):
-        results[run] = dict(input_tracking_csv=input_tracking_csvs[i],
-                            output_appear_csv=output_appear_csvs[i])
-    with open('results_appear_features.json', 'w') as f:
-        json.dump(results, f)

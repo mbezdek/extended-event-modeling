@@ -5,7 +5,6 @@ from matplotlib import animation as animation, pyplot as plt
 import traceback
 
 sys.path.append('.')
-sys.path.append('../pysot')
 from utils import parse_config, contain_substr
 import pandas as pd
 import numpy as np
@@ -182,8 +181,8 @@ def gen_objhand_feature(args, run, tag):
                                                            flags=cv2.CALIB_USE_INTRINSIC_GUESS)
 
         # ------Iterate through key frames and calculate 3D coordinates for objects------
-        all_arrays_pixel = glob.glob(f"output/depth/{run.replace('_kinect', '')}/*_mask_array.joblib")
-        all_arrays_mask = glob.glob(f"output/depth/{run.replace('_kinect', '')}/*_pixel_array.joblib")
+        all_arrays_pixel = glob.glob(f"{args.input_depth}{run.replace('_kinect', '')}/*_mask_array.joblib")
+        all_arrays_mask = glob.glob(f"{args.input_depth}{run.replace('_kinect', '')}/*_pixel_array.joblib")
         pixel_ids = list(set([int(os.path.basename(arr).split('_')[0]) for arr in all_arrays_pixel]))
         mask_ids = list(set([int(os.path.basename(arr).split('_')[0]) for arr in all_arrays_mask]))
         intersection_ids = list(set(pixel_ids).intersection(set(mask_ids)))
@@ -192,8 +191,8 @@ def gen_objhand_feature(args, run, tag):
         logger.info(f"Intersection over Union: {len(intersection_ids)} / {len(union_ids)}")
         depth_df = pd.DataFrame(index=track_df.index, columns=['3D_x', '3D_y', 'z'], dtype=np.float)
         for frame_id in sorted(intersection_ids):
-            pixel_array = joblib.load(f"output/depth/{run.replace('_kinect', '')}/{frame_id}_pixel_array.joblib")
-            mask_array = joblib.load(f"output/depth/{run.replace('_kinect', '')}/{frame_id}_mask_array.joblib")
+            pixel_array = joblib.load(f"{args.input_depth}{run.replace('_kinect', '')}/{frame_id}_pixel_array.joblib")
+            mask_array = joblib.load(f"{args.input_depth}{run.replace('_kinect', '')}/{frame_id}_mask_array.joblib")
             # For each key frame, select existing objects and calculate depth
             for line, row in track_df[track_df['frame'] == frame_id].iterrows():
                 xmin, ymin, xmax, ymax = row['x'], row['y'], row['x'] + row['w'], row['y'] + row['h']
@@ -407,12 +406,7 @@ if __name__ == '__main__':
     if '.txt' not in args.run:
         gen_objhand_feature(args, runs[0], args.feature_tag)
     else:
-        res = Parallel(n_jobs=16)(delayed(
+        if not os.path.exists(args.output_objhand_csv):
+            os.makedirs(args.output_objhand_csv)
+        res = Parallel(n_jobs=8, prefer="threads")(delayed(
             gen_objhand_feature)(args, run, args.feature_tag) for run in runs)
-        track_csvs, skel_csvs, output_csvs = zip(*res)
-        results = dict()
-        for i, run in enumerate(runs):
-            results[run] = dict(track_csv=track_csvs[i], skel_csv=skel_csvs[i],
-                                output_csv=output_csvs[i])
-        with open('results_objhand.json', 'w') as f:
-            json.dump(results, f)

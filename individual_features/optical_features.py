@@ -6,7 +6,6 @@ import sys
 import traceback
 
 sys.path.append('.')
-sys.path.append('../pysot')
 
 import cv2
 import numpy as np
@@ -70,11 +69,11 @@ def gen_vid_features(args, run, tag):
         # cv2_video_reader.capture.release()
         vg_video_reader.stop()
         logger.info(f'Done Vid {run}')
-        with open(f'vid_complete_{tag}.txt', 'a') as f:
+        with open(f'optical_complete_{tag}.txt', 'a') as f:
             f.write(run + '\n')
         return input_video_path, output_csv_path
     except Exception as e:
-        with open(f'vid_error_{tag}.txt', 'a') as f:
+        with open(f'optical_error_{tag}.txt', 'a') as f:
             f.write(run + '\n')
             f.write(repr(e) + '\n')
             f.write(traceback.format_exc() + '\n')
@@ -94,16 +93,11 @@ if __name__ == '__main__':
         runs = [args.run]
 
     # runs = ['1.1.5_C1', '6.3.3_C1', '4.4.5_C1', '6.2.4_C1', '2.2.5_C1']
-    if os.path.exists(f'vid_complete_{args.feature_tag}.txt'):
-        os.remove(f'vid_complete_{args.feature_tag}.txt')
-    if os.path.exists(f'vid_error_{args.feature_tag}.txt'):
-        os.remove(f'vid_error_{args.feature_tag}.txt')
-    res = Parallel(n_jobs=16)(delayed(
+    if os.path.exists(f'optical_complete_{args.feature_tag}.txt'):
+        os.remove(f'optical_complete_{args.feature_tag}.txt')
+    if os.path.exists(f'optical_error_{args.feature_tag}.txt'):
+        os.remove(f'optical_error_{args.feature_tag}.txt')
+    if not os.path.exists(args.output_csv_path):
+        os.makedirs(args.output_csv_path)
+    res = Parallel(n_jobs=8, prefer="threads")(delayed(
         gen_vid_features)(args, run, args.feature_tag) for run in runs)
-    input_video_paths, output_csv_paths = zip(*res)
-    results = dict()
-    for i, run in enumerate(runs):
-        results[run] = dict(inpput_video_path=input_video_paths[i],
-                            output_csv_path=output_csv_paths[i])
-    with open('results_vid_features.json', 'w') as f:
-        json.dump(results, f)

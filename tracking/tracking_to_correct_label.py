@@ -16,8 +16,6 @@ from pysot.models.model_builder import ModelBuilder
 from pysot.tracker.tracker_builder import build_tracker
 from scipy.optimize import linear_sum_assignment
 
-sys.path.append(os.getcwd())
-sys.path.append('../pysot')
 import csv
 import pandas as pd
 from time import perf_counter
@@ -540,10 +538,14 @@ if __name__ == '__main__':
         INPUT_VIDEO_PATH = os.path.join(args.input_video_dir, args.run + f'_trim.mp4')
         # INPUT_LABEL_PATH = os.path.join(args.input_label_dir, args.run + f'_labels_fixed.csv')
         INPUT_LABEL_PATH = os.path.join(args.input_label_dir, args.run + f'_labels.csv')
-        OUTPUT_VIDEO_FW = os.path.join(args.output_video_dir, args.run + f'_{args.feature_tag}_fw.avi')
-        OUTPUT_VIDEO_BW = os.path.join(args.output_video_dir, args.run + f'_{args.feature_tag}_bw.avi')
+        if not os.path.exists(args.output_video_dir):
+            os.makedirs(args.output_video_dir)
+        if not os.path.exists(args.output_csv_dir):
+            os.makedirs(args.output_csv_dir)
+        OUTPUT_VIDEO_FW = os.path.join(args.output_video_dir, args.run + f'_{args.track_tag}_fw.avi')
+        OUTPUT_VIDEO_BW = os.path.join(args.output_video_dir, args.run + f'_{args.track_tag}_bw.avi')
         OUTPUT_VIDEO_MERGED = os.path.join(args.output_video_dir,
-                                           f"{args.run}_{args.feature_tag}_merged.avi")
+                                           f"{args.run}_{args.track_tag}_merged.avi")
         OUTPUT_CSV_PATH = os.path.join(args.output_csv_dir, args.run + f'_r50.csv')
 
         cv2_video_reader = CV2VideoReader(INPUT_VIDEO_PATH)

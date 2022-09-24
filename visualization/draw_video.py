@@ -15,6 +15,7 @@ import sys
 import matplotlib
 import panel as pn
 import sys
+sys.path.append('.')
 from typing import List
 
 matplotlib.use('agg')

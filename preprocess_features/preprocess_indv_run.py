@@ -12,11 +12,6 @@ from copy import deepcopy
 from utils import parse_config, logger, contain_substr, DictObj
 from typing import Tuple, List
 
-# glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
-with open('gen_sim_glove_50.pkl', 'rb') as f:
-    glove_vectors = pkl.load(f)
-# glove_vectors = gensim.downloader.load('word2vec-ruscorpora-300')
-emb_dim = glove_vectors['apple'].size
 
 
 def preprocess_appear(appear_csv):
@@ -201,7 +196,8 @@ class FeatureProcessor:
         self.appear_csv_dir = configs.appear_csv
         self.run = configs.run
         # have a run to fps df
-        self.run_specs_df = pd.read_csv('run_specs.csv')
+        self.run_specs_df = pd.read_csv('preprocess_features/run_specs.csv')
+        self.run_specs_df = pd.read_csv(f'{configs.run_specs}')
         run = self.run + ('_kinect' if '_kinect' not in self.run else '')
         self.fps = float(self.run_specs_df.loc[self.run_specs_df.run == run, 'fps'].iloc[0])
         self.rate = configs.rate
@@ -312,6 +308,11 @@ class FeatureProcessor:
 
 if __name__ == "__main__":
     args = parse_config()
+    # glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
+    with open(f'{args.glove}', 'rb') as f:
+        glove_vectors = pkl.load(f)
+    # glove_vectors = gensim.downloader.load('word2vec-ruscorpora-300')
+    emb_dim = glove_vectors['apple'].size
     logger.info(f'Config: {args}')
     assert '.txt' not in args.run, f"run argument should be a video name, e.g. 1.2.3_kinect, fed {args.run}"
     processor = FeatureProcessor(configs=args)
