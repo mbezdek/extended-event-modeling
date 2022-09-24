@@ -1,0 +1,352 @@
+---
+title: "corpus_segmentation_analysis"
+author: "bezdek"
+date: "3/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(data.table)
+library(lme4)
+library(rlist)
+library(readr)
+library(stringr)
+```
+
+## Analysis
+
+
+```{r load code, include=FALSE}
+
+# source("parse.mturk.seg.R")
+
+```
+
+```{r load data}
+#datapath <- "database.200731.1.csv"
+datapath<- "allData.csv"
+#cols<-c('comcode','workerId','assignmentId','hitId','startTime','sandbox','pracmovie','condition','repeat','movie1','count','browserinfo','simpleBrowser','movcnt','segmentprac','segment1','x','age','gender','location','ethAmIndian','ethAsian','ethHawaii','ethBlack','ethWhite','Hispanic','feeling','gradelevel','degree','dateOfDegree','v1','v2','v3','v4','v5','v6','v7','v8','v9','v10','v11','v12')
+
+#datapath <- "/Users/bezdek/Box/DCL_ARCHIVE/Documents/Events/exp148_Corpus/segmentation/web_data/database.200726.1.csv"
+#raw.df <- read.csv(datapath, header=T, stringsAsFactors=F,sep=",")
+#raw.df <- read.table(datapath, col.names=cols,allowEscapes=T,sep=",",header=T,fill=T)
+#raw.df<-read_delim(datapath, delim=',', col_names=cols,escape_double=F, escape_backslash=F, quote='"')
+raw.df<-read_delim(datapath, delim=',', escape_double=F, escape_backslash=F, quote='"')
+#raw.df <- fread(datapath, sep=",",header=T,fill=TRUE)
+
+# 1.1.9
+#thetext<-raw.df %>% filter(workerId == "A2JQPSIVUCW92T",count=="21",movie1=="1.1.9_C1_trim") %>% pull(segment1)
+
+```
+# Build up segmentation data frame
+```{r build segmentation data frame}
+# Filter excluded subjects
+#excluded <- read.csv("excludedSubjects200731.csv", header=T, stringsAsFactors=F,sep=",")
+#seg.df <- raw.df %>% filter(!(workerId %in% excluded$workerId)) %>% droplevels()
+#seg.df.excluded <- raw.df %>% filter((workerId %in% excluded$workerId)) %>% droplevels()
+# Filter rows with no movie to segment:
+#seg.df<-seg.df[!is.na(seg.df$movie1),]
+seg <- data.frame()
+for (i in 1:dim(raw.df)[1]) {
+    try(seg <- rbind(seg, parse.mturk.seg(raw.df$segment1[i],
+                                       workerId=raw.df$workerId[i],
+                                       Condition=raw.df$condition[i],
+                                       Count=raw.df$count[i],
+                                       Movie=raw.df$movie1[i])),TRUE)
+}
+
+#excluded <- read.table("excludedSubjects200731.csv",header=T,allowEscapes=T,sep=",")
+#seg %<>% filter(!(workerId %in% excluded$workerId)) %>% droplevels()
+```
+
+```{r plot raw segmentation data}
+
+seg %>% ggplot(aes(x=MS/1000)) + geom_density(bw=5) +
+    geom_point(aes(y=0), position=position_jitter(height=10^-3.5)) +
+    facet_grid(Condition ~ Movie)
+
+seg %>% filter(Movie=='1.1.5_C1_trim') %>% ggplot(aes(x=MS/1000)) + geom_density(bw=5) +
+    geom_point(aes(y=0), position=position_jitter(height=10^-3.5)) +
+    facet_grid(Condition ~ Movie)
+
+seg %>% filter(grepl("2.2.1_",Movie,fixed=TRUE)) %>% ggplot(aes(x=MS/1000,color=Condition),alpha=.5) + geom_density(bw=5) +
+    geom_point(aes(y=0), position=position_jitter(height=10^-3.5)) +
+    facet_wrap( ~ Movie)
+
+```
+```{r segmentation count}
+#table of number of boundaries per movie per worker
+seg %>% group_by(Movie,Condition,workerId) %>% count(Movie,Condition)
+#table of workers per movie per condition
+seg %>% group_by(Movie,Condition) %>% summarize(subs=length(unique(workerId)))
+#seg.df %>% filter(movie1=='1.1.8_C1_trim' & condition =='fine') %>% pull(workerId) %>% sort()
+
+#decimaltest<-seg %>% filter(workerId == "A2JQPSIVUCW92T",Count=="21") %>% pull(MS)
+```
+# Binned data
+```{r bin segmentation data}
+# create column for 1 s bins:
+bin.size<-1.0
+seg.binned <- seg %>% mutate(Bin=floor(MS/(1000*bin.size))) %>% select(workerId,Movie,Condition,Count,Bin)
+# remove duplicates by workerId, condition, count, and movie, so that bin is binary
+dt <- data.table(seg.binned)
+seg.binned <- dt[! duplicated(dt, by = c("workerId", "Condition","Movie","Count","Bin"))]
+
+```
+
+```{r histogram of binned data}
+
+seg.binned %>% filter(Condition=='coarse') %>% group_by("Movie") %>% ggplot(aes(x=Bin)) + geom_histogram(binwidth=1) +
+facet_wrap(~ Movie)
+seg.binned %>% filter(Condition=='coarse' & Movie=='2.2.1_C1_trim') %>% group_by("Movie") %>% ggplot(aes(x=Bin)) + geom_histogram(binwidth=1) +
+facet_wrap(~ Movie)
+
+geom_point(aes(y=0), position=position_jitter(height=10^-3.5)) +
+
+
+  seg.binned %>% filter(grepl("2.2.1_",Movie,fixed=TRUE)) %>% ggplot(aes(x=Bin, color=Condition)) + geom_histogram(binwidth=1) + facet_grid(Condition ~ Movie)
+
+a<-seg.binned %>% filter(grepl("1.2.1_",Movie,fixed=TRUE) & Condition=='coarse')  %>% pull('Bin') %>% table()
+a[order(a),]
+a<-seg.binned %>% filter(grepl("2.2.1_",Movie,fixed=TRUE) & Condition=='coarse')
+a[order(a$Count),]
+```
+
+```{r compute movie group proportion by grain}
+
+seg.binned.group=data.frame()
+seg.binned$Movie<-as.factor(seg.binned$Movie)
+seg.binned$Condition<-as.factor(seg.binned$Condition)
+i=1
+for (mov in levels(seg.binned$Movie)) {
+  print(mov)
+  print(i)
+  for (grn in levels(seg.binned$Condition)) {
+      
+        temp = subset(seg.binned, Movie==mov & Condition==grn)
+        nsub=length(unique(temp$workerId))
+        for (bin in unique(sort(temp$Bin))) {
+          bincount=length(which(temp$Bin == bin))
+          tdf=data.frame(Movie=mov,Condition=grn,Bin=bin,Nsub=nsub,N=bincount,Prop=bincount/nsub)
+          seg.binned.group <- rbind(seg.binned.group,tdf)
+        }
+  }
+  i=i+1
+}
+
+
+```
+
+```{r test difference in mean event duration}
+#durations <-  list("2.2.5_C1_trim" = 560.79, "2.3.4_C1_trim" = 583.19)
+durations <- list("1.1.10_C1_trim" = 916.438000, "1.1.1_C1_trim" = 914.500000, "1.1.2_C1_trim" = 775.104000, "1.1.3_C1_trim" = 796.438000, "1.1.4_C1_trim" = 728.854000, "1.1.5_C1_trim" = 713.600000, "1.1.6_C1_trim" = 990.294000, "1.1.7_C1_trim" = 750.467000, "1.1.8_C1_trim" = 749.206000, "1.1.9_C1_trim" = 747.264000, "1.2.10_C1_trim" = 690.518000, "1.2.1_C1_trim" = 440.214000, "1.2.2_C1_trim" = 549.398000, "1.2.3_C1_trim" = 586.112000, "1.2.4_C1_trim" = 581.632000, "1.2.5_C1_trim" = 483.520000, "1.2.6_C1_trim" = 675.840000, "1.2.7_C1_trim" = 493.800000, "1.2.8_C1_trim" = 548.224000, "1.2.9_C1_trim" = 684.054000, "1.3.10_C1_trim" = 584.896000, "1.3.1_C1_trim" = 557.398000, "1.3.2_C1_trim" = 670.667000, "1.3.3_C1_trim" = 589.632000, "1.3.4_C1_trim" = 591.723000, "1.3.5_C1_trim" = 712.470000, "1.3.6_C1_trim" = 730.454000, "1.3.7_C1_trim" = 604.566000, "1.3.8_C1_trim" = 558.067000, "1.3.9_C1_trim" = 734.742000, "2.2.10_C1_trim" = 590.336000, "2.2.1_C1_trim" = 575.296000, "2.2.2_C1_trim" = 547.648000, "2.2.3_C1_trim" = 547.542000, "2.2.4_C1_trim" = 527.382000, "2.2.5_C1_trim" = 560.790000, "2.2.6_C1_trim" = 521.686000, "2.2.7_C1_trim" = 571.734000, "2.2.8_C1_trim" = 564.310000, "2.2.9_C1_trim" = 634.400000, "2.3.10_C1_trim" = 517.248000, "2.3.1_C1_trim" = 553.686000, "2.3.2_C1_trim" = 539.776000, "2.3.3_C1_trim" = 685.206000, "2.3.4_C1_trim" = 583.190000, "2.3.5_C1_trim" = 490.902000, "2.3.6_C1_trim" = 630.720000, "2.3.7_C1_trim" = 623.830000, "2.3.8_C1_trim" = 582.230000, "2.3.9_C1_trim" = 399.446000, "2.4.10_C1_trim" = 469.078000, "2.4.1_C1_trim" = 645.824000, "2.4.2_C1_trim" = 580.288000, "2.4.3_C1_trim" = 645.824000, "2.4.4_C1_trim" = 544.342000, "2.4.5_C1_trim" = 648.448000, "2.4.6_C1_trim" = 690.234000, "2.4.7_C1_trim" = 420.800000, "2.4.8_C1_trim" = 493.654000, "2.4.9_C1_trim" = 566.784000, "3.1.10_C1_trim" = 586.304000, "3.1.1_C1_trim" = 550.358000, "3.1.2_C1_trim" = 689.408000, "3.1.3_C1_trim" = 585.984000, "3.1.4_C1_trim" = 690.198000, "3.1.5_C1_trim" = 656.406000, "3.1.6_C1_trim" = 612.758000, "3.1.7_C1_trim" = 680.086000, "3.1.8_C1_trim" = 587.862000, "3.1.9_C1_trim" = 638.272000, "3.3.10_C1_trim" = 523.072000, "3.3.1_C1_trim" = 627.008000, "3.3.2_C1_trim" = 706.176000, "3.3.3_C1_trim" = 558.592000, "3.3.4_C1_trim" = 488.512000, "3.3.5_C1_trim" = 851.200000, "3.3.6_C1_trim" = 596.900000, "3.3.7_C1_trim" = 752.000000, "3.3.8_C1_trim" = 700.736000, "3.3.9_C1_trim" = 600.384000, "3.4.10_C1_trim" = 597.014000, "3.4.1_C1_trim" = 347.286000, "3.4.2_C1_trim" = 371.136000, "3.4.3_C1_trim" = 493.312000, "3.4.4_C1_trim" = 347.648000, "3.4.5_C1_trim" = 438.294000, "3.4.6_C1_trim" = 501.824000, "3.4.7_C1_trim" = 454.784000, "3.4.8_C1_trim" = 441.280000, "3.4.9_C1_trim" = 585.920000, "4.1.10_C1_trim" = 665.408000, "4.1.1_C1_trim" = 1309.184000, "4.1.2_C1_trim" = 916.758000, "4.1.3_C1_trim" = 586.752000, "4.1.4_C1_trim" = 628.800000, "4.1.5_C1_trim" = 514.304000, "4.1.6_C1_trim" = 812.224000, "4.1.7_C1_trim" = 664.900000, "4.1.8_C1_trim" = 636.950000, "4.1.9_C1_trim" = 725.270000, "4.3.10_C1_trim" = 456.384000, "4.3.1_C1_trim" = 669.824000, "4.3.2_C1_trim" = 618.600000, "4.3.3_C1_trim" = 493.952000, "4.3.4_C1_trim" = 602.240000, "4.3.5_C1_trim" = 560.640000, "4.3.6_C1_trim" = 617.600000, "4.3.7_C1_trim" = 482.048000, "4.3.8_C1_trim" = 509.398000, "4.3.9_C1_trim" = 548.032000, "4.4.10_C1_trim" = 697.536000, "4.4.1_C1_trim" = 335.446000, "4.4.2_C1_trim" = 538.816000, "4.4.3_C1_trim" = 752.334000, "4.4.4_C1_trim" = 412.438000, "4.4.5_C1_trim" = 582.464000, "4.4.6_C1_trim" = 650.816000, "4.4.7_C1_trim" = 656.790000, "4.4.8_C1_trim" = 632.982000, "4.4.9_C1_trim" = 589.846000, "6.1.10_C1_trim" = 977.792000, "6.1.1_C1_trim" = 839.958000, "6.1.2_C1_trim" = 762.400000, "6.1.3_C1_trim" = 765.696000, "6.1.4_C1_trim" = 851.798000, "6.1.5_C1_trim" = 796.182000, "6.1.6_C1_trim" = 774.976000, "6.1.7_C1_trim" = 661.200000, "6.1.8_C1_trim" = 1156.246000, "6.1.9_C1_trim" = 666.432000, "6.2.10_C1_trim" = 541.590000, "6.2.1_C1_trim" = 488.939000, "6.2.2_C1_trim" = 509.120000, "6.2.3_C1_trim" = 479.574000, "6.2.4_C1_trim" = 546.518000)
+test=list("6.2.5_C1_trim" = 409.878000, "6.2.6_C1_trim" = 403.648000, "6.2.7_C1_trim" = 508.843000, "6.2.8_C1_trim" = 421.967000, "6.2.9_C1_trim" = 505.238000, "6.3.10_C1_trim" = 782.166000, "6.3.1_C1_trim" = 440.256000, "6.3.2_C1_trim" = 546.560000, "6.3.3_C1_trim" = 734.294000, "6.3.4_C1_trim" = 649.600000, "6.3.5_C1_trim" = 515.670000, "6.3.6_C1_trim" = 774.208000, "6.3.7_C1_trim" = 752.832000, "6.3.8_C1_trim" = 619.478000, "6.3.9_C1_trim" = 679.488000)
+durations=c(durations,test)
+event.durations <- data.frame()
+for (mov in unique(seg$Movie)) {
+  print(mov)
+  for (grn in c('fine','coarse')) {
+  for (sub in unique(seg[(seg$Movie==mov) & (seg$Condition==grn),]$workerId)) {
+    boundaries = length(seg[(seg$Movie==mov) & (seg$Condition==grn) & (seg$workerId==sub),]$MS)
+    mean.length=durations[[mov]]/(boundaries+1)
+    #print(mean.length)
+    event.durations <- rbind(event.durations,data.frame(Movie=mov,Count=seg[(seg$Movie==mov) & (seg$Condition==grn) & (seg$workerId==sub),]$Count[1],Condition=grn,workerId=sub,Mean.Length=mean.length))
+}
+    }
+  }
+# Add chapter labels
+chapters <- c('Breakfast','Exercise','Cleaning','Bathroom')
+
+event.durations$Chapter<-chapters[as.numeric(sapply(as.character(event.durations[,1]),function(x) sapply(strsplit(x, '..', fixed=TRUE), '[', 2)))]
+
+event.durations$Actor<-as.numeric(sapply(as.character(event.durations[,1]),function(x) sapply(strsplit(x, '..', fixed=TRUE), '[', 1)))
+
+event.durations %>% group_by(Condition) %>% ggplot(aes(x=Mean.Length,color=Condition))+
+  geom_density(bw=5) +
+    geom_point(aes(y=0),alpha=.5, position=position_jitter(height=10^-3.5))+labs(x="Average Unit Length (s)",y="Density")
+
+event.durations %>% group_by(Chapter,Condition) %>% ggplot(aes(x=Mean.Length,color=Condition))+
+  geom_density(bw=5) +
+    geom_point(aes(y=0),alpha=.5, position=position_jitter(height=10^-3.5))+labs(x="Average Unit Length (s)",y="Density")+facet_grid(~ Chapter)
+
+event.durations %>% group_by(Actor,Condition) %>% ggplot(aes(x=Mean.Length,color=Condition))+
+  geom_density(bw=5) +
+    geom_point(aes(y=0),alpha=.5, position=position_jitter(height=10^-3.5))+labs(x="Average Unit Length (s)",y="Density")+facet_grid(~ Actor)
+
+event.durations %>% group_by(Condition) %>% summarize(Mean=mean(Mean.Length),Median=median(Mean.Length))
+# T test:
+t.test(event.durations[event.durations$Condition=="coarse",]$Mean.Length,event.durations[event.durations$Condition=="fine",]$Mean.Length)
+# Mixed linear model:
+event.duration.lmer <- event.durations %>% lmer(Mean.Length ~ Condition+(1|Movie)+(1|workerId),data=.)
+```
+
+```{r test agreement using bootstrapped samples}
+# calculate unit lengths for movie segments
+#sec.durations <-  list("2.2.5_C1_trim" = 561, "2.3.4_C1_trim" = 583)
+
+sec.durations <- lapply(durations,round,0)
+binned.unit.lengths <- data.frame()
+j=1
+for (mov in unique(seg.binned$Movie)) {
+  print(j)
+  print(mov)
+  dur=sec.durations[[mov]]
+  for (sub in unique(seg.binned[(seg.binned$Movie==mov),]$workerId)) {
+    for (grn in unique(seg.binned[(seg.binned$Movie==mov) & (seg.binned$workerId==sub),]$Condition)) {
+      i=0.00
+      for (unit in append(seg.binned[(seg.binned$Movie==mov) & (seg.binned$workerId==sub)& (seg.binned$Condition==grn),]$Bin,dur)) {
+        len=unit-i
+        i=unit
+        binned.unit.lengths <- rbind(binned.unit.lengths,data.frame(Movie=mov,workerId=sub,Condition=grn,unit.length=len,Bin=unit))
+      }}}
+  j=j+1
+  }
+
+# calculate average Cohen's Kappa
+
+CohensKappa <- function(x, y) {
+  observed <- sum(x == y)
+  expected <- (sum((x == 0)*sum(y == 0)) + sum(x == 1)*sum(y == 1))/length(x)
+  return((observed-expected)/(length(x)-expected))
+}
+
+#units<-binned.unit.lengths[(binned.unit.lengths$Movie==mov)&(binned.unit.lengths$workerId==sub)& (binned.unit.lengths$Condition==grn),]$Bin
+#segs<-rep(0,dur)
+#segs[units]=1
+
+agreement<-data.frame()
+idx<-1
+for (mov in unique(binned.unit.lengths$Movie)) {
+  dur=sec.durations[[mov]]
+  print(idx)
+  idx<-idx+1
+  for (grn in unique(binned.unit.lengths[(binned.unit.lengths$Movie==mov),]$Condition)) {
+    subs=unique(binned.unit.lengths[(binned.unit.lengths$Movie==mov)&(binned.unit.lengths$Condition==grn),]$workerId)
+    nsub=length(subs)
+    scores<-NULL
+    if (nsub > 1) {
+      for (i in 1:(nsub-1)) {
+        for (j in (i+1):nsub) {
+          x<-binned.unit.lengths[(binned.unit.lengths$Movie==mov)&(binned.unit.lengths$workerId==subs[i])& (binned.unit.lengths$Condition==grn),]$Bin
+          # Remove final bin at end of movie:
+          x<-head(x,n=-1)
+          y<-binned.unit.lengths[(binned.unit.lengths$Movie==mov)&(binned.unit.lengths$workerId==subs[j])& (binned.unit.lengths$Condition==grn),]$Bin
+          # Remove final bin at end of movie:
+          y<-head(y,n=-1)
+          xsegs<-rep(0,dur)
+          xsegs[x]=1
+          ysegs<-rep(0,dur)
+          ysegs[y]=1
+          scores<-c(scores,CohensKappa(xsegs,ysegs))
+        }
+      }
+      
+    }
+    agreement<-rbind(agreement,data.frame(Movie=mov,Condition=grn,Nsub=nsub,t0=mean(scores)))
+  }
+}
+```
+
+
+```{r}
+#Bootstrap null distribution:
+R= 1000
+
+#R=10
+boot.agree<-data.frame()
+movindex=1
+for (mov in unique(binned.unit.lengths$Movie)) {
+  print(movindex)
+  dur=sec.durations[[mov]]
+  for (grn in unique(binned.unit.lengths[(binned.unit.lengths$Movie==mov),]$Condition)) {
+    print(mov)
+    print(grn)
+    subs=unique(binned.unit.lengths[(binned.unit.lengths$Movie==mov)&(binned.unit.lengths$Condition==grn),]$workerId)
+    nsub=length(subs)
+    t0 <- agreement[(agreement$Movie==mov) & (agreement$Condition==grn),]$t0
+    if (is.finite(t0)) {
+    t <- NULL
+    for (i in 1:R) {
+      cat(i," ",sep="")
+      si <- ceiling(runif(n=nsub, min=0, max=nsub))
+      #print(si)
+      rs<-list()
+      for (s in si) {
+        uls<-binned.unit.lengths[(binned.unit.lengths$Movie==mov)&(binned.unit.lengths$Condition==grn)&(binned.unit.lengths$workerId==subs[si[s]]),]$unit.length
+        #shuffle unit lengths:
+        uls<-sample(uls)
+        rbins<-cumsum(uls)
+        rs<-list.append(rs,rbins)
+        
+      }
+    scores<-NULL
+    if (nsub > 1) {
+      for (j in 1:(nsub-1)) {
+        for (k in (j+1):nsub) {
+          x<-rs[[j]]
+          # Remove final bin at end of movie:
+          x<-head(x,n=-1)
+          y<-rs[[k]]
+          # Remove final bin at end of movie:
+          y<-head(y,n=-1)
+          xsegs<-rep(0,dur)
+          xsegs[x]=1
+          ysegs<-rep(0,dur)
+          ysegs[y]=1
+          scores<-c(scores,CohensKappa(xsegs,ysegs))
+        }
+      }
+      
+    }
+    #t<-c(t,mean(scores))
+    boot.agree <- rbind(boot.agree,data.frame(Movie=mov,Condition=grn,nsub=nsub,i=i,t0=t0,t=mean(scores)))
+    }
+    }
+  }
+  movindex=movindex+1
+}
+    
+conf<-0.95
+
+
+# Confidence intervals for bootstrap stats.
+bootagree.ci <- NULL
+#nstats <- dim(bag$t)[2]
+
+alpha <- c((1-conf)/2, 1-(1-conf)/2)
+zalpha <- qnorm(alpha)
+
+percentile <- NULL
+BC <- NULL
+cnames<-NULL
+for (mov in unique(boot.agree$Movie)) {
+  #dur=sec.durations[[mov]]
+  for (grn in unique(boot.agree[(boot.agree$Movie==mov),]$Condition)) {
+    t0 <- agreement[(agreement$Movie==mov) & (agreement$Condition==grn),]$t0
+    t <- boot.agree[(boot.agree$Movie==mov)&(boot.agree$Condition==grn),]$t
+    t <- t[is.finite(t)]
+    # calculate percentile interval
+    percentile <- rbind(percentile, quantile(t, c(alpha[1], alpha[2])))
+    cnames<-c(cnames,paste(mov,grn,sep= '..'))
+    # Calculate bias-corrected (BC) interval.
+    # NOTE: We'd like to add acceleration correction (BCa),
+    # but I don't see how to jacknife this statistic,
+    # so I'm just setting that term, "a-hat", to zero.
+    # See Efron & Tibshirani, 1993, Ch. 14.3
+    # zhat0 is the bias-correction term
+
+    zhat0 <- qnorm(sum(t < t0)/R)
+    alpha.BC <- c(pnorm(2*zhat0 + zalpha[1]), pnorm(2*zhat0 + zalpha[2]))
+    BC <- rbind(BC, quantile(t, c(alpha.BC[1], alpha.BC[2])))
+    }}
+percentile <- t(percentile)
+dimnames(percentile)[[2]] <- cnames
+BC <- t(BC)
+dimnames(BC)[[1]] <- dimnames(percentile)[[1]]
+dimnames(BC)[[2]] <- cnames
+print(agreement)
+print(percentile)
+print(BC)
+```
