@@ -28,5 +28,5 @@ if os.path.exists(filtered_txt):
 for run in runs:
     proc = subprocess.Popen(
         ['srun', '--time=4:00:00', '--cpus-per-task', '1',
-         'python', 'preprocess_indv_run.py', '-c', 'configs/config_preprocess.ini',
+         'python', 'src/preprocess_features/preprocess_indv_run.py', '-c', 'configs/config_preprocess.ini',
          '--run', run])

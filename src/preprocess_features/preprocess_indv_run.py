@@ -29,7 +29,7 @@ def preprocess_optical(vid_csv, standardize=True):
 
 
 def preprocess_skel(skel_csv, use_position=0, standardize=True, feature_tag='',
-                    ratio_features=0.8, ratio_samples=0.8) -> (pd.DataFrame, bool):
+                    ratio_features=0.8, ratio_samples=0.8, stats_skel_csv='') -> (pd.DataFrame, bool):
     skel_df = pd.read_csv(skel_csv, index_col='frame')
     skel_df.drop(['sync_time', 'raw_time', 'body', 'J1_dist_from_J1', 'J1_3D_rel_X', 'J1_3D_rel_Y', 'J1_3D_rel_Z'], axis=1,
                  inplace=True)
@@ -47,7 +47,7 @@ def preprocess_skel(skel_csv, use_position=0, standardize=True, feature_tag='',
     # Using global statistics to filter skeleton-defective runs
     defective = 0
     # load sampled skel features, 200 samples for each video.
-    combined_runs = pd.read_csv(f'output/sampled_skel_features_{feature_tag}.csv')
+    combined_runs = pd.read_csv(f'{stats_skel_csv}')
     # mask outliers with N/A
     select_indices = (skel_df < combined_runs.quantile(.95)) & (skel_df > combined_runs.quantile(.05))
     skel_df = skel_df[select_indices]
@@ -189,6 +189,8 @@ class FeatureProcessor:
         self.use_skel_position = configs.use_skel_position
         self.optical_csv_dir = configs.optical_csv
         self.appear_csv_dir = configs.appear_csv
+        self.out_preprocess_pkl = configs.out_preprocess_pkl
+        self.stats_skel_csv = configs.stats_skel_csv
         self.run = configs.run
         # have a run to fps df
         self.run_specs_df = pd.read_csv('preprocess_features/run_specs.csv')
@@ -285,7 +287,8 @@ class FeatureProcessor:
         skel_csv = os.path.join(self.skel_csv_dir, f'{self.run}_{self.feature_tag}_skel_features.csv')
         skel_df, defective = preprocess_skel(skel_csv, use_position=int(self.use_skel_position),
                                              standardize=True, feature_tag=self.feature_tag,
-                                             ratio_samples=self.ratio_samples, ratio_features=self.ratio_features)
+                                             ratio_samples=self.ratio_samples, ratio_features=self.ratio_features,
+                                             stats_skel_csv=self.stats_skel_csv)
         if defective:
             open(self.filtered_txt, 'a').write(f"{self.run}\n")
 
@@ -293,11 +296,11 @@ class FeatureProcessor:
         return skel_df
 
     def save_df_dict(self) -> None:
-        if not os.path.exists('output/preprocessed_features'):
-            os.mkdir('output/preprocessed_features')
-        logger.info(f"Saving output/preprocessed_features/{self.run}_{self.feature_tag}.pkl")
-        pkl.dump(self.df_dict, open(f'output/preprocessed_features/{self.run}_{self.feature_tag}.pkl', 'wb'))
-        logger.info(f"Saved output/preprocessed_features/{self.run}_{self.feature_tag}.pkl")
+        if not os.path.exists(f'{self.out_preprocess_pkl}'):
+            os.mkdir(f'{self.out_preprocess_pkl}')
+        logger.info(f"Saving {self.out_preprocess_pkl}{self.run}_{self.feature_tag}.pkl")
+        pkl.dump(self.df_dict, open(f'{self.out_preprocess_pkl}{self.run}_{self.feature_tag}.pkl', 'wb'))
+        logger.info(f"Saved {self.out_preprocess_pkl}{self.run}_{self.feature_tag}.pkl")
         open(self.complete_txt, 'a').write(f"{self.run}\n")
 
 
