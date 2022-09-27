@@ -185,7 +185,7 @@ class FeatureProcessor:
         self.skel_csv_dir = configs.skel_csv
         self.ratio_samples = float(configs.ratio_samples)
         self.ratio_features = float(configs.ratio_features)
-        self.filtered_txt = f"filtered_skel_{self.feature_tag}_{self.ratio_samples}_{self.ratio_features}.txt"
+        self.filtered_txt = f"output/filtered_skel_{self.feature_tag}_{self.ratio_samples}_{self.ratio_features}.txt"
         self.use_skel_position = configs.use_skel_position
         self.optical_csv_dir = configs.optical_csv
         self.appear_csv_dir = configs.appear_csv
@@ -193,17 +193,16 @@ class FeatureProcessor:
         self.stats_skel_csv = configs.stats_skel_csv
         self.run = configs.run
         # have a run to fps df
-        self.run_specs_df = pd.read_csv('preprocess_features/run_specs.csv')
         self.run_specs_df = pd.read_csv(f'{configs.run_specs}')
         run = self.run + ('_kinect' if '_kinect' not in self.run else '')
         self.fps = float(self.run_specs_df.loc[self.run_specs_df.run == run, 'fps'].iloc[0])
         self.rate = configs.rate
         self.df_dict = dict()
-        self.complete_txt = f"preprocessed_complete_{args.feature_tag}.txt"
+        self.complete_txt = f"output/preprocessed_complete_{args.feature_tag}.txt"
         # This class process at a run level, list level processes should be in parallel_preprocess_indv_run.py
         # if os.path.exists(self.complete_txt):
         #     os.remove(self.complete_txt)
-        self.error_txt = f"preprocessed_error_{args.feature_tag}.txt"
+        self.error_txt = f"output/preprocessed_error_{args.feature_tag}.txt"
         # if os.path.exists(self.error_txt):
         #     os.remove(self.error_txt)
 

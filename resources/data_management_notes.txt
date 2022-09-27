@@ -1,0 +1,44 @@
+149 tracked videos
+
+148 depth videos
+	-> 148 objhand video -> slightly different due to intersection
+miss (1.3.2 lack depth and 3.3.7 lack video)
+
+149 skel videos -> identical
+
+149 appear videos -> identical
+
+149 optical videos -> slightly different in sizes (different video reader)
+
+147 preprocessed videos (running from 148 objhand_complete).
+skeleton for 4.4.6 were outliers in all timestamps, after masking there were virtually no data at all.
+
+PCA: after filtering out defective skeleton videos, we end up with 148 - 16 = 132 videos.
+Running PCA from 131 videos because one video that has total of 181 timestamps (majority are outliers) ->
+may filter using #timestamps as well.
+
+
+finalcuts_runs:
+6.2.7_kinect_trim.mp4
+6.2.5_kinect_trim.mp4
+6.2.1_kinect_trim.mp4
+2.3.10_kinect_trim.mp4
+1.3.9_kinect_trim.mp4
+1.3.4_kinect_trim.mp4
+1.3.3_kinect_trim.mp4
+1.3.1_kinect_trim.mp4
+
+scaled_down_runs:
+6.2.1_kinect
+6.2.5_kinect
+6.2.7_kinect
+
+variant_dim_runs:
+1.3.4_kinect
+6.2.1_kinect
+
+re-run tracking:
+1.3.4_kinect
+6.2.1_kinect
+6.2.5_kinect
+6.2.7_kinect

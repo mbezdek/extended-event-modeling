@@ -27,8 +27,8 @@ import ray
 # this setting seems to limit # active threads for each ray actor method.
 ray.init(num_cpus=12)
 
-sys.path.append('../../../pysot')
-sys.path.append('../../../SEM2')
+sys.path.append('../pysot')
+sys.path.append('../SEM2')
 from scipy.stats import percentileofscore
 from sem.event_models import GRUEvent
 from sem.sem import SEM
@@ -165,16 +165,15 @@ class SEMContext:
         self.categories = None
         self.categories_z = None
 
-
     def iterate(self, is_eval=True):
+        # assuming no stratification, a list of *_kinect instead of a list of *.txt
+        self.train_dataset = self.train_list
+        # Randomize order of training video
+        random.shuffle(self.train_dataset)
         for e in range(self.epochs):
             # epoch counting from 1 for inputdf and diagnostic.
             self.current_epoch = e + 1
             logger.info('Training')
-            if self.train_stratified:
-                self.train_dataset = self.train_list[e % 8]
-            else:
-                self.train_dataset = self.train_list
             self.training()
             if is_eval and self.current_epoch % 10 == 1:
                 # if is_eval and self.current_epoch % 5 == 0:
@@ -191,9 +190,6 @@ class SEMContext:
             #         e.decrease_lr.remote()
 
     def training(self):
-        # Randomize order of video
-        random.shuffle(self.train_dataset)
-        # self.train_dataset = np.random.permutation(self.train_dataset)
         run = self.train_dataset[(self.current_epoch - 1) % len(self.train_dataset)]
         self.is_train = True
         self.sem_model.kappa = float(self.configs.kappa)
@@ -203,8 +199,6 @@ class SEMContext:
         self.infer_on_video(store_dataframes=int(self.configs.store_frames))
 
     def evaluating(self):
-        # Randomize order of video
-        # random.shuffle(self.valid_dataset)
         self.valid_dataset = np.random.permutation(self.valid_dataset)
         for index, run in enumerate(self.valid_dataset):
             self.is_train = False
@@ -252,61 +246,15 @@ class SEMContext:
     def infer_on_video(self, store_dataframes=1):
         try:
             self.load_features()
-            # if store_dataframes:
-            # Infer coordinates from nearest categories and add both to data_frame for visualization
-            # objhand_csv = os.path.join(self.configs.objhand_csv, self.run + '_objhand.csv')
-            # objhand_df = pd.read_csv(objhand_csv)
-            # objhand_df = objhand_df.loc[self.df_object.combined_resampled_df.index, :]
-
-            # def add_category_and_coordinates(categories: pd.DataFrame, use_depth=False):
-            #     # Readout to visualize object-hand features
-            #     # Re-index: some frames there are no objects near hand (which is not possible, this bug is due to min(89, NaN)=NaN
-            #     # categories = categories.reindex(range(categories.index[-1])).ffill()
-            #     categories = categories.ffill()
-            #     categories = categories.loc[self.df_object.combined_resampled_df.index, :]
-            #     setattr(self.df_object, 'categories' + ('_z' if use_depth else ''), categories)
-            #     # coordinates variable is determined by categories variable, thus having only 3 objects
-            #     coordinates = pd.DataFrame()
-            #     # No need to construct coordinates, save time processing.
-            #     # for index, r in categories.iterrows():
-            #     #     frame_series = pd.Series(dtype=float)
-            #     #     # There could be a case where there are two spray bottles near the hand: 6.3.6
-            #     #     # When num_objects is large, there are nan in categories -> filter
-            #     #     all_categories = set(r.dropna().values)
-            #     #     for c in list(all_categories):
-            #     #         # Filter by category name and select distance
-            #     #         # Note: paper towel and towel causes duplicated columns in series,
-            #     #         # Need anchor ^ to distinguish towel and paper towel (2.4.7),
-            #     #         # need digit \d to distinguish pillow0 and pillowcase0 (3.3.5)
-            #     #         # Need to escape character ( and ) in aloe (green bottle) (4.4.5)
-            #     #         # Either use xy or depth (z) distance to get nearest object names
-            #     #         if use_depth:
-            #     #             df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(regex='_dist_z$')
-            #     #             nearest_name = df.index[df.argmin()].replace('_dist_z',
-            #     #                                                          '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
-            #     #         else:
-            #     #             df = objhand_df.loc[index, :].filter(regex=f"^{re.escape(c)}\d").filter(regex='_dist$')
-            #     #             nearest_name = df.index[df.argmin()].replace('_dist',
-            #     #                                                          '')  # e.g. pillow0, pillowcase0, towel0, paper towel0
-            #     #         # select nearest object's coordinates
-            #     #         # need anchor ^ to distinguish between towel0 and paper towel0
-            #     #         s = objhand_df.loc[index, :].filter(regex=f"^{re.escape(nearest_name)}")
-            #     #         frame_series = frame_series.append(s)
-            #     #     frame_series.name = index
-            #     #     coordinates = coordinates.append(frame_series)
-            #     setattr(self.df_object, 'coordinates' + ('_z' if use_depth else ''), coordinates)
-
-            # add_category_and_coordinates(self.categories, use_depth=False)
-            # Adding categories_z and coordinates_z to data_frame
-            # add_category_and_coordinates(self.categories_z, use_depth=True)
 
             # Note that without copy=True, this code will return a view and subsequent changes
             # to x_train will change self.df_object.combined_resampled_df
             # e.g. x_train /= np.sqrt(x_train.shape[1]) or x_train[2] = ...
-            logger.info(f"Done loading features, perform PCA and feed to SEM..")
+            logger.info(f"Done loading features")
             x_train = self.df_object.combined_resampled_df.to_numpy(copy=True)
             # PCA transform input features. Also, get inverted vector for visualization
             if int(self.configs.pca):
+                logger.info(f"Perform PCA on input features")
                 if int(self.configs.use_ind_feature_pca):
                     pca_transformer = PCATransformer(feature_tag=self.configs.feature_tag, pca_tag='all')
                     x_train_pca = pca_transformer.transform(x_train)
@@ -329,6 +277,7 @@ class SEMContext:
                                           columns=self.df_object.combined_resampled_df.columns)
                 setattr(self.df_object, 'x_train', df_x_train)
 
+            logger.info(f"Feeding features {x_train.shape} to SEM")
             # x_train is already has unit variance for all features (pca whitening) -> scale to have unit length.
             x_train = x_train / np.sqrt(x_train.shape[1])
             # x_train = np.random.permutation(x_train)
@@ -408,7 +357,8 @@ class SEMContext:
     def compute_clustering_metrics(self):
         start_second = self.first_frame / self.fps
         event_to_intervals = event_label_to_interval(self.sem_model.results.e_hat, start_second)
-        df = pd.read_csv('../../data/event_annotation_timing_average.csv')
+        df = pd.read_csv('resources/event_annotation_timing_average.csv')
+        df = pd.read_csv(f'{self.configs.action_path}')
         run_df = df[df['run'] == self.run.split('_')[0]]
         # calculate coverage
         coverage_df = pd.DataFrame(
@@ -474,29 +424,38 @@ class SEMContext:
         std_pe = self.sem_model.results.pe.std()
         with open('output/run_sem/results_purity_coverage.csv', 'a') as f:
             writer = csv.writer(f)
-            # len adds 1, and the buffer model adds 1 => len() - 2
-            bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries, grain='coarse')
-            with open('output/run_sem/' + self.title + '_gtfreqs_coarse.pkl', 'wb') as f:
+            grain = 'coarse'
+            bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries,
+                                                                                  grain=f'{grain}')
+            plot_diagnostic_readouts(seg_video.gt_freqs, self.sem_model.results,
+                                     frame_interval=self.second_interval * self.sample_per_second,
+                                     offset=self.first_frame / self.fps / self.second_interval,
+                                     title=self.title + f'_diagnostic_{grain}_{self.current_epoch}',
+                                     bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
+
+            with open('output/run_sem/' + self.title + f'_gtfreqs_{grain}.pkl', 'wb') as f:
                 pkl.dump(seg_video.gt_freqs, f)
+            # len adds 1, and the buffer model adds 1 => len() - 2
             writer.writerow([self.run, 'coarse', bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
                              self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
                              std_pe, pearson_r, self.is_train,
                              switch_old, switch_new, switch_current, entropy,
                              average_purity, average_coverage])
-            bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries, grain='fine')
-            with open('output/run_sem/' + self.title + '_gtfreqs_fine.pkl', 'wb') as f:
+            grain = 'fine'
+            bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries,
+                                                                                  grain=f'{grain}')
+            plot_diagnostic_readouts(seg_video.gt_freqs, self.sem_model.results,
+                                     frame_interval=self.second_interval * self.sample_per_second,
+                                     offset=self.first_frame / self.fps / self.second_interval,
+                                     title=self.title + f'_diagnostic_{grain}_{self.current_epoch}',
+                                     bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
+            with open('output/run_sem/' + self.title + f'_gtfreqs_{grain}.pkl', 'wb') as f:
                 pkl.dump(seg_video.gt_freqs, f)
             writer.writerow([self.run, 'fine', bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
                              self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
                              std_pe, pearson_r, self.is_train,
                              switch_old, switch_new, switch_current, entropy,
                              average_purity, average_coverage])
-
-        plot_diagnostic_readouts(seg_video.gt_freqs, self.sem_model.results,
-                                 frame_interval=self.second_interval * self.sample_per_second,
-                                 offset=self.first_frame / self.fps / self.second_interval,
-                                 title=self.title + f'_diagnostic_fine_{self.current_epoch}',
-                                 bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
 
         plot_pe(self.sem_model.results, frame_interval=self.second_interval * self.sample_per_second,
                 offset=self.first_frame / self.fps / self.second_interval,
@@ -555,19 +514,17 @@ if __name__ == "__main__":
                        'f_class': f_class}
     logger.info(f'SEM parameters: {sem_init_kwargs}')
     # set default hyper parameters for each run, can be overridden later
-    run_kwargs = dict()
+    run_kwargs = {'progress_bar': False}
     sem_model = SEM(**sem_init_kwargs)
     tag = args.sem_tag
 
     context_sem = SEMContext(sem_model=sem_model, run_kwargs=run_kwargs, configs=args)
     try:
         context_sem.read_train_valid_list()
-        # change is_eval to False if running to cache features
-        # context_sem.iterate(is_eval=False)
         context_sem.iterate(is_eval=True)
-        with open('tag_complete.txt', 'a') as f:
+        with open('output/tag_complete.txt', 'a') as f:
             f.write(f'{context_sem.sem_tag} completed after {context_sem.current_epoch} epochs' + '\n')
     except Exception as e:
-        with open(f'tag_error_{context_sem.sem_tag}.txt', 'a') as f:
+        with open(f'output/tag_error_{context_sem.sem_tag}.txt', 'a') as f:
             f.write(traceback.format_exc() + '\n')
             print(traceback.format_exc())

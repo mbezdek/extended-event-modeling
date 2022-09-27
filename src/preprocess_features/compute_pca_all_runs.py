@@ -50,8 +50,7 @@ class PCAComputer:
         print(f'# components: {self.n_components}')
 
         # load all combined_resampled_df dataframes and resample
-        # input_paths = glob.glob(f'output/preprocessed_features/*{self.feature_tag}*.pkl')
-        input_paths = [f'output/preprocessed_features/{run}_{self.feature_tag}*.pkl' for run in self.runs]
+        input_paths = [f'output/preprocessed_features/{run}_{self.feature_tag}.pkl' for run in self.runs]
         print(f'Total runs: {len(input_paths)}')
 
         input_dfs = Parallel(n_jobs=16)(delayed(self.load_and_sample)(path) for path in input_paths)

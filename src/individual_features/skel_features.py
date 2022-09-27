@@ -95,6 +95,12 @@ def calc_joint_rel_position(df):
     return df
 
 
+import ray
+
+ray.init(num_cpus=16)
+
+
+@ray.remote
 def gen_skel_feature(args, run, tag):
     try:
         # FPS is used to index output and later used to concat, should be inferred from run
@@ -162,10 +168,14 @@ if __name__ == '__main__':
         os.remove(f'output/skel_error_{args.feature_tag}.txt')
     if not os.path.exists(args.skel_csv_out):
         os.makedirs(args.skel_csv_out)
-    res = Parallel(n_jobs=8, prefer="threads")(delayed(
-        gen_skel_feature)(args, run, args.feature_tag) for run in runs)
-
+    # res = Parallel(n_jobs=8, prefer="threads")(delayed(
+    #     gen_skel_feature)(args, run, args.feature_tag) for run in runs)
+    res = []
+    for run in runs:
+        res.append(gen_skel_feature.remote(args, run, args.feature_tag))
+    output = ray.get(res)
     from src.preprocess_features.pool_skel_features_all_run import pool_features
+
     pool_features(complete_skel_path=f'output/skel_complete_{args.feature_tag}.txt',
                   output_stats_path=f'{args.skel_stats_out}sampled_skel_features_{args.feature_tag}.csv',
                   tag=args.feature_tag)

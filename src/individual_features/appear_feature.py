@@ -5,6 +5,9 @@ from joblib import Parallel, delayed
 import pandas as pd
 import csv
 import os
+import ray
+
+ray.init(num_cpus=16)
 from src.utils import logger, parse_config, SegmentationVideo, Canvas, contain_substr
 
 
@@ -44,6 +47,7 @@ def plot_appear_features(args, run, tag):
     # plt.show()
 
 
+@ray.remote
 def gen_appear_features(args, run, tag):
     try:
         logger.info(f'Config {args}')
@@ -121,5 +125,9 @@ if __name__ == '__main__':
         os.remove(f'output/appear_error_{args.feature_tag}.txt')
     if not os.path.exists(args.output_csv_appear):
         os.makedirs(args.output_csv_appear)
-    res = Parallel(n_jobs=8, prefer="threads")(delayed(
-        gen_appear_features)(args, run, args.feature_tag) for run in runs)
+    # res = Parallel(n_jobs=8, prefer="threads")(delayed(
+    #     gen_appear_features)(args, run, args.feature_tag) for run in runs)
+    res = []
+    for run in runs:
+        res.append(gen_appear_features.remote(args, run, args.feature_tag))
+    output = ray.get(res)

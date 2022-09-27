@@ -14,7 +14,7 @@ def load_and_sample(path, sample):
 def pool_features(complete_skel_path='output/skel_complete.txt', output_stats_path='sampled_skel_features_sep_09.csv',
                   tag='sep_09', sample=200):
     skel_complete = open(complete_skel_path, 'rt').readlines()
-    skel_complete = [os.path.join('../../output/skel', s.strip() + f'_{tag}_skel_features.csv') for s in skel_complete]
+    skel_complete = [os.path.join('output/skel', s.strip() + f'_{tag}_skel_features.csv') for s in skel_complete]
     input_paths = skel_complete
     print(f'Total runs: {len(input_paths)}')
 

@@ -4,6 +4,9 @@ import traceback
 import numpy as np
 import csv
 import os
+import ray
+
+ray.init(num_cpus=16)
 from joblib import Parallel, delayed
 from scipy.stats.stats import pearsonr
 from src.utils import parse_config, contain_substr, logger
@@ -11,7 +14,8 @@ from src.utils import parse_config, contain_substr, logger
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 
 
-def gen_vid_features(args, run, tag):
+@ray.remote
+def gen_optical_features(args, run, tag):
     try:
         logger.info(f'Config {args}')
         import cv2
@@ -91,5 +95,9 @@ if __name__ == '__main__':
         os.remove(f'output/optical_error_{args.feature_tag}.txt')
     if not os.path.exists(args.output_csv_path):
         os.makedirs(args.output_csv_path)
-    res = Parallel(n_jobs=8, prefer="threads")(delayed(
-        gen_vid_features)(args, run, args.feature_tag) for run in runs)
+    # res = Parallel(n_jobs=8, prefer="threads")(delayed(
+    #     gen_optical_features)(args, run, args.feature_tag) for run in runs)
+    res = []
+    for run in runs:
+        res.append(gen_optical_features.remote(args, run, args.feature_tag))
+    output = ray.get(res)

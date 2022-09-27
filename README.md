@@ -79,22 +79,22 @@ Make sure to download these from `https://osf.io/39qwz/` to run the following st
 ### Compute individual features
 
 Compute how many objects appear/disappear for each frame: \
-```python individual_features/appear_feature.py -c configs/config_appear.ini```
+```python src/individual_features/appear_feature.py -c configs/config_appear.ini```
 
 Compute objects' distance to the hand for each frame: \
-```python individual_features/object_hand_features.py -c configs/config_objhand_features.ini```
+```python src/individual_features/object_hand_features.py -c configs/config_objhand_features.ini```
 
 Compute velocity, acceleration, distance to the trunk, inter-hand velocity/acceleration, etc.: \
-```python individual_features/skelfeatures.py -c configs/config_skelfeatures.ini```
+```python src/individual_features/skel_features.py -c configs/config_skel_features.ini```
 
 Compute optical flow and pixel difference features for each frame: \
-```python individual_features/vidfeatures.py -c configs/config_vidfeatures.ini```
+```python src/individual_features/optical_features.py -c configs/config_optical_features.ini```
 
 Output features will be saved in ```output/{feature_name}/```
 
 Instead of running 4 commands above, you can run (if using slurm):
 
-```sbatch compute_indv_features.sh```
+```sbatch src/individual_features/compute_indv_features.sh```
 
 Check {feature_name}_complete*.txt (e.g. objhand_complete_sep_09.txt) to see which videos (runs) were successfully computed. Check
 {feature_name}_error*.txt (e.g. objhand_error_sep_09.txt) for errors.
@@ -108,12 +108,12 @@ For each run, this script below will:
 - Resample features (3Hz) and combine them into a dataframe, save the combined dataframe and individual dataframes into a pickle
   file. (the combined dataframe is SEM's input)
 
-```python preprocess_indv_run.py -c configs/config_preprocess.ini```
+```python src/preprocess_features/preprocess_indv_run.py -c configs/config_preprocess.ini```
 
 You can create a text file with a list of runs to preprocess, this can be a list of completed runs for all individual features in
 the "Compute individual features" step. Then, run this script to parallel the above script on slurm:
 
-```python parallel_preprocess_indv_run.py -c configs/config_preprocess.ini```
+```python src/preprocess_features/parallel_preprocess_indv_run.py -c configs/config_preprocess.ini```
 
 Output will be saved in ```output/preprocessed_features/*.pkl```
 
@@ -122,18 +122,18 @@ Check preprocessed_runs_{}.txt (e.g. preprocessed_runs_sep_09.txt) to see which 
 
 Run the script below to compute one PCA matrix for each feature, and a PCA matrix for all features together.
 
-```python compute_pca_all_runs.py - c configs/config_pca.ini --run clean_skel_sep_09.txt```
+```python src/preprocess_features/compute_pca_all_runs.py - c configs/config_pca.ini --run clean_skel_sep_09.txt```
 
 `clean_skel_sep_09.txt` is the difference between `preprocessed_complete*.txt` and `filtered_skel*.txt`. To get
 `clean_skel_sep_09.txt`, run: \
-`python diff_two_list.py {preprocessed_list} {filtered_skel_list} clean_skel_sep_09.txt`
+`python src/preprocess_features/diff_two_list.py {preprocessed_list} {filtered_skel_list} output/clean_skel_sep_09.txt`
 
 Output PCA matrices will be saved in ```output/*.pkl```
 
 ## Run SEM
 
 The script below will load preprocessed features, apply PCA transformation, and train SEM.\
-```python run_sem_pretrain.py -c configs/config_run_sem.ini```
+```python src/training/run_sem_pretrain.py -c configs/config_run_sem.ini```
 
 SEM's states (prediction error, hidden activations, schema activations, etc.) will be saved
 in `output/run_sem/{tag}/*_diagnostic_{epoch}.pkl`. This information will be useful for visualization and diagnose.\

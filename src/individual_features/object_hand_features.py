@@ -15,6 +15,9 @@ import joblib
 import cv2
 import logging
 import warnings
+import ray
+
+ray.init(num_cpus=16)
 
 warnings.simplefilter(action='ignore', category=pd.errors.PerformanceWarning)
 
@@ -136,6 +139,7 @@ def depth_distance(x1, y1, z1, x2, y2, z2):
     return np.linalg.norm(point1 - point2)
 
 
+@ray.remote
 def gen_objhand_feature(args, run, tag):
     try:
         # FPS is used to concat track_df and skel_df, should be inferred from run
@@ -406,5 +410,9 @@ if __name__ == '__main__':
     else:
         if not os.path.exists(args.output_objhand_csv):
             os.makedirs(args.output_objhand_csv)
-        res = Parallel(n_jobs=8, prefer="threads")(delayed(
-            gen_objhand_feature)(args, run, args.feature_tag) for run in runs)
+        # res = Parallel(n_jobs=8, prefer="threads")(delayed(
+        #     gen_objhand_feature)(args, run, args.feature_tag) for run in runs)
+        res = []
+        for run in runs:
+            res.append(gen_objhand_feature.remote(args, run, args.feature_tag))
+        output = ray.get(res)

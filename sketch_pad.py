@@ -818,7 +818,7 @@ df = df[(df.feature_tag == 'feb_11_cleaned_segmentation_grid_lr1E-03_alfa1E-01_l
 if not os.path.exists('output/low_correlation_runs'):
     os.makedirs('output/low_correlation_runs')
 
-data_frame = pd.read_csv('data/seg_data_analysis_clean.csv')
+data_frame = pd.read_csv('resources/seg_data_analysis_clean.csv')
 df_compare = pd.DataFrame(columns=['bicorr', 'type', 'run'])
 for e in range(50, 52):
     # df_e = df[(df['percentile'] < 5) & (df['epoch'] == e)]
@@ -846,10 +846,10 @@ for e in range(50, 52):
 # df = df[(df['epoch'] <= 51) & df.epoch >= 31]
 fig = px.strip(df_compare, y='bicorr', x='type', color='run')
 
-track_complete = open('track_complete.txt', 'r').readlines()
+track_complete = open('output/track_complete.txt', 'r').readlines()
 track_complete = [x for x in track_complete if "Stats" not in x]
 track_complete = [x.strip() for x in track_complete]
-all_tracks = open('data/all_runs.txt', 'r').readlines()
+all_tracks = open('resources/all_runs.txt', 'r').readlines()
 all_tracks = [x.strip() for x in all_tracks if "C1" in x]
 next_8 = list(set(all_tracks).difference(set(track_complete)))[:8]
 open('next_8.txt', 'w').writelines('\n'.join(next_8))

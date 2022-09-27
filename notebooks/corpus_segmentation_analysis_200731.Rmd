@@ -26,7 +26,7 @@ library(stringr)
 
 ```{r load data}
 #datapath <- "database.200731.1.csv"
-datapath<- "allData.csv"
+datapath<- "../resources/allData.csv"
 #cols<-c('comcode','workerId','assignmentId','hitId','startTime','sandbox','pracmovie','condition','repeat','movie1','count','browserinfo','simpleBrowser','movcnt','segmentprac','segment1','x','age','gender','location','ethAmIndian','ethAsian','ethHawaii','ethBlack','ethWhite','Hispanic','feeling','gradelevel','degree','dateOfDegree','v1','v2','v3','v4','v5','v6','v7','v8','v9','v10','v11','v12')
 
 #datapath <- "/Users/bezdek/Box/DCL_ARCHIVE/Documents/Events/exp148_Corpus/segmentation/web_data/database.200726.1.csv"
