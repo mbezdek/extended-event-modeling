@@ -19,11 +19,14 @@ Follow instructions to install conda: https://www.anaconda.com/products/individu
 ### Install packages
 
 Install environment to run tracking algorithm \
-```conda env create -f environment_tracking.yml```\
+(a CUDA-enabled device is required to perform object tracking) \
+```conda env create -f environment_tracking.yml```
+
 Install environment to run SEM in Windows/Linux: \
 ```conda env create -f environment_sem_wd_or_linux.yml``` \
 or Mac OSX+: ```conda env create -f environment_sem_osx.yml``` \
-Installation was tested on a Mac M1 computer, OS version 12.6, and took about 10 minutes.
+
+Installation of SEM was tested on a Mac M1 computer, OS version 12.6, and took about 10 minutes.
 
 ### Install pysot for tracking
 
@@ -93,6 +96,8 @@ Compute optical flow and pixel difference features for each frame: \
 
 Output features will be saved in ```output/{feature_name}/```
 
+The computation of features should take about 5 to 10 minutes for a single activity video.
+
 Instead of running 4 commands above, you can run (if using slurm):
 
 ```sbatch src/individual_features/compute_indv_features.sh```
@@ -135,6 +140,25 @@ Output PCA matrices will be saved in ```output/*.pkl```
 
 The script below will load preprocessed features, apply PCA transformation, and train SEM.\
 ```python src/training/run_sem_pretrain.py -c configs/config_run_sem.ini```
+
+The file configs/config_run_sem.ini can be modified to perform SEM on a single run rather than a set of runs (e.g., for demo purposes). \
+Simply change the `train` and `valid` parameters, such as:
+
+Replace:
+
+```
+train=output/train_sep_09.txt
+valid=output/valid_sep_09.txt
+```
+
+With:
+
+```
+train=2.4.9_kinect
+valid=1.1.3_kinect
+```
+
+It should take about two minutes for SEM to process a single activity run.
 
 SEM's states (prediction error, hidden activations, schema activations, etc.) will be saved
 in `output/run_sem/{tag}/*_diagnostic_{epoch}.pkl`. This information will be useful for visualization and diagnose.\
