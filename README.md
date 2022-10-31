@@ -85,6 +85,8 @@ Make sure to download these from `https://osf.io/39qwz/` to run the following st
 This script tracks object locations on video frames between the subset of video frames that were manually labeled: \
 ```python src/tracking/tracking_to_correct_label.py -c configs/config_tracking_to_correct_label.ini --run $run --track_tag $tag 2>&1 | tee "logs/$run$tag.log"```
 
+Running the tracking algorithm takes about 10 hours for a single activity run.
+
 ### Compute individual features
 
 Compute how many objects appear/disappear for each frame: \
