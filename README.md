@@ -20,9 +20,10 @@ Follow instructions to install conda: https://www.anaconda.com/products/individu
 
 Install environment to run tracking algorithm \
 ```conda env create -f environment_tracking.yml```\
-Install environment to run SEM \
-```conda env create -f environment_sem_Windows.yml```\
-or ```conda env create -f environment_sem_MacOS.yml```
+Install environment to run SEM in Windows/Linux \
+```conda env create -f environment_sem_wd_or_linux.yml```\
+or Mac OSX+: ```conda env create -f environment_sem_osx.yml```\
+Installation was tested on a Mac M1 computer, OS version 12.6, and took about 10 minutes.
 
 ### Install pysot for tracking
 
