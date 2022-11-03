@@ -52,7 +52,6 @@ if len(sys.argv) > 3:
 else:
     recurrent_dropout_rate = 0.5
 
-output_dir = "../../output/diagnose/dropout_epoch/"
 
 # This also implies that tasks are scheduled more flexibly, and that if you don’t need
 # the stateful part of an actor, you’re mostly better off using tasks.
@@ -64,7 +63,7 @@ def generate_predictions(scene_vectors, e_hats, weights, n_predictions=1000):
     Generate dropout inferences for a given scene vector and e_hat, for all timesteps.
     """
     optimizer_kwargs = dict(lr=1e-3, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0, amsgrad=False)
-    f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, 
+    f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0,
                   n_epochs=1, t=4, batch_update=True, n_hidden=15, variance_window=None, optimizer_kwargs=optimizer_kwargs,
                   recurrent_dropout=recurrent_dropout_rate, dropout=dropout_rate)
     new_model = GRUEvent(scene_vectors.shape[1], **f_opts)
@@ -93,9 +92,10 @@ def generate_predictions(scene_vectors, e_hats, weights, n_predictions=1000):
     return x_hat_both_dropout
 
 
-valid_runs = open('../../output/valid_sep_09.txt', 'rt').readlines()
+output_dir = "./output/diagnose/dropout_epoch/"
+valid_runs = open('./output/valid_sep_09.txt', 'rt').readlines()
 valid_runs = [x.strip() for x in valid_runs]
-train_runs = open('../../output/train_sep_09.txt', 'rt').readlines()
+train_runs = open('./output/train_sep_09.txt', 'rt').readlines()
 train_runs = [x.strip() for x in train_runs]
 runs = train_runs + valid_runs
 
@@ -123,8 +123,8 @@ for epoch in range(1, 108, 10):
         res[run]['resamples'] = []
         for i in range(n_resample):
             x_hat_both_dropout = generate_predictions(scene_vectors=diagnostic['x'],
-                                                  e_hats=diagnostic['e_hat'],
-                                                  weights=diagnostic['weights'])
+                                                      e_hats=diagnostic['e_hat'],
+                                                      weights=diagnostic['weights'])
             res[run]['resamples'].append(x_hat_both_dropout)
             # logger.info(f'Done {i+1} resample')
             # futures.append(generate_predictions.remote(scene_vectors=diagnostic['x'],
@@ -133,7 +133,7 @@ for epoch in range(1, 108, 10):
             # logger.info(f'Queued {i + 1} resample for {run}')
         # res[run]['resamples'] = ray.get(futures)
         pkl.dump(res[run], open(os.path.join(output_dir,
-                                            f"res_dropout_{run}_{epoch}_{dropout_rate}_{recurrent_dropout_rate}.pkl"),
+                                             f"res_dropout_{run}_{epoch}_{dropout_rate}_{recurrent_dropout_rate}.pkl"),
                                 'wb'))
         logger.info(f"Done generating predictions for {run} at epoch {epoch}")
 
@@ -146,32 +146,34 @@ for epoch in range(1, 108, 10):
         for r, feature in enumerate(features):
             for i in range(len(res[run]['resamples'])):
                 fig.add_trace(go.Line(x=np.arange(1000), y=res[run]['resamples'][i][:, feature], name=f'x_hat_dropout_r{i}',
-                                    showlegend=(feature == 25)), row=r + 1, col=1)
+                                      showlegend=(feature == 25)), row=r + 1, col=1)
             fig.add_trace(go.Line(x=np.arange(1000), y=res[run]['diagnostic']['x_hat'][:1000, feature], name='x_hat',
-                                showlegend=(feature == 25)), row=r + 1, col=1)
+                                  showlegend=(feature == 25)), row=r + 1, col=1)
             fig.add_trace(go.Line(x=np.arange(1000), y=res[run]['diagnostic']['x'][:1000, feature], name='x_input',
-                                showlegend=(feature == 25)), row=r + 1, col=1)
+                                  showlegend=(feature == 25)), row=r + 1, col=1)
 
         fig.update_layout(title_text="Prediction of full SEM and dropout SEM",
-                        height=len(features) * 500)
-        fig.write_html(os.path.join(output_dir, f"{run}_{epoch}_{'val' if is_val else 'train'}_{dropout_rate}_{recurrent_dropout_rate}_predictions.html"))
+                          height=len(features) * 500)
+        fig.write_html(os.path.join(output_dir,
+                                    f"{run}_{epoch}_{'val' if is_val else 'train'}_{dropout_rate}_{recurrent_dropout_rate}_predictions.html"))
 
         # plotting prediction error for dropout SEM resamples and full SEM
         fig = go.Figure()
 
         for i in range(len(res[run]['resamples'])):
             pe_both_dropout = np.linalg.norm(res[run]['diagnostic']['x'][:1000, :] - res[run]['resamples'][i][:1000, :],
-                                            axis=1)
+                                             axis=1)
             fig.add_trace(go.Line(x=np.arange(1000), y=pe_both_dropout, name=f'pe_dropout_r{i}'))
         fig.add_trace(go.Line(x=np.arange(1000), y=res[run]['diagnostic']['pe'][:1000], name='pe'))
 
         fig.update_layout(title_text="Prediction Error of full SEM and dropout SEM")
-        fig.write_html(os.path.join(output_dir, f"{run}_{epoch}_{'val' if is_val else 'train'}_{dropout_rate}_{recurrent_dropout_rate}_pe.html"))
+        fig.write_html(os.path.join(output_dir,
+                                    f"{run}_{epoch}_{'val' if is_val else 'train'}_{dropout_rate}_{recurrent_dropout_rate}_pe.html"))
 
         # plot variance of dropout SEM resamples and full SEM's prediction error
         df = pd.DataFrame(np.concatenate(res[run]['resamples'], axis=0),
-                        index=[i for j in range(len(res[run]['resamples'])) for i in
-                                range(res[run]['resamples'][0].shape[0])])
+                          index=[i for j in range(len(res[run]['resamples'])) for i in
+                                 range(res[run]['resamples'][0].shape[0])])
         variance = df.groupby(df.index).apply(np.var).mean(axis=1)
         fig = go.Figure()
 
@@ -180,5 +182,6 @@ for epoch in range(1, 108, 10):
 
         corr = stats.pearsonr(res[run]['diagnostic']['pe'][:1000], variance[:1000])[0]
         fig.update_layout(title_text=f"Prediction Errors of full SEM (/100) and Variance of dropout SEM, Pearson={corr:.02f}")
-        fig.write_html(os.path.join(output_dir, f"{run}_{epoch}_{'val' if is_val else 'train'}_{dropout_rate}_{recurrent_dropout_rate}_variance_and_pe.html"))
+        fig.write_html(os.path.join(output_dir,
+                                    f"{run}_{epoch}_{'val' if is_val else 'train'}_{dropout_rate}_{recurrent_dropout_rate}_variance_and_pe.html"))
         logger.info(f"Done plotting for {run} at epoch {epoch}")

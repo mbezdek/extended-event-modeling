@@ -194,12 +194,12 @@ class VarMahalanobisFactory:
         return pd.concat(dfs, axis=0)
 
 
-res_dropout_dir = '../../output/diagnose/dropout_epoch/'
-uncertainty_output_dir = '../../output/diagnose/uncertainty/'
+res_dropout_dir = './output/diagnose/dropout_epoch/'
+uncertainty_output_dir = './output/diagnose/uncertainty/'
 os.makedirs(uncertainty_output_dir, exist_ok=True)
-train_runs = open('../../output/train_sep_09.txt', 'rt').readlines()
+train_runs = open('./output/train_sep_09.txt', 'rt').readlines()
 train_runs = [x.strip() for x in train_runs]
-val_runs = open('../../output/valid_sep_09.txt', 'rt').readlines()
+val_runs = open('./output/valid_sep_09.txt', 'rt').readlines()
 val_runs = [x.strip() for x in val_runs]
 
 # build a list of tuple of run, epoch, dropout_rate, recurrent_dropout_rate, is_val
