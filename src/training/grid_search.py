@@ -13,7 +13,7 @@ for lr in lrs:
                 if a >= l:
                     print(f'Alfa={a} > Lmda={l}, skip this run')
                     continue
-                tag = f'sep_09_n15_seed{s}_{lr:.0E}_{a:.0E}_{l:.0E}'
+                tag = f'oct_13_refactor_s{s}_{lr:.0E}_{a:.0E}_{l:.0E}'
                 proc = subprocess.Popen(
                     ['sbatch', '--job-name', tag,
                      '--nodelist', f'node{nodes[node_id]:02d}',

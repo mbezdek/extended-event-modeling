@@ -30,11 +30,12 @@ dependencies:
   - nodejs
   - jupytext
   - pip
-  - panel=0.11.3
-  - holoviews=1.14.5
+  - panel
+  - holoviews
   - plotly
   - python-kaleido
   - hvplot
   - pip:
+      - protobuf==3.20.1
       - vidgear
       - ray[default]==1.8.0

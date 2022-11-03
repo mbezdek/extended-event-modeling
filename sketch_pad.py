@@ -867,6 +867,7 @@ def gen_stats(m):
     fps = cv2_video_reader.fps
     frame_id = 0
     prev_frame = None
+    pixel_change_prev = None
     while cv2_video_reader.capture.isOpened():
         frame_id += 1
         # if frame_id > 400:
@@ -878,6 +879,9 @@ def gen_stats(m):
         if frame_id > 1:
             lum = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)[..., 2]
             pixel_change = frame - prev_frame
+            pixel_change_mean = np.mean(pixel_change)
+            if pixel_change_mean < 20 and pixel_change_prev is not None:
+                pixel_change = pixel_change_prev
             df.loc[len(df)] = [frame_id / fps, np.mean(pixel_change), np.var(pixel_change), np.mean(lum), np.var(lum)]
         prev_frame = frame
     df.to_csv(f'{m[:-4]}.csv', index=False)
@@ -909,3 +913,5 @@ def upload(name):
 
 
 Parallel(n_jobs=8)(delayed(upload)(file_name) for file_name in file_names)
+
+

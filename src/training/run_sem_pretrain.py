@@ -41,29 +41,6 @@ from typing import List
 logger.info(f'Setting seeds {seed}')
 
 
-def plot_subject_model_boundaries(gt_freqs, pred_boundaries, title='', save_fig=True,
-                                  show=True, bicorr=0.0, percentile=0.0):
-    plt.figure()
-    plt.plot(gt_freqs, label='Subject Boundaries')
-    plt.xlabel('Time (seconds)')
-    plt.ylabel('Boundary Probability')
-    plt.title(title)
-    b = np.arange(len(pred_boundaries))[pred_boundaries][0]
-    plt.plot([b, b], [0, 1], 'k:', label='Model Boundary', alpha=0.75, color='b')
-    for b in np.arange(len(pred_boundaries))[pred_boundaries][1:]:
-        plt.plot([b, b], [0, 1], 'k:', alpha=0.75, color='b')
-
-    plt.text(0.1, 0.3, f'bicorr={bicorr:.3f}, perc={percentile:.3f}', fontsize=14)
-    plt.legend(loc='upper left')
-    plt.ylim([0, 0.4])
-    sns.despine()
-    if save_fig:
-        plt.savefig('output/run_sem/' + title + '.png')
-    if show:
-        plt.show()
-    plt.close()
-
-
 def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=0.0, title='', show=False, save_fig=True,
                              bicorr=0.0, percentile=0.0, pearson_r=0.0):
     plt.figure()
@@ -135,9 +112,10 @@ class SEMContext:
         self.sem_model = sem_model
         self.run_kwargs = run_kwargs
         self.sem_tag = configs.sem_tag
-        if not os.path.exists(f'output/run_sem/{self.sem_tag}'):
-            os.makedirs(f'output/run_sem/{self.sem_tag}')
         self.configs = configs
+        path = os.path.join(self.configs.sem_results_path, self.sem_tag)
+        if not os.path.exists(path):
+            os.makedirs(path)
         self.epochs = int(self.configs.epochs)
         self.train_stratified = int(self.configs.train_stratified)
         self.second_interval = 1
@@ -252,6 +230,7 @@ class SEMContext:
             # e.g. x_train /= np.sqrt(x_train.shape[1]) or x_train[2] = ...
             logger.info(f"Done loading features")
             x_train = self.df_object.combined_resampled_df.to_numpy(copy=True)
+            resampled_indices = pd.Series(self.df_object.combined_resampled_df.index)
             # PCA transform input features. Also, get inverted vector for visualization
             if int(self.configs.pca):
                 logger.info(f"Perform PCA on input features")
@@ -267,13 +246,13 @@ class SEMContext:
                     x_train_inverted = pca.inverse_transform(x_train_pca)
 
                 x_train = x_train_pca
-                df_x_train = pd.DataFrame(data=x_train, index=self.df_object.combined_resampled_df.index)
+                df_x_train = pd.DataFrame(data=x_train, index=resampled_indices)
                 setattr(self.df_object, 'x_train_pca', df_x_train)
-                df_x_train_inverted = pd.DataFrame(data=x_train_inverted, index=self.df_object.combined_resampled_df.index,
+                df_x_train_inverted = pd.DataFrame(data=x_train_inverted, index=resampled_indices,
                                                    columns=self.df_object.combined_resampled_df.columns)
                 setattr(self.df_object, 'x_train_inverted', df_x_train_inverted)
             else:
-                df_x_train = pd.DataFrame(data=x_train, index=self.df_object.combined_resampled_df.index,
+                df_x_train = pd.DataFrame(data=x_train, index=resampled_indices,
                                           columns=self.df_object.combined_resampled_df.columns)
                 setattr(self.df_object, 'x_train', df_x_train)
 
@@ -282,13 +261,13 @@ class SEMContext:
             x_train = x_train / np.sqrt(x_train.shape[1])
             # x_train = np.random.permutation(x_train)
             # This function train and change sem event models
-            self.run_sem_and_plot(x_train)
+            self.run_sem_and_log(x_train, resampled_indices)
             # Transform predicted vectors to the original vector space for visualization
             if int(self.configs.pca):
                 x_inferred_pca = self.sem_model.results.x_hat
                 # Scale back to PCA whitening results
                 x_inferred_pca = x_inferred_pca * np.sqrt(x_train.shape[1])
-                df_x_inferred = pd.DataFrame(data=x_inferred_pca, index=self.df_object.combined_resampled_df.index)
+                df_x_inferred = pd.DataFrame(data=x_inferred_pca, index=resampled_indices)
                 setattr(self.df_object, 'x_inferred_pca', df_x_inferred)
                 if int(self.configs.use_ind_feature_pca):
                     pca_transformer = PCATransformer(feature_tag=self.configs.feature_tag, pca_tag=self.configs.pca_tag)
@@ -296,25 +275,25 @@ class SEMContext:
                 else:
                     pca = pkl.load(open(f'output/{self.configs.feature_tag}_{self.configs.pca_tag}_pca.pkl', 'rb'))
                     x_inferred_inverted = pca.inverse_transform(x_inferred_pca)
-                df_x_inferred_inverted = pd.DataFrame(data=x_inferred_inverted, index=self.df_object.combined_resampled_df.index,
+                df_x_inferred_inverted = pd.DataFrame(data=x_inferred_inverted, index=resampled_indices,
                                                       columns=self.df_object.combined_resampled_df.columns)
                 setattr(self.df_object, 'x_inferred_inverted', df_x_inferred_inverted)
             else:
                 x_inferred_ori = self.sem_model.results.x_hat * np.sqrt(x_train.shape[1])
-                df_x_inferred_ori = pd.DataFrame(data=x_inferred_ori, index=self.df_object.combined_resampled_df.index,
+                df_x_inferred_ori = pd.DataFrame(data=x_inferred_ori, index=resampled_indices,
                                                  columns=self.df_object.combined_resampled_df.columns)
                 setattr(self.df_object, 'x_inferred', df_x_inferred_ori)
 
             if store_dataframes:
-                with open('output/run_sem/' + self.title + f'_input_output_df_{self.current_epoch}.pkl', 'wb') as f:
+                path = os.path.join(self.configs.sem_results_path, self.title + f'_input_output_df_{self.current_epoch}.pkl')
+                with open(path, 'wb') as f:
                     pkl.dump(self.df_object.__dict__, f)
 
             logger.info(f'Done SEM {self.run} at {self.current_epoch} epoch. is_train={self.is_train}!!!\n')
-            with open(f'sem_complete_{self.sem_tag}', 'a') as f:
+            with open(f'output/sem_complete_{self.sem_tag}', 'a') as f:
                 f.write(self.run + f'_{self.sem_tag}' + '\n')
-            # sem's Results() is initialized and different for each run
         except Exception as e:
-            with open(f'sem_error_{self.sem_tag}.txt', 'a') as f:
+            with open(f'output/sem_error_{self.sem_tag}.txt', 'a') as f:
                 logger.error(f'{e}')
                 f.write(self.run + f'_{self.sem_tag}' + '\n')
                 f.write(traceback.format_exc() + '\n')
@@ -324,7 +303,8 @@ class SEMContext:
         """
         :return:
         """
-        df_dict = pkl.load(open(f'output/preprocessed_features/{self.run}_{self.configs.feature_tag}.pkl', 'rb'))
+        df_dict = pkl.load(open(os.path.join(self.configs.preprocessed_features_path,
+                                             f'{self.run}_{self.configs.feature_tag}.pkl'), 'rb'))
         df_object = DictObj(df_dict)
 
         self.last_frame = df_object.combined_resampled_df.index[-1]
@@ -357,7 +337,6 @@ class SEMContext:
     def compute_clustering_metrics(self):
         start_second = self.first_frame / self.fps
         event_to_intervals = event_label_to_interval(self.sem_model.results.e_hat, start_second)
-        df = pd.read_csv('resources/event_annotation_timing_average.csv')
         df = pd.read_csv(f'{self.configs.action_path}')
         run_df = df[df['run'] == self.run.split('_')[0]]
         # calculate coverage
@@ -376,17 +355,18 @@ class SEMContext:
             sem_length = sum([interval[1] - interval[0] for interval in sem_intervals])
             purity_df.loc[len(purity_df.index)] = [sem_event, sem_length, max_purity_ann_event, max_purity,
                                                    self.current_epoch, self.run, self.sem_tag, self.is_train]
-        purity_df.to_csv(path_or_buf='output/run_sem/purity.csv', index=False, header=False, mode='a')
-        coverage_df.to_csv(path_or_buf='output/run_sem/coverage.csv', index=False, header=False, mode='a')
+        purity_df.to_csv(path_or_buf=os.path.join(self.configs.sem_results_path, 'purity.csv'), index=False, header=False, mode='a')
+        coverage_df.to_csv(path_or_buf=os.path.join(self.configs.sem_results_path, 'coverage.csv'), index=False, header=False, mode='a')
         average_coverage = np.average(coverage_df['max_coverage'], weights=coverage_df['annotated_length'])
         average_purity = np.average(purity_df['max_purity'], weights=purity_df['sem_length'])
 
         return average_purity, average_coverage
 
-    def run_sem_and_plot(self, x_train):
+    def run_sem_and_log(self, x_train: np.ndarray, resampled_indices: pd.Series):
         """
         This method run SEM and plot
         :param x_train:
+        :param resampled_indices:
         :return:
         """
         self.sem_model.run(x_train, train=self.is_train, **self.run_kwargs)
@@ -422,7 +402,9 @@ class SEMContext:
 
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
-        with open('output/run_sem/results_purity_coverage.csv', 'a') as f:
+        # logging average scores for this run, these scores are used to plot scatter matrix across training
+        path = os.path.join(self.configs.sem_results_path, 'results_purity_coverage.csv')
+        with open(path, 'a') as f:
             writer = csv.writer(f)
             grain = 'coarse'
             bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries,
@@ -433,7 +415,8 @@ class SEMContext:
                                      title=self.title + f'_diagnostic_{grain}_{self.current_epoch}',
                                      bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
 
-            with open('output/run_sem/' + self.title + f'_gtfreqs_{grain}.pkl', 'wb') as f:
+            path = os.path.join(self.configs.sem_results_path, self.title + f'_gtfreqs_{grain}.pkl')
+            with open(path, 'wb') as f:
                 pkl.dump(seg_video.gt_freqs, f)
             # len adds 1, and the buffer model adds 1 => len() - 2
             writer.writerow([self.run, 'coarse', bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
@@ -449,7 +432,8 @@ class SEMContext:
                                      offset=self.first_frame / self.fps / self.second_interval,
                                      title=self.title + f'_diagnostic_{grain}_{self.current_epoch}',
                                      bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
-            with open('output/run_sem/' + self.title + f'_gtfreqs_{grain}.pkl', 'wb') as f:
+            path = os.path.join(self.configs.sem_results_path, self.title + f'_gtfreqs_{grain}.pkl')
+            with open(path, 'wb') as f:
                 pkl.dump(seg_video.gt_freqs, f)
             writer.writerow([self.run, 'fine', bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
                              self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
@@ -461,15 +445,18 @@ class SEMContext:
                 offset=self.first_frame / self.fps / self.second_interval,
                 title=self.title + f'_PE_fine_{self.current_epoch}')
 
-        # logging results
+        # logging SEM's diagnostic scores, these scores are used to inspect individual runs.
         self.sem_model.results.first_frame = self.first_frame
         self.sem_model.results.end_second = self.end_second
         self.sem_model.results.fps = self.fps
         self.sem_model.results.current_epoch = self.current_epoch
         self.sem_model.results.is_train = self.is_train
-        with open('output/run_sem/' + self.title + f'_diagnostic_{self.current_epoch}.pkl', 'wb') as f:
+        self.sem_model.results.resampled_indices = resampled_indices
+        path = os.path.join(self.configs.sem_results_path, self.title + f'_diagnostic_{self.current_epoch}.pkl')
+        with open(path, 'wb') as f:
             pkl.dump(self.sem_model.results.__dict__, f)
-        with open('output/run_sem/' + self.title + '_gtfreqs.pkl', 'wb') as f:
+        path = os.path.join(self.configs.sem_results_path, self.title + f'_gtfreqs.pkl')
+        with open(path, 'wb') as f:
             pkl.dump(seg_video.gt_freqs, f)
 
 
@@ -477,23 +464,28 @@ if __name__ == "__main__":
     args = parse_config()
     logger.info(f'Config: {args}')
 
-    if not os.path.exists('output/run_sem/results_purity_coverage.csv'):
+    path = os.path.join(args.sem_results_path, 'results_purity_coverage.csv')
+    if not os.path.exists(path):
         csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'active_event_models', 'epoch',
                        'number_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train',
                        'switch_old', 'switch_new', 'switch_current', 'entropy',
                        'purity', 'coverage']
-        with open('output/run_sem/results_purity_coverage.csv', 'w') as f:
+        path = os.path.join(args.sem_results_path, 'results_purity_coverage.csv')
+        with open(path, 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
-    if not os.path.exists('output/run_sem/purity.csv'):
+    if not os.path.exists(f'{args.sem_results_path}purity.csv'):
         csv_headers = ['sem_event', 'sem_length', 'annotated_max_overlap', 'max_purity', 'epoch', 'run', 'tag', 'is_train']
-        with open('output/run_sem/purity.csv', 'w') as f:
+        path = os.path.join(args.sem_results_path, 'purity.csv')
+        with open(path, 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
-    if not os.path.exists('output/run_sem/coverage.csv'):
+    path = os.path.join(args.sem_results_path, 'coverage.csv')
+    if not os.path.exists(path):
         csv_headers = ['annotated_event', 'annotated_length', 'sem_max_overlap', 'max_coverage', 'epoch', 'run', 'tag',
                        'is_train']
-        with open('output/run_sem/coverage.csv', 'w') as f:
+        path = os.path.join(args.sem_results_path, 'coverage.csv')
+        with open(path, 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
 
