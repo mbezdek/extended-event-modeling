@@ -222,7 +222,7 @@ def draw_skel_and_obj_box(frame_slider, skel_checkbox, obj_checkbox, run_select,
     if obj_checkbox:
         try:
             # Draw boxes for nearest objects and background objects
-            odf_z = objhand_df[objhand_df.index == frame_slider]
+            odf_z = objhand_df[objhand_df.frame == frame_slider]
             odf_z = odf_z[odf_z.columns[~odf_z.isna().any()].tolist()]
             sorted_objects = list(pd.Series(odf_z.filter(regex='dist_z$').iloc[0, :]).sort_values().index)
             sorted_objects = [object.replace('_dist_z', '') for object in sorted_objects]
@@ -356,11 +356,8 @@ def plot_diagnostic_readouts(frame_slider, run_select, get_img=False, ax=None, f
     if ax is None and fig is None:
         fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(gaussian_filter1d(gt_freqs, 1), label='Subject Boundaries')
-    # ax.set_xlabel('Time (second)')
-    ax.set_ylabel('Boundary Probability')
     ax.set_ylim([0, max(gt_freqs) + max(gt_freqs) * 0.2])
     ax.axvline(frame_slider / fps, linewidth=3, alpha=0.5, color='r')
-    ax.set_title(f"SEM's and humans' boundaries for activity {run_select}")
     plot_boundaries(ax=ax, fig=fig)
     if get_img:
         fig.canvas.draw()
@@ -399,10 +396,7 @@ def plot_pe(run_select, tag_select, epoch_select, frame_slider, get_img=True, ax
     # df.epoch = pd.to_numeric(df.epoch, errors='coerce')
 
     ax.plot(df['second'], df['pe'])
-    ax.set_xlabel('Time (second)')
-    ax.set_ylabel('Prediction Error')
     ax.axvline(frame_slider / fps, linewidth=2, alpha=0.5, color='r')
-    ax.set_title('Prediction Error for ' + run_select)
     plot_boundaries(ax=ax, fig=fig)
     if get_img:
         fig.canvas.draw()
@@ -417,7 +411,13 @@ def plot_pe_and_diag(run_select, tag_select, epoch_select, frame_slider, get_img
     # fig, axes = plt.subplots(nrows=1, figsize=(8, 4.5), sharex='all', squeeze=False)
     fig, axes = plt.subplots(nrows=2, figsize=(8, 4.5), sharex='all', squeeze=False)
     plot_diagnostic_readouts(frame_slider, run_select, ax=axes[0][0], fig=fig, get_img=False)
+    # ax.set_xlabel('Time (second)')
+    axes[0][0].set_ylabel('Boundary Probability')
+    axes[0][0].set_title(f"SEM's and humans' boundaries for activity {run_select}")
     plot_pe(run_select, tag_select, epoch_select, frame_slider, ax=axes[1][0], fig=fig, get_img=False)
+    axes[1][0].set_xlabel('Time (second)')
+    axes[1][0].set_ylabel('Prediction Error')
+    axes[1][0].set_title('Prediction Error for ' + run_select)
     # plt.savefig('test.png')
     if get_img:
         fig.canvas.draw()
@@ -671,8 +671,8 @@ def draw_video():
     for frame_id, frame in anchored_frames.items():
         count += 1
 
-        # if frame_id > 400:
-        #     break
+        if frame_id > 400:
+            break
 
         def get_side_and_front(df, frame_id, title=''):
             """
@@ -682,9 +682,9 @@ def draw_video():
             :param title:
             :return:
             """
-            x_array = df.filter(like='rel_X').loc[frame_id].to_numpy()
-            y_array = df.filter(like='rel_Y').loc[frame_id].to_numpy()
-            z_array = df.filter(like='rel_Z').loc[frame_id].to_numpy()
+            x_array = df[df.frame == frame_id].filter(like='rel_X').to_numpy().squeeze()
+            y_array = df[df.frame == frame_id].filter(like='rel_Y').to_numpy().squeeze()
+            z_array = df[df.frame == frame_id].filter(like='rel_Z').to_numpy().squeeze()
             e_array = np.hstack([x_array, y_array, z_array])
             if len(e_array) == 72:
                 e_array = np.insert(e_array, 1, 0)
@@ -748,6 +748,7 @@ if __name__ == "__main__":
     skel_df.set_index('frame', drop=False, inplace=True)
     # load object_hand data to retrieve coordinates of objects nearest to the hand (input and SEM's prediction)
     objhand_df = pd.read_csv(os.path.join(f'output/objhand/{run_select}_kinect_sep_09_objhand.csv'))
+    objhand_df['frame'] = objhand_df.index.to_numpy().astype(int)
     anchored_frames = joblib.load(f'output/frames/{run_select}_kinect_trimmar_20_individual_depth_scene_frames.joblib')
     # this dataframe contains a lot of dataframes, for both input and output of SEM
     input_output_df = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_input_output_df_{epoch}.pkl', 'rb'))
@@ -785,8 +786,8 @@ if __name__ == "__main__":
     pred_skel_df = pred_skel_df * stats.loc['std', skel_df_post.columns] + stats.loc['mean', skel_df_post.columns]
     pca_input_df = pca_input_df * stats.loc['std', skel_df_post.columns] + stats.loc['mean', skel_df_post.columns]
 
-    pred_skel_df['frame'] = pred_skel_df.index
-    pca_input_df['frame'] = pca_input_df.index
+    pred_skel_df['frame'] = pred_skel_df.index.to_numpy().astype(int)
+    pca_input_df['frame'] = pca_input_df.index.to_numpy().astype(int)
     # in case we want different colors for different joints, because Kinect infer some joints.
     for i in range(25):
         new_column = f'J{i}_Tracked'
@@ -846,7 +847,8 @@ if __name__ == "__main__":
 
 
     new_anchored_frames = dict()
-    indices = list(set(pca_input_df.index.to_numpy().astype(int)).intersection(set(skel_df.index)))
+    # make sure to plot just frames that have pca input/output, skel_df (depend on Kinect), and object hand (depends on tracking)
+    indices = list(set(pca_input_df.frame).intersection(set(skel_df.index)).intersection(set(objhand_df.index)))
     for frame_id, frame in anchored_frames.items():
         frame_id = align(frame_id, indices)
         if frame_id == -1:
