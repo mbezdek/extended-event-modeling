@@ -370,23 +370,26 @@ import os
 import cv2
 import pickle as pkl
 import joblib
+from joblib import Parallel, delayed
 
-tag = 'mar_20_individual_depth_scene'
-kinects = glob.glob(f'output/run_sem/{tag}/*inputdf_0.pkl')
-kinects = list(set([os.path.basename(k).split('_')[0] for k in kinects]))
+tag = 'sep_09_n15_1030_1E-03_1E-01_1E+07'
+kinects = open(f'output/preprocessed_complete_sep_09.txt', 'r').readlines()
+kinects = [x.strip().replace('_kinect', '') for x in kinects]
 print(len(kinects))
-for run_select in kinects:
+def generate_and_store_frames(run_select):
+# for run_select in kinects:
     if os.path.exists(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_frames.joblib'):
         print(f'Already generated {run_select}')
-        continue
-    with open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_inputdf_0.pkl', 'rb') as f:
+        return
+    pkl_run = glob.glob(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_input_output*.pkl')[0]
+    with open(pkl_run, 'rb') as f:
         inputdfs = pkl.load(f)
-    vidfile = f'data/small_videos/{run_select}_kinect_trim.mp4'
 
-    appear = inputdfs[0]
-    frames = appear.index
+    combined_resampled_df = inputdfs['combined_resampled_df']
+    frames = combined_resampled_df.index.to_numpy().astype(int)
     video_capture = cv2.VideoCapture()
     cached_videos = dict()
+    vidfile = f'data/small_videos/{run_select}_kinect_trim.mp4'
     if video_capture.open(vidfile):
         frame_id = 0
         while video_capture.isOpened():
@@ -397,12 +400,13 @@ for run_select in kinects:
                 break
             if frame_id in frames:
                 cached_videos[frame_id] = cv2.resize(frame, None, fx=0.5, fy=0.5)
-        if not os.path.exists(f'output/run_sem/{tag}/'):
-            os.makedirs(f'output/run_sem/{tag}/')
-        joblib.dump(cached_videos, f'output/run_sem/frames/{run_select}_kinect_trim{tag}_frames.joblib',
+        if not os.path.exists(f'output/frames/'):
+            os.makedirs(f'output/frames/')
+        joblib.dump(cached_videos, f'output/frames/{run_select}_kinect_trim{tag}_frames.joblib',
                     compress=True)
         # with open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_frames.pkl', 'wb') as f:
         #         pkl.dump(cached_videos, f)
+Parallel(n_jobs=8)(delayed(generate_and_store_frames)(run_select) for run_select in kinects)
 
 import pickle as pkl
 import glob
