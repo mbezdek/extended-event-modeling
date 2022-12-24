@@ -60,6 +60,8 @@ def parse_config():
     parser.add_argument("--alfa")
     parser.add_argument("--lmda")
     parser.add_argument("--lr")
+    parser.add_argument("--trigger")
+    parser.add_argument("--threshold")
     args = parser.parse_args(remaining_argv)
 
     return args

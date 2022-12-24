@@ -9,15 +9,18 @@
 
 
 cd /scratch/n.tan/extended-event-modeling/ || echo "cd failed.."
-source activate sem-and-viz
+source activate sem-viz-jupyter
 export PYTHONPATH=${PYTHONPATH}:/scratch/n.tan/SEM2
-export SEED=$7
+export SEED=$8
 
 #python vidfeatures/object_hand_features.py -c configs/config_objhand_features.ini
 #python job_split.py 1
 
 #python run_sem_pretrain.py -c configs/config_run_sem.ini --run $1
-# uncomment to do grid search
-python src/training/run_sem_pretrain.py -c configs/config_run_sem.ini --train $1 --valid $2 --alfa $3 --lmda $4 --sem_tag $5 --lr $6
+# make sure to double check the order of arguments in grid_search.py (which calls this script)
+echo "Execute: python src/train_eval_inference/run_sem_pretrain.py -c configs/config_run_sem.ini --train ${1}
+ --valid ${2} --alfa ${3} --lmda ${4} --sem_tag ${5} --trigger ${6} --threshold ${7}"
+python src/train_eval_inference/run_sem_pretrain.py -c configs/config_run_sem.ini --train $1 --valid $2 \
+--alfa $3 --lmda $4 --sem_tag $5 --trigger $6 --threshold $7
 #python run_sem_pretrain.py -c configs/config_run_sem.ini --train $1 --valid $2
 # sbatch model_corpus.sh chapter_1_sorted.txt

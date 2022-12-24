@@ -209,7 +209,7 @@ def draw_skel_and_obj_box(frame_slider, skel_checkbox, obj_checkbox, run_select,
     # draw skeleton here
     if skel_checkbox:
         try:
-            skel_obj_imposed_frame = drawskel(frame_slider, skel_obj_imposed_frame, skel_df, color=(255, 0, 0))
+            skel_obj_imposed_frame = drawskel(frame_slider, skel_obj_imposed_frame, skel_df_from_csv, color=(255, 0, 0))
             # comment these lines if not using position in training SEM, in that case,
             # back-projected skeleton and predicted should be in relative pose, side and front view visualization
             # outframe = drawskel(frame_slider, outframe, pca_input_df, color=(255, 0, 0))
@@ -222,7 +222,7 @@ def draw_skel_and_obj_box(frame_slider, skel_checkbox, obj_checkbox, run_select,
     if obj_checkbox:
         try:
             # Draw boxes for nearest objects and background objects
-            odf_z = objhand_df[objhand_df.frame == frame_slider]
+            odf_z = objhand_df_from_csv[objhand_df_from_csv.frame == frame_slider]
             odf_z = odf_z[odf_z.columns[~odf_z.isna().any()].tolist()]
             sorted_objects = list(pd.Series(odf_z.filter(regex='dist_z$').iloc[0, :]).sort_values().index)
             sorted_objects = [object.replace('_dist_z', '') for object in sorted_objects]
@@ -235,7 +235,8 @@ def draw_skel_and_obj_box(frame_slider, skel_checkbox, obj_checkbox, run_select,
                                             skel_obj_imposed_frame.shape[2]), dtype=np.uint8)
             # Put three nearest words from scene to input vector
             input_nearest_objects = get_nearest(
-                [np.array(input_output_df['x_train_inverted'].loc[frame_slider, input_output_df['objhand_post'].columns].values,
+                [np.array(input_objhand_inverted.loc[input_objhand_inverted.frame == frame_slider,
+                                                     objhand_columns].values.squeeze(),
                           dtype=np.float32)],
                 space='scene')
             for index, instance in enumerate(input_nearest_objects[:3]):
@@ -246,7 +247,7 @@ def draw_skel_and_obj_box(frame_slider, skel_checkbox, obj_checkbox, run_select,
                         fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                         color=ColorBGR.red)
             # Put three nearest words from scene to prediction vector
-            pred_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
+            pred_nearest_objects = get_nearest([np.array(pred_objhand_inverted.loc[pred_objhand_inverted.frame == frame_slider, objhand_columns].values.squeeze(), dtype=np.float32)],
                                                space='scene')
             for index, instance in enumerate(pred_nearest_objects[:3]):
                 cv2.putText(obj_name_imposed_frame, text=str(instance), org=(obj_name_imposed_frame.shape[1] - 300, 50 + 20 * index),
@@ -254,7 +255,7 @@ def draw_skel_and_obj_box(frame_slider, skel_checkbox, obj_checkbox, run_select,
                             color=ColorBGR.green)
             # This is the yellow-tinted boxes visualization (along with red and cyan boxes),
             # easier for humans to track
-            pred_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
+            pred_nearest_objects = get_nearest([np.array(pred_objhand_inverted.loc[pred_objhand_inverted.frame == frame_slider, objhand_columns].values.squeeze(), dtype=np.float32)],
                                                space='scene')
             instances = [pr[0] for pr in pred_nearest_objects]
             skel_obj_imposed_frame = drawobj(instances[:3], skel_obj_imposed_frame, odf_z, color=ColorBGR.green, draw_name=False, tint=True, draw_rect=False)
@@ -262,7 +263,7 @@ def draw_skel_and_obj_box(frame_slider, skel_checkbox, obj_checkbox, run_select,
                         fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                         color=ColorBGR.green)
             # Put three nearest words from corpus to prediction vector
-            pred_nearest_objects = get_nearest([np.array(pred_objhand.loc[frame_slider, :].values, dtype=np.float32)],
+            pred_nearest_objects = get_nearest([np.array(pred_objhand_inverted.loc[pred_objhand_inverted.frame == frame_slider, objhand_columns].values.squeeze(), dtype=np.float32)],
                                                space='corpus')
             for index, instance in enumerate(pred_nearest_objects[:3]):
                 cv2.putText(obj_name_imposed_frame, text=str(instance), org=(obj_name_imposed_frame.shape[1] - 150, 50 + 20 * index),
@@ -273,7 +274,7 @@ def draw_skel_and_obj_box(frame_slider, skel_checkbox, obj_checkbox, run_select,
                         color=ColorBGR.magenta)
 
         except Exception as e:
-            print(e)
+            print("Exception", e)
             obj_name_imposed_frame = None
             # print(traceback.format_exc())
 
@@ -293,7 +294,7 @@ def draw_skel_and_obj_box(frame_slider, skel_checkbox, obj_checkbox, run_select,
                 fontFace=cv2.FONT_HERSHEY_SIMPLEX, fontScale=0.5,
                 color=(0, 255, 0))
     # add Segmentation flag
-    index = pred_objhand.index.get_indexer([frame_slider])[0]
+    index = pd.Index(pred_objhand_inverted.frame).get_indexer([frame_slider])[0]
     # if sem_readouts['e_hat'][index] != sem_readouts['e_hat'][index - 1]:
     if sem_readouts['boundaries'][index] == 1:
         cv2.putText(skel_obj_imposed_frame, text='SWITCH TO OLD', org=(10, 220),
@@ -520,11 +521,11 @@ def draw_skeleton_ball(frame_slider):
         for f, l in [('interhand_dist', (10, 20)),
                      ('interhand_speed', (10, 100)),
                      ('interhand_acceleration', (10, 200))]:
-            frame = draw_interhand_features(frame_slider, skel_df, f, l, frame)
+            frame = draw_interhand_features(frame_slider, skel_df_from_csv, f, l, frame)
         frame = frame.astype(np.uint8)
-        outframe = cv2.hconcat([draw_static_body(frame_slider, skel_df, prop='speed'),
-                                draw_static_body(frame_slider, skel_df, prop='acceleration'),
-                                draw_static_body(frame_slider, skel_df, prop='dist_from_J1'),
+        outframe = cv2.hconcat([draw_static_body(frame_slider, skel_df_from_csv, prop='speed'),
+                                draw_static_body(frame_slider, skel_df_from_csv, prop='acceleration'),
+                                draw_static_body(frame_slider, skel_df_from_csv, prop='dist_from_J1'),
                                 frame])
     except Exception as e:
         outframe = np.zeros((600, 1100, 3))
@@ -671,8 +672,8 @@ def draw_video():
     for frame_id, frame in anchored_frames.items():
         count += 1
 
-        if frame_id > 400:
-            break
+        # if frame_id > 400:
+        #     break
 
         def get_side_and_front(df, frame_id, title=''):
             """
@@ -696,10 +697,10 @@ def draw_video():
             front_3d = anim_event_series(e_array=e_array, view='front', title=title)
             return side_3d, front_3d
 
-        side_after_pca, front_after_pca = get_side_and_front(pca_input_df, frame_id, title='Ground Truth (GT)')
+        side_after_pca, front_after_pca = get_side_and_front(input_skel_inverted, frame_id, title='Ground Truth (GT)')
         after_pca = cv2.hconcat([side_after_pca, front_after_pca])
         after_pca = cv2.resize(after_pca, dsize=(800, 450))
-        side_pred, front_pred = get_side_and_front(pred_skel_df, frame_id, title="SEM's Prediction")
+        side_pred, front_pred = get_side_and_front(pred_skel_inverted, frame_id, title="SEM's Prediction")
         prediction = cv2.hconcat([side_pred, front_pred])
         prediction = cv2.resize(prediction, dsize=(800, 450))
 
@@ -712,7 +713,7 @@ def draw_video():
         # diagnostic = cv2.resize(diagnostic, dsize=(800, 450))
         # pe = plot_pe(run_select, tag, epoch, frame_slider=frame_id)
         # pe = cv2.resize(pe, dsize=(640, 240))
-        # draw humand and SEM boundaries
+        # draw human and SEM boundaries
         pe_and_diag = plot_pe_and_diag(run_select, tag, epoch, frame_id, get_img=True)
         pe_and_diag = cv2.resize(pe_and_diag, dsize=(800, 450))
         # skeleton_ball = draw_skeleton_ball(frame_slider=frame_id)
@@ -744,12 +745,15 @@ if __name__ == "__main__":
     run_select = run_select.replace('_kinect', '')
     # load true skeleton data to impose it on the frame, because SEM doesn't use absolute coordinates,
     # SEM's in/output will be visualized in relative coordinates, as side and front views
-    skel_df = pd.read_csv(f'output/skel/{run_select}_kinect_sep_09_skel_features.csv')
-    skel_df.set_index('frame', drop=False, inplace=True)
+    skel_df_from_csv = pd.read_csv(f'output/skel/{run_select}_kinect_sep_09_skel_features.csv')
+    skel_df_from_csv.set_index('frame', drop=False, inplace=True)
+    skel_df_from_csv['frame'] = skel_df_from_csv.index.to_numpy().astype(int)
     # load object_hand data to retrieve coordinates of objects nearest to the hand (input and SEM's prediction)
-    objhand_df = pd.read_csv(os.path.join(f'output/objhand/{run_select}_kinect_sep_09_objhand.csv'))
-    objhand_df['frame'] = objhand_df.index.to_numpy().astype(int)
-    anchored_frames = joblib.load(f'output/frames/{run_select}_kinect_trimmar_20_individual_depth_scene_frames.joblib')
+    objhand_df_from_csv = pd.read_csv(os.path.join(f'output/objhand/{run_select}_kinect_sep_09_objhand.csv'))
+    # need to round frame so that we can locate using integer frame_id for
+    # skel, anchored, and objhand embeddings, and objects names/locations.
+    objhand_df_from_csv['frame'] = objhand_df_from_csv.index.to_numpy().astype(int)
+    anchored_frames = joblib.load(f'output/frames/{run_select}_kinect_trimsep_09_n15_1030_1E-03_1E-01_1E+07_frames.joblib')
     # this dataframe contains a lot of dataframes, for both input and output of SEM
     input_output_df = pkl.load(open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_input_output_df_{epoch}.pkl', 'rb'))
     # parameters to plot boundary lines
@@ -767,12 +771,11 @@ if __name__ == "__main__":
     ## SKELETON FEATURES
     # this dataframe are used to identify columns of interest in the combined dataframe
     skel_df_post = input_output_df['skel_post']
+    skel_columns = skel_df_post.columns
     # Prepare dataframes to plot input skeleton and predicted skeleton, in relative coordinates,
     # as side and front views
-    pca_input_df = input_output_df['x_train_inverted']
-    pred_skel_df = input_output_df['x_inferred_inverted']
-    pred_skel_df = pred_skel_df.loc[:, skel_df_post.columns]
-    pca_input_df = pca_input_df.loc[:, skel_df_post.columns]
+    input_skel_inverted = input_output_df['x_train_inverted'].loc[:, skel_columns]
+    pred_skel_inverted = input_output_df['x_inferred_inverted'].loc[:, skel_columns]
 
     # cross-check with run_sem_pretrain to make sure the same global statistics are used to normalize
     # input skeleton data.
@@ -783,17 +786,19 @@ if __name__ == "__main__":
     combined_runs_q = combined_runs[select_indices]
     stats = combined_runs_q.describe().loc[['mean', 'std']]
 
-    pred_skel_df = pred_skel_df * stats.loc['std', skel_df_post.columns] + stats.loc['mean', skel_df_post.columns]
-    pca_input_df = pca_input_df * stats.loc['std', skel_df_post.columns] + stats.loc['mean', skel_df_post.columns]
+    pred_skel_inverted = pred_skel_inverted * stats.loc['std', skel_columns] + stats.loc['mean', skel_columns]
+    input_skel_inverted = input_skel_inverted * stats.loc['std', skel_columns] + stats.loc['mean', skel_columns]
 
-    pred_skel_df['frame'] = pred_skel_df.index.to_numpy().astype(int)
-    pca_input_df['frame'] = pca_input_df.index.to_numpy().astype(int)
+    # need to round frame so that we can locate using integer frame_id for
+    # skel, anchored, and objhand embeddings, and objects names/locations.
+    pred_skel_inverted['frame'] = pred_skel_inverted.index.to_numpy().astype(int)
+    input_skel_inverted['frame'] = input_skel_inverted.index.to_numpy().astype(int)
     # in case we want different colors for different joints, because Kinect infer some joints.
     for i in range(25):
         new_column = f'J{i}_Tracked'
-        pred_skel_df[new_column] = 'Predicted'
-        pca_input_df[new_column] = 'Inferred'
-        skel_df[new_column] = 'Tracked'
+        pred_skel_inverted[new_column] = 'Predicted'
+        input_skel_inverted[new_column] = 'Inferred'
+        skel_df_from_csv[new_column] = 'Tracked'
     # this combined_runs dataframe is used in drawing ball plots and
     # inter-hand features (not used in this current script)
     # combined_runs['J1_dist_from_J1'] = np.zeros(shape=(len(combined_runs), 1))
@@ -801,15 +806,22 @@ if __name__ == "__main__":
     ## OBJECT HAND FEATURES
     # this dataframe are used to identify columns of interest in the combined dataframe
     objhand_post = input_output_df['objhand_post']
-    pred_objhand = input_output_df['x_inferred_inverted']
-    pred_objhand = pred_objhand.loc[:, objhand_post.drop(['euclid', 'cosine'], axis=1, errors='ignore').columns]
+    objhand_columns = objhand_post.drop(['euclid', 'cosine'], axis=1, errors='ignore').columns
+    pred_objhand_inverted = input_output_df['x_inferred_inverted']
+    pred_objhand_inverted = pred_objhand_inverted.loc[:, objhand_columns]
+    input_objhand_inverted = input_output_df['x_train_inverted']
+    input_objhand_inverted = input_objhand_inverted.loc[:, objhand_columns]
+    # need to round frame so that we can locate using integer frame_id for
+    # skel, anchored, and objhand embeddings, and objects names/locations.
+    pred_objhand_inverted['frame'] = pred_objhand_inverted.index.to_numpy().astype(int)
+    input_objhand_inverted['frame'] = input_objhand_inverted.index.to_numpy().astype(int)
     # corpus categories, used to determine the closest word to SEM's predictions
     # glove_vectors = gensim.downloader.load('glove-wiki-gigaword-50')
     glove_vectors = pkl.load(open('./resources/gen_sim_glove_50.pkl', 'rb'))
     corpus_categories = pkl.load(open('src/visualization/corpus_categories.pkl', 'rb'))
     corpus_word2vec = dict()
     for category in corpus_categories:
-        r = np.zeros(shape=(1, pred_objhand.shape[1]))
+        r = np.zeros(shape=(1, pred_objhand_inverted.loc[:, objhand_columns].shape[1]))
         try:
             r += glove_vectors[category]
         except Exception as e:
@@ -823,7 +835,7 @@ if __name__ == "__main__":
     scene_categories = pkl.load(open('src/visualization/scene_categories.pkl', 'rb'))
     scene_word2vec = dict()
     for category in scene_categories[run_select + '_kinect']:
-        r = np.zeros(shape=(1, pred_objhand.shape[1]))
+        r = np.zeros(shape=(1, pred_objhand_inverted.loc[:, objhand_columns].shape[1]))
         try:
             r += glove_vectors[category]
         except Exception as e:
@@ -848,7 +860,12 @@ if __name__ == "__main__":
 
     new_anchored_frames = dict()
     # make sure to plot just frames that have pca input/output, skel_df (depend on Kinect), and object hand (depends on tracking)
-    indices = list(set(pca_input_df.frame).intersection(set(skel_df.index)).intersection(set(objhand_df.index)))
+    indices = list(set(input_skel_inverted.frame).intersection(
+        set(skel_df_from_csv.frame)).intersection(
+        set(objhand_df_from_csv.frame)).intersection(
+        set(input_objhand_inverted.frame)))
+    if len(indices) > 300:
+        indices = indices[::len(indices) // 300]
     for frame_id, frame in anchored_frames.items():
         frame_id = align(frame_id, indices)
         if frame_id == -1:

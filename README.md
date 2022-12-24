@@ -141,7 +141,7 @@ Run the script below to compute one PCA matrix for each feature, and a PCA matri
 `clean_skel_sep_09.txt`, run: \
 `python src/preprocess_features/diff_two_list.py {preprocessed_list} {filtered_skel_list} output/clean_skel_sep_09.txt`
 
-Output PCA matrices will be saved in ```output/*.pkl```
+Output PCA matrices will be saved in ```output/*_{feature_name}_pca.pkl```
 
 ## Run SEM
 

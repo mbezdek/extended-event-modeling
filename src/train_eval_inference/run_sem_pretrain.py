@@ -1,19 +1,8 @@
-import os
-
-seed = int(os.environ.get('SEED', '1111'))
-import random
-
-random.seed(seed)
 import numpy as np
-
-np.random.seed(seed)
 import tensorflow as tf
-
-tf.random.set_seed(seed)
 import matplotlib.pyplot as plt
 import matplotlib
 import pandas as pd
-import seaborn as sns
 import math
 import os
 import sys
@@ -38,7 +27,10 @@ from src.preprocess_features.compute_pca_all_runs import PCATransformer
 from scipy.ndimage import gaussian_filter1d
 from typing import List
 
-logger.info(f'Setting seeds {seed}')
+seed = int(os.environ.get('SEED', '1111'))
+logger.info(f'Setting seed in run_sem_pretrain.py, seed={seed}')
+np.random.seed(seed)
+tf.random.set_seed(seed)
 
 
 def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=0.0, title='', show=False, save_fig=True,
@@ -147,7 +139,8 @@ class SEMContext:
         # assuming no stratification, a list of *_kinect instead of a list of *.txt
         self.train_dataset = self.train_list
         # Randomize order of training video
-        random.shuffle(self.train_dataset)
+        # random.shuffle(self.train_dataset)
+        self.train_dataset = np.random.permutation(self.train_dataset)
         for e in range(self.epochs):
             # epoch counting from 1 for inputdf and diagnostic.
             self.current_epoch = e + 1
@@ -166,6 +159,8 @@ class SEMContext:
             #     self.sem_model.general_event_model_yoke.decrease_lr()
             #     for k, e in self.sem_model.event_models.items():
             #         e.decrease_lr.remote()
+
+        logger.info(f"Training set: \n{self.train_dataset}")
 
     def training(self):
         run = self.train_dataset[(self.current_epoch - 1) % len(self.train_dataset)]
@@ -228,12 +223,13 @@ class SEMContext:
             # Note that without copy=True, this code will return a view and subsequent changes
             # to x_train will change self.df_object.combined_resampled_df
             # e.g. x_train /= np.sqrt(x_train.shape[1]) or x_train[2] = ...
-            logger.info(f"Done loading features")
+            logger.info(f"Done loading combined_resampled features "
+                        f"{self.df_object.combined_resampled_df.shape}")
             x_train = self.df_object.combined_resampled_df.to_numpy(copy=True)
             resampled_indices = pd.Series(self.df_object.combined_resampled_df.index)
             # PCA transform input features. Also, get inverted vector for visualization
             if int(self.configs.pca):
-                logger.info(f"Perform PCA on input features")
+                logger.info(f"Perform PCA on combined_resampled features")
                 if int(self.configs.use_ind_feature_pca):
                     pca_transformer = PCATransformer(feature_tag=self.configs.feature_tag, pca_tag='all')
                     x_train_pca = pca_transformer.transform(x_train)
@@ -256,7 +252,7 @@ class SEMContext:
                                           columns=self.df_object.combined_resampled_df.columns)
                 setattr(self.df_object, 'x_train', df_x_train)
 
-            logger.info(f"Feeding features {x_train.shape} to SEM")
+            logger.info(f"Feeding PCA-ed features {x_train.shape} to SEM")
             # x_train is already has unit variance for all features (pca whitening) -> scale to have unit length.
             x_train = x_train / np.sqrt(x_train.shape[1])
             # x_train = np.random.permutation(x_train)
@@ -290,10 +286,10 @@ class SEMContext:
                     pkl.dump(self.df_object.__dict__, f)
 
             logger.info(f'Done SEM {self.run} at {self.current_epoch} epoch. is_train={self.is_train}!!!\n')
-            with open(f'output/sem_complete_{self.sem_tag}', 'a') as f:
+            with open(f'logs/sem_complete_{self.sem_tag}', 'a') as f:
                 f.write(self.run + f'_{self.sem_tag}' + '\n')
         except Exception as e:
-            with open(f'output/sem_error_{self.sem_tag}.txt', 'a') as f:
+            with open(f'logs/sem_error_{self.sem_tag}.txt', 'a') as f:
                 logger.error(f'{e}')
                 f.write(self.run + f'_{self.sem_tag}' + '\n')
                 f.write(traceback.format_exc() + '\n')
@@ -329,7 +325,7 @@ class SEMContext:
         pred_boundaries_gaussed = gaussian_filter1d(pred_boundaries.astype(float), 2)
         pearson_r, p = stats.pearsonr(pred_boundaries_gaussed[:last], seg_video.gt_freqs[:last])
         percentile = percentileofscore(biserials, bicorr)
-        logger.info(f'Tag={tag}: Bicorr={bicorr:.3f} cor. Percentile={percentile:.3f},  '
+        logger.info(f'Tag={tag}: Scaled_bicorr={bicorr:.3f} cor. Percentile={percentile:.3f},  '
                     f'Subjects_median={np.nanmedian(biserials):.3f}')
 
         return bicorr, percentile, pearson_r, seg_video
@@ -355,8 +351,10 @@ class SEMContext:
             sem_length = sum([interval[1] - interval[0] for interval in sem_intervals])
             purity_df.loc[len(purity_df.index)] = [sem_event, sem_length, max_purity_ann_event, max_purity,
                                                    self.current_epoch, self.run, self.sem_tag, self.is_train]
-        purity_df.to_csv(path_or_buf=os.path.join(self.configs.sem_results_path, 'purity.csv'), index=False, header=False, mode='a')
-        coverage_df.to_csv(path_or_buf=os.path.join(self.configs.sem_results_path, 'coverage.csv'), index=False, header=False, mode='a')
+        purity_df.to_csv(path_or_buf=os.path.join(self.configs.sem_results_path, 'purity.csv'), index=False, header=False,
+                         mode='a')
+        coverage_df.to_csv(path_or_buf=os.path.join(self.configs.sem_results_path, 'coverage.csv'), index=False, header=False,
+                           mode='a')
         average_coverage = np.average(coverage_df['max_coverage'], weights=coverage_df['annotated_length'])
         average_purity = np.average(purity_df['max_purity'], weights=purity_df['sem_length'])
 
@@ -364,7 +362,7 @@ class SEMContext:
 
     def run_sem_and_log(self, x_train: np.ndarray, resampled_indices: pd.Series):
         """
-        This method run SEM and plot
+        This method run SEM, log diagnostic results and plot prediction errors and boundaries
         :param x_train:
         :param resampled_indices:
         :return:
@@ -378,14 +376,24 @@ class SEMContext:
         # Process results returned by SEM
         average_purity, average_coverage = self.compute_clustering_metrics()
 
+        timesteps = x_train.shape[0]
+        logger.info(f'Total # of Steps={timesteps}')
+        # Logging information about trigger timepoints
+        trigger = self.sem_model.results.triggers.sum()
+        logger.info(f'Total # of Triggers: {trigger}')
         # Logging some information about types of boundaries
         switch_old = (self.sem_model.results.boundaries == 1).sum()
         switch_new = (self.sem_model.results.boundaries == 2).sum()
         switch_current = (self.sem_model.results.boundaries == 3).sum()
+        boundary_to_trigger = (switch_old + switch_new + switch_current) / trigger
+        logger.info(f'Ratio of boundary to trigger: {boundary_to_trigger:.2f}')
         logger.info(f'Total # of OLD switches: {switch_old}')
         logger.info(f'Total # of NEW switches: {switch_new}')
         logger.info(f'Total # of RESTART switches: {switch_current}')
-        entropy = stats.entropy(self.sem_model.results.c) / np.log((self.sem_model.results.c > 0).sum())
+        if self.is_train:
+            entropy = stats.entropy(self.sem_model.results.c) / np.log((self.sem_model.results.c > 0).sum())
+        else:
+            entropy = stats.entropy(self.sem_model.results.c_eval) / np.log((self.sem_model.results.c_eval > 0).sum())
 
         pred_boundaries = get_binned_prediction(self.sem_model.results.boundaries, second_interval=self.second_interval,
                                                 sample_per_second=self.sample_per_second)
@@ -394,7 +402,7 @@ class SEMContext:
         # Padding prediction boundaries, could be changed to have higher resolution but not necessary
         pred_boundaries = np.hstack([[0] * round(self.first_frame / self.fps / self.second_interval), pred_boundaries]).astype(
             int)
-        logger.info(f'Total # of pred_boundaries: {sum(pred_boundaries)}')
+        logger.info(f'Total # of 1s binned pred_boundaries: {sum(pred_boundaries)}')
         logger.info(f'Total # of event models: {len(self.sem_model.event_models) - 1}')
         threshold = 600
         active_event_models = np.count_nonzero(self.sem_model.c > threshold)
@@ -403,7 +411,7 @@ class SEMContext:
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
         # logging average scores for this run, these scores are used to plot scatter matrix across training
-        path = os.path.join(self.configs.sem_results_path, 'results_purity_coverage.csv')
+        path = os.path.join(self.configs.sem_results_path, 'stats_with_ratio.csv')
         with open(path, 'a') as f:
             writer = csv.writer(f)
             grain = 'coarse'
@@ -423,7 +431,8 @@ class SEMContext:
                              self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
                              std_pe, pearson_r, self.is_train,
                              switch_old, switch_new, switch_current, entropy,
-                             average_purity, average_coverage])
+                             average_purity, average_coverage,
+                             self.sem_model.results.triggers.sum(), timesteps])
             grain = 'fine'
             bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries,
                                                                                   grain=f'{grain}')
@@ -439,7 +448,8 @@ class SEMContext:
                              self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
                              std_pe, pearson_r, self.is_train,
                              switch_old, switch_new, switch_current, entropy,
-                             average_purity, average_coverage])
+                             average_purity, average_coverage,
+                             self.sem_model.results.triggers.sum(), timesteps])
 
         plot_pe(self.sem_model.results, frame_interval=self.second_interval * self.sample_per_second,
                 offset=self.first_frame / self.fps / self.second_interval,
@@ -464,13 +474,13 @@ if __name__ == "__main__":
     args = parse_config()
     logger.info(f'Config: {args}')
 
-    path = os.path.join(args.sem_results_path, 'results_purity_coverage.csv')
+    path = os.path.join(args.sem_results_path, 'stats_with_ratio.csv')
     if not os.path.exists(path):
         csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'active_event_models', 'epoch',
-                       'number_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train',
+                       'n_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train',
                        'switch_old', 'switch_new', 'switch_current', 'entropy',
-                       'purity', 'coverage']
-        path = os.path.join(args.sem_results_path, 'results_purity_coverage.csv')
+                       'purity', 'coverage', 'n_triggers', 'n_timesteps']
+        path = os.path.join(args.sem_results_path, 'stats_with_ratio.csv')
         with open(path, 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
@@ -498,15 +508,17 @@ if __name__ == "__main__":
     f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
                   n_epochs=1, t=4, batch_update=True, n_hidden=int(args.n_hidden), variance_window=None,
                   optimizer_kwargs=optimizer_kwargs)
-    # set the hyper parameters for segmentation
+    # set the hyper-parameters for segmentation
     lmda = float(args.lmda)  # stickyness parameter (prior)
     alfa = float(args.alfa)  # concentration parameter (prior)
     kappa = float(args.kappa)
-    sem_init_kwargs = {'lmda': lmda, 'alfa': alfa, 'kappa': kappa, 'f_opts': f_opts,
-                       'f_class': f_class}
+    threshold = float(args.threshold)  # threshold to trigger event selection based on PE or uncertainty
+    sem_init_kwargs = {'lmda': lmda, 'alfa': alfa, 'kappa': kappa, 'f_opts': f_opts, 'f_class': f_class,
+                       'threshold': threshold, 'trigger': args.trigger}
     logger.info(f'SEM parameters: {sem_init_kwargs}')
-    # set default hyper parameters for each run, can be overridden later
+    # set default hyper-parameters for each run, can be overridden later
     run_kwargs = {'progress_bar': False}
+    # run_kwargs = {'progress_bar': True}
     sem_model = SEM(**sem_init_kwargs)
     tag = args.sem_tag
 
