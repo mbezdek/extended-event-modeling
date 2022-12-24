@@ -376,8 +376,10 @@ tag = 'sep_09_n15_1030_1E-03_1E-01_1E+07'
 kinects = open(f'output/preprocessed_complete_sep_09.txt', 'r').readlines()
 kinects = [x.strip().replace('_kinect', '') for x in kinects]
 print(len(kinects))
+
+
 def generate_and_store_frames(run_select):
-# for run_select in kinects:
+    # for run_select in kinects:
     if os.path.exists(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_frames.joblib'):
         print(f'Already generated {run_select}')
         return
@@ -406,6 +408,8 @@ def generate_and_store_frames(run_select):
                     compress=True)
         # with open(f'output/run_sem/{tag}/{run_select}_kinect_trim{tag}_frames.pkl', 'wb') as f:
         #         pkl.dump(cached_videos, f)
+
+
 Parallel(n_jobs=8)(delayed(generate_and_store_frames)(run_select) for run_select in kinects)
 
 import pickle as pkl
@@ -733,6 +737,7 @@ for f in files:
                                                                             for x in cat])
 
 import pickle as pkl
+
 pkl.dump(run_to_categories, open('src/visualization/scene_categories.pkl', 'wb'))
 
 ## Compare PE across tags among different components
@@ -758,7 +763,7 @@ indices = [pca_appear.n_components,
 pe_types = ['pe', 'pe_w', 'pe_w2']
 df_pe = pd.DataFrame(columns=['run', 'tag', 'epoch'] +
                              sum([[f'{pe_type}_appear', f'{pe_type}_optical', f'{pe_type}_skel', f'{pe_type}_emb', f'{pe_type}']
-                                 for pe_type in pe_types], []))
+                                  for pe_type in pe_types], []))
 
 tag = 'jan_10_no_skel_grid_lr1E-03_alfa1E-01_lmda1E+05'
 # for each epoch, glob all existed runs
@@ -771,6 +776,7 @@ for e in range(30):
         diag = pkl.load(open(f"{f.replace('inputdf', 'diagnostic')}", 'rb'))
         run = f.split('/')[-1].split('_')[0]
 
+
         # split pe into typed pe
         def split_pe(name='pe'):
             pe = (diag[f"x_hat{name.replace('pe', '')}"] * np.sqrt(inputdf.x_train_pca.shape[1])) - inputdf.x_train_pca
@@ -780,6 +786,8 @@ for e in range(30):
             pe_skel = pe_array[indices[1]:indices[2]]
             pe_emb = pe_array[indices[2]:]
             return np.average(pe_appear), np.average(pe_optical), np.average(pe_skel), np.average(pe_emb), np.average(pe_array)
+
+
         concat_pe = []
         # compute typed pe and add to a dataframe
         for name in pe_types:
@@ -802,7 +810,6 @@ df_new.plot(
     width=500,
     trendline="lowess",
 ).write_image(f'{pe1}_and_{pe2}.png')
-
 
 import pandas as pd
 import os
@@ -863,7 +870,10 @@ import pandas as pd
 import numpy as np
 from src.utils import CV2VideoReader
 from joblib import Parallel, delayed
+
 movies = ['6.3.9_C1_trim.mp4', '2.4.1_C1_trim.mp4', '3.1.3_C1_trim.mp4', '1.2.3_C1_trim.mp4']
+
+
 # for m in movies:
 def gen_stats(m):
     df = pd.DataFrame(columns=['time(s)', 'pixel_change_mean', 'pixel_change_var', 'luminance_mean', 'luminance_var'])
@@ -891,6 +901,8 @@ def gen_stats(m):
     df.to_csv(f'{m[:-4]}.csv', index=False)
     print(f'Done {m}!')
     cv2_video_reader.capture.release()
+
+
 Parallel(n_jobs=4)(delayed(gen_stats)(m) for m in movies)
 
 import glob
@@ -901,21 +913,147 @@ for f in features:
     files = glob.glob(f'output/{f}/*.csv')
     for x in files:
         if 'kinect_objhand' in x or 'kinect_skel' in x or 'kinect_video' in x or 'kinect_appear' in x:
-            os.rename(x, x[:x.find('t_')+1] + '_july_18' + x[x.find('t_')+1:])
+            os.rename(x, x[:x.find('t_') + 1] + '_july_18' + x[x.find('t_') + 1:])
 
 # upload files
 import subprocess
+
 file_names = glob.glob('output/run_sem/frames/*frames.joblib')
+
+
 # file_names = file_names[:4]
 
 
 def upload(name):
     print(f'Uploading {name}...')
-    subprocess.run(['scp', f'{name}', 'n.tan@login3-02.chpc.wustl.edu:/scratch/n.tan/extended-event-modeling/output/run_sem/frames/'])
+    subprocess.run(
+        ['scp', f'{name}', 'n.tan@login3-02.chpc.wustl.edu:/scratch/n.tan/extended-event-modeling/output/run_sem/frames/'])
 
     print(f'Done {name}!')
 
 
 Parallel(n_jobs=8)(delayed(upload)(file_name) for file_name in file_names)
 
+import os
+import pickle as pkl
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+import plotly.io as pio
+from plotly.subplots import make_subplots
 
+pio.renderers.default = 'browser'
+
+# train
+diag = pkl.load(open('./output/run_sem/reproduce_nov_15_list/1.2.3_kinect_trimreproduce_nov_15_list_diagnostic_2.pkl', 'rb'))
+# valid
+diag = pkl.load(open('./output/run_sem/reproduce_nov_15_list/2.4.9_kinect_trimreproduce_nov_15_list_diagnostic_2.pkl', 'rb'))
+diag = pkl.load(open('./output/run_sem/reproduce_nov_15_list/6.3.9_kinect_trimreproduce_nov_15_list_diagnostic_2.pkl', 'rb'))
+diag = pkl.load(open(
+    './output/run_sem/nov_15_threshold_s1010_3E-01_1E-01_1E+07/2.2.10_kinect_trimnov_15_threshold_s1010_3E-01_1E-01_1E+07_diagnostic_101.pkl',
+    'rb'))
+
+# plot binary timeseries variables on the same figure
+fig = go.Figure()
+fig.add_trace(go.Scatter(y=diag['triggers'] + 1, x=np.arange(len(diag['triggers'])), name='trigger'))
+fig.add_trace(go.Scatter(y=diag['boundaries'] - 1, x=np.arange(len(diag['triggers'])), name='boundary'))
+fig.show()
+
+# plot prediction lines
+fig = make_subplots(rows=diag['x_hat'].shape[1], cols=1)
+for i in range(diag['x_hat'].shape[1]):
+    fig.add_trace(go.Scatter(y=diag['x_hat'][:, i], x=np.arange(len(diag['x_hat'])), name=f'x_hat_{i}'), row=i + 1, col=1)
+# add vertical lines for triggers and boundaries
+# for i in range(len(diag['triggers'])):
+#     fig.add_shape(type='line', x0=diag['triggers'][i], y0=-1, x1=diag['triggers'][i], y1=1, line=dict(color='black', width=1))
+#     fig.add_shape(type='line', x0=diag['boundaries'][i], y0=-1, x1=diag['boundaries'][i], y1=1, line=dict(color='red', width=1))
+fig.update_layout(width=1000, height=2400)
+fig.show()
+
+shapes = list()
+for i in (20, 40, 60):
+    shapes.append({'type': 'line',
+                   'xref': 'x',
+                   'yref': 'y',
+                   'x0': i,
+                   'y0': 0,
+                   'x1': i,
+                   'y1': 1})
+
+layout = plotly.graph_objs.Layout(shapes=shapes)
+
+import pickle as pkl
+import numpy as np
+import glob
+import plotly.express as px
+import plotly.graph_objects as go
+import plotly.io as pio
+import pandas as pd
+from joblib import Parallel, delayed
+from plotly.subplots import make_subplots
+import sys
+
+sys.path.append('../SEM2')
+from sem.sem import SEM, Results
+
+pio.renderers.default = 'browser'
+
+tag = 'nov_29_s1010_th5E-02_1E-01_1E+07'
+train_runs = open('output/train_sep_09.txt').readlines()
+train_runs = [x.strip() for x in train_runs]
+val_runs = open('output/valid_sep_09.txt').readlines()
+val_runs = [x.strip() for x in val_runs]
+
+
+def get_triggers(run, epoch):
+    # for run in train_runs + val_runs:
+    try:
+        files = glob.glob(f'output/run_sem/{tag}/{run}*_diagnostic_{epoch}.pkl')
+        for f in files:
+            diag = pkl.load(open(f, 'rb'))
+            return [run, epoch, run in train_runs, diag['triggers'].sum(), diag['boundaries'].astype(bool).sum()]
+    except:
+        return None
+        # pass
+
+
+res = Parallel(n_jobs=8)(delayed(get_triggers)(run, epoch) for run in train_runs + val_runs
+                         for epoch in range(1, 101))
+res = [x for x in res if x is not None]
+print(res)
+df = pd.DataFrame(res, columns=['run', 'epoch', 'is_train', 'triggers', 'boundaries'])
+print(df)
+df.to_csv(f'output/run_sem/{tag}_triggers.csv', index=False)
+
+import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
+import plotly.io as pio
+from plotly.subplots import make_subplots
+
+pio.renderers.default = 'browser'
+
+df = pd.read_csv('output/run_sem/nov_29_s1010_th5E-02_1E-01_1E+07_triggers.csv')
+df['boundary_to_trigger'] = df['boundaries'] / df['triggers']
+fig = px.scatter(df, x='epoch', y='triggers', color='is_train', marginal_y='box', marginal_x='box')
+fig.show()
+
+# rename a column in df from trigger_to_boundary to boundary_to_trigger
+df = df.rename(columns={'trigger_to_boundary': 'boundary_to_trigger'})
+
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import plotly.io as pio
+
+df = px.data.gapminder().query("year==2007")
+fig = make_subplots(rows=2, cols=2)
+
+fig.update_layout(legend=dict(
+    yanchor="top",
+    y=0.99,
+    xanchor="left",
+    x=0.01
+))
+
+fig.show()
