@@ -42,3 +42,25 @@ re-run tracking:
 6.2.1_kinect
 6.2.5_kinect
 6.2.7_kinect
+
+tracking:
+*C1*.csv and *C2*.csv on OSF were uploaded from ../extended-event-modeling-bk/extended-event-modeling/output/tracking_all/
+*kinect*.csv on OSF were uploaded from extended-event-modeling/output/tracking/ (which is currently used by SEM)
+TODO: visualize tracking results for C1 and C2
+
+SEM features:
+output/preprocessed_features/*.pkl were downloaded from the cluster on 2022-12-14 (the features were created in 2022-09) and uploaded to OSF at: https://osf.io/e3zwc/.
+PCA components for each feature type were computed from these features for videos that passed the filtering criteria.
+PCA components were uploaded to the same OSF folder.
+A helper class in README.md (output/preprocessed_features/README.md) to load preprocessed features and perform PCA.
+This class is from src/preprocess_features/compute_pca_all_runs.py.
+
+data/small_videos/*: Tan moved most of the videos from local to Box (Box\DCL_ARCHIVE\Documents\Events\exp148_Corpus\data_from_tan_laptop) to free space, there are copies in the cluster as well.
+data/clean_skeleton_data/*: same with above
+output/tracking/*: Tan deleted local copies to free space, there are copies in the cluster and these were uploaded to Box (Box\DCL_ARCHIVE\Documents\Events\exp148_Corpus\data_from_tan_laptop) as well.
+
+OSF files and README for META project is updated with sep_09 file format!
+
+Tan moved Research folder to Box: Box\DCL_ARCHIVE\Documents\Tan\Research. Tan checked the new Research folder with remote cluster, they're synced!
+A snapshot is backed up in: Box\DCL_ARCHIVE\Documents\Tan\Research-bk-12-22-22
+Now SEM development can be done on multiple computers!
