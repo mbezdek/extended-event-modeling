@@ -25,6 +25,7 @@ dependencies:
   - statsmodels
   - ipython
   - jupyter
+  - plotly
   - pip
   - pip:
       - ray[default]==1.5.1

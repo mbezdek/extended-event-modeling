@@ -1057,3 +1057,49 @@ fig.update_layout(legend=dict(
 ))
 
 fig.show()
+
+## Plot null distributions for scaled and unscaled biserial correlations, along with minimum and maximum values
+import pickle as pkl
+import numpy as np
+from src.utils import get_point_biserial
+import plotly.express as px
+import plotly.io as pio
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+pio.renderers.default = 'browser'
+
+gt_freqs = pkl.load(open('output/run_sem/dec_17_s1010_uncertainty3E-03_1E+00_1E-02/2.4.1_kinect_trimdec_17_s1010_uncertainty3E-03_1E+00_1E-02_gtfreqs_fine.pkl', 'rb'))
+perm = 1000
+fig = make_subplots(rows=4, cols=5, shared_xaxes=True, vertical_spacing=0.02, horizontal_spacing=0.03,
+                    subplot_titles=[f'{n_b} boundaries' for i, n_b in enumerate(range(1, 101, 5))])
+is_scale = False
+for i, n_b in enumerate(range(1, 101, 5)):
+    # randomly select n_b boundaries, then calculate and plot all random point biserial correlations
+    biserial_corrs = []
+    for _ in range(perm):
+        boundary_array = np.zeros(len(gt_freqs))
+        # randomly select n_b boundaries
+        boundary_indices = np.random.choice(np.arange(len(gt_freqs)), n_b, replace=False)
+        boundary_array[boundary_indices] = 1
+        biserial_corrs.append(get_point_biserial(boundary_array, gt_freqs, scale=is_scale))
+    fig.add_trace(
+        go.Histogram(x=biserial_corrs, histnorm='probability', name=f'{n_b} boundaries'),
+        col=i % 5 + 1, row=i // 5 + 1
+    )
+    fig.add_vline(x=np.median(biserial_corrs), col=i % 5 + 1, row=i // 5 + 1, line_width=2, line_dash='solid')
+    # calculate and plot minimum and maximum possible biserial correlation
+    min_indices = np.argsort(gt_freqs)[:n_b]
+    boundary_array = np.zeros(len(gt_freqs))
+    boundary_array[min_indices] = 1
+    min_biserial = get_point_biserial(boundary_array, gt_freqs, scale=is_scale)
+    fig.add_vline(x=min_biserial, col=i % 5 + 1, row=i // 5 + 1, line_width=2, line_dash='dash', line_color='red')
+    max_indices = np.argsort(gt_freqs)[-n_b:]
+    boundary_array = np.zeros(len(gt_freqs))
+    boundary_array[max_indices] = 1
+    max_biserial = get_point_biserial(boundary_array, gt_freqs, scale=is_scale)
+    fig.add_vline(x=max_biserial, col=i % 5 + 1, row=i // 5 + 1, line_width=2, line_dash='dash', line_color='blue')
+fig.update_layout(height=400*4, width=400*5)
+fig.show()
+# modified from dell computer
+

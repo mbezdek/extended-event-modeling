@@ -209,8 +209,11 @@ class FeatureProcessor:
     def resample_df(self, df) -> pd.DataFrame:
         # fps matter hear, we need feature vector at anchor timepoints to correspond to segmentation
         out_df = df.set_index(pd.to_datetime(df.index / self.fps, unit='s'), drop=False, verify_integrity=True)
+        # dummy_frame is necessary in case df has missing frames and needs interpolation
+        # though, df was already interpolated before in combine_data_frames and even after -> TODO: remove dummy_frame
         resample_index = pd.date_range(start=out_df.index[0], end=out_df.index[-1], freq=self.rate)
         dummy_frame = pd.DataFrame(np.NaN, index=resample_index, columns=out_df.columns)
+        # resample().mean() will make frame_id not integer anymore
         out_df = out_df.combine_first(dummy_frame).interpolate(method='time', limit_area='inside').resample(self.rate).mean()
         return out_df
 

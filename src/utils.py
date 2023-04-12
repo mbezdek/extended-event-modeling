@@ -18,8 +18,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel(os.environ.get('LOGLEVEL', logging.INFO))
 # must have a handler, otherwise logging will use lastresort
 c_handler = logging.StreamHandler()
-LOGFORMAT = '%(name)s - %(levelname)s - %(message)s'
-# c_handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+LOGFORMAT = '%(funcName)s:%(lineno)d - %(name)s - %(levelname)s: %(message)s'
 c_handler.setFormatter(logging.Formatter(LOGFORMAT))
 # c_handler.setFormatter(coloredlogs.ColoredFormatter(LOGFORMAT))
 logger.addHandler(c_handler)
@@ -707,3 +706,104 @@ def merge_feature_lists(txt_out="intersect_features.txt"):
         set(objhands))
     with open(txt_out, 'w') as f:
         f.writelines(sem_runs)
+
+
+def remove_flurries(boundaries, k=3) -> np.ndarray:
+    # a function to group boundaries into a single boundary if they are within k steps of each other
+    # boundaries: a list of 0s and 1s
+    # k: the number of updates to group together
+    # returns: a list of 0s and 1s
+    boundaries = list(boundaries)
+    boundaries_no_flurry = [0] * len(boundaries)
+    flag = 0
+    last = -1
+    for i, b in enumerate(boundaries):
+        if b == 1 and i > last:
+            def find_last_boundary(boundaries, first, k):
+                last = first
+                offset = 0
+                for j in range(first, len(boundaries)):
+                    if boundaries[j] == 1:
+                        last = j
+                        offset = 0
+                    else:
+                        offset += 1
+                    if offset >= k:
+                        break
+                return last
+
+            first = i
+            last = find_last_boundary(boundaries, first, k)
+            # print(last, first, len(boundaries))
+            boundaries_no_flurry[(last + first) // 2] = 1
+
+    # logger.info(f"Number of boundaries before-after removing flurries: {sum(boundaries)}-{sum(boundaries_no_flurry)}")
+    # print(f"boundaries before-after: {boundaries}-{boundaries_no_flurry}")
+    return np.array(boundaries_no_flurry)
+
+
+def remove_random_boundaries(boundaries, n) -> np.ndarray:
+    # a function to remove n random boundaries
+    # boundaries: a list of 0s and 1s
+    # n: the number of boundaries to remove
+    # returns: a list of 0s and 1s
+    boundaries = list(boundaries)
+    # boundaries indices
+    b_indices = [i for i, b in enumerate(boundaries) if b == 1]
+    # remove n random boundaries
+    b_indices = np.random.choice(b_indices, size=max(0, len(b_indices) - n), replace=False)
+    boundaries_removed_n = [0] * len(boundaries)
+    for i in b_indices:
+        boundaries_removed_n[i] = 1
+    logger.info(f"Number of boundaries before-after removing random boundaries: {sum(boundaries)}-{sum(boundaries_removed_n)}")
+    return np.array(boundaries_removed_n)
+
+
+def adjust_n_boundaries(boundaries, k=0):
+    """
+    This function count the number of distinct boundary chunks in an array of 0s and 1s. A boundary chunk is defined as an interval whcih starts with a boundary and ends with a boundary and the distances between consecutive boundaries in this interval is smaller than or equal to k.
+    e.g.: if k=1 and the input list is [0, 1, 1, 1, 0, 1, 1, 1, 1, 0], the function would return 2.
+    """
+    flag = 0
+    count = 0
+    for b in boundaries:
+        if b == 1:
+            flag = 1  # flag the first boundary
+            offset = -1
+        if flag:
+            offset += 1
+            if offset >= k:
+                count += 1  # if there has been k non-boundary timesteps, count this as a boundary chunk
+                offset = -1
+                flag = 0
+    return count
+
+class PermutationBiserial:
+    """
+    This class is used to calculate and cache permuted biserial correlations for all combinations of run and #boundaries
+    """
+    def __init__(self, n_permutations=1000):
+        self.n_permutations = n_permutations
+        self.run_nb_to_biserial = {}  # {('1.2.3_kinect', 15): [0.001, -0.001, ...], ...}
+
+    def get_null_bicorrs(self, run, nb, gt_freqs, scale=True) -> List:
+        """
+        This function returns a list of permuted biserial correlations for a given combo of run and #boundaries
+        :param run: run name, e.g. '1.2.3_kinect'
+        :param nb: number of boundaries, e.g. 15
+        :param gt_freqs: human normative boundary frequencies, should be smoothed already
+        :return: a list of permuted biserial correlations
+        """
+        if (run, nb) not in self.run_nb_to_biserial:
+            self.run_nb_to_biserial[(run, nb)] = []
+            # randomly select n_b boundaries, then calculate all random point biserial correlations
+            for _ in range(self.n_permutations):
+                boundary_array = np.zeros(len(gt_freqs))
+                # randomly select n_b boundaries
+                boundary_indices = np.random.choice(np.arange(len(gt_freqs)), nb, replace=False)
+                boundary_array[boundary_indices] = 1
+                self.run_nb_to_biserial[(run, nb)].append(get_point_biserial(boundary_array, gt_freqs, scale=scale))
+            return self.run_nb_to_biserial[(run, nb)]
+        else:
+            return self.run_nb_to_biserial[(run, nb)]
+

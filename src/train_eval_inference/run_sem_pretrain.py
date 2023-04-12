@@ -22,7 +22,8 @@ from scipy.stats import percentileofscore
 from sem.event_models import GRUEvent
 from sem.sem import SEM
 from src.utils import SegmentationVideo, get_binned_prediction, get_point_biserial, DictObj, \
-    logger, parse_config, get_coverage, get_purity, event_label_to_interval
+    logger, parse_config, get_coverage, get_purity, event_label_to_interval, PermutationBiserial, adjust_n_boundaries, \
+    remove_flurries, remove_random_boundaries
 from src.preprocess_features.compute_pca_all_runs import PCATransformer
 from scipy.ndimage import gaussian_filter1d
 from typing import List
@@ -67,11 +68,11 @@ def plot_diagnostic_readouts(gt_freqs, sem_readouts, frame_interval=3.0, offset=
         if b != 0:
             second = i / frame_interval + offset
             if b == 1:
-                plt.axvline(second, linestyle=(0, (5, 10)), alpha=0.3, color=cm(1. * e / NUM_COLORS), label='Old Event')
+                plt.axvline(second, linestyle='dotted', alpha=0.3, color=cm(1. * e / NUM_COLORS), label='Old Event')
             elif b == 2:
                 plt.axvline(second, linestyle='solid', alpha=0.3, color=cm(1. * e / NUM_COLORS), label='New Event')
             elif b == 3:
-                plt.axvline(second, linestyle='dotted', alpha=0.3, color=cm(1. * e / NUM_COLORS), label='Restart Event')
+                plt.axvline(second, linestyle='dashdot', alpha=0.3, color=cm(1. * e / NUM_COLORS), label='Restart Event')
     plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cm, norm=matplotlib.colors.Normalize(vmin=0, vmax=NUM_COLORS, clip=False)),
                  orientation='horizontal')
     from matplotlib.lines import Line2D
@@ -112,6 +113,7 @@ class SEMContext:
         self.train_stratified = int(self.configs.train_stratified)
         self.second_interval = 1
         self.sample_per_second = 1000 / float(self.configs.rate.replace('ms', ''))
+        self.perm_biserial = PermutationBiserial(n_permutations=1000)
 
         self.current_epoch = None
         # These variables will be set based on each run
@@ -141,6 +143,7 @@ class SEMContext:
         # Randomize order of training video
         # random.shuffle(self.train_dataset)
         self.train_dataset = np.random.permutation(self.train_dataset)
+        self.valid_dataset = np.random.permutation(self.valid_dataset)
         for e in range(self.epochs):
             # epoch counting from 1 for inputdf and diagnostic.
             self.current_epoch = e + 1
@@ -172,7 +175,6 @@ class SEMContext:
         self.infer_on_video(store_dataframes=int(self.configs.store_frames))
 
     def evaluating(self):
-        self.valid_dataset = np.random.permutation(self.valid_dataset)
         for index, run in enumerate(self.valid_dataset):
             self.is_train = False
             self.sem_model.kappa = 0
@@ -286,7 +288,7 @@ class SEMContext:
                     pkl.dump(self.df_object.__dict__, f)
 
             logger.info(f'Done SEM {self.run} at {self.current_epoch} epoch. is_train={self.is_train}!!!\n')
-            with open(f'logs/sem_complete_{self.sem_tag}', 'a') as f:
+            with open(f'logs/sem_complete_{self.sem_tag}.txt', 'a') as f:
                 f.write(self.run + f'_{self.sem_tag}' + '\n')
         except Exception as e:
             with open(f'logs/sem_error_{self.sem_tag}.txt', 'a') as f:
@@ -317,18 +319,24 @@ class SEMContext:
         seg_video.get_human_segments(n_annotators=100, condition=grain, second_interval=self.second_interval)
         # Compare SEM boundaries versus participant boundaries
         last = min(len(pred_boundaries), self.end_second)
-        # this function aggregate subject boundaries, apply a gaussian kernel and calculate correlations for subjects
+        # this function aggregate subject boundaries, apply a gaussian kernel
         seg_video.get_gt_freqs(second_interval=self.second_interval, end_second=last)
+        # calculate correlations for all subjects
         biserials = seg_video.get_biserial_subjects(second_interval=self.second_interval, end_second=last)
         # compute biserial correlation and pearson_r of model boundaries
         bicorr = get_point_biserial(pred_boundaries[:last], seg_video.gt_freqs[:last])
+        null_biserials = self.perm_biserial.get_null_bicorrs(
+            run=self.run, nb=(pred_boundaries[:last] != 0).sum(), gt_freqs=seg_video.gt_freqs[:last])
+        distance_to_null = bicorr - np.median(null_biserials)
+        # get t-statistic of a value from a distribution
+        t_stat_biserial = (bicorr - np.mean(null_biserials)) / np.std(null_biserials)
         pred_boundaries_gaussed = gaussian_filter1d(pred_boundaries.astype(float), 2)
         pearson_r, p = stats.pearsonr(pred_boundaries_gaussed[:last], seg_video.gt_freqs[:last])
-        percentile = percentileofscore(biserials, bicorr)
-        logger.info(f'Tag={tag}: Scaled_bicorr={bicorr:.3f} cor. Percentile={percentile:.3f},  '
+        percentile_to_humans = percentileofscore(biserials, bicorr)
+        logger.info(f'Tag={tag}: Scaled_bicorr={bicorr:.3f} cor. Distance_to_null={distance_to_null:.3f},  '
                     f'Subjects_median={np.nanmedian(biserials):.3f}')
 
-        return bicorr, percentile, pearson_r, seg_video
+        return bicorr, percentile_to_humans, pearson_r, seg_video, distance_to_null, t_stat_biserial
 
     def compute_clustering_metrics(self):
         start_second = self.first_frame / self.fps
@@ -358,7 +366,18 @@ class SEMContext:
         average_coverage = np.average(coverage_df['max_coverage'], weights=coverage_df['annotated_length'])
         average_purity = np.average(purity_df['max_purity'], weights=purity_df['sem_length'])
 
-        return average_purity, average_coverage
+        from sklearn.metrics import adjusted_mutual_info_score
+        tempdf = pd.DataFrame()
+        tempdf['ev'] = 'none'
+        tempdf['sec'] = self.df_object.combined_resampled_df.index / self.fps
+        for i in range(len(run_df)):
+            ev = run_df.iloc[i]
+            start = ev['startsec']
+            end = ev['endsec']
+            tempdf.loc[(tempdf['sec'] >= start) & (tempdf['sec'] <= end), 'ev'] = ev['evname']
+        tempdf['ev_fact'] = tempdf['ev'].factorize()[0]
+        mi = adjusted_mutual_info_score(self.sem_model.results.e_hat, tempdf['ev_fact'])
+        return average_purity, average_coverage, mi
 
     def run_sem_and_log(self, x_train: np.ndarray, resampled_indices: pd.Series):
         """
@@ -373,8 +392,9 @@ class SEMContext:
         # set x_prev to None in order to train the general event
         self.sem_model.x_prev = None
 
-        # Process results returned by SEM
-        average_purity, average_coverage = self.compute_clustering_metrics()
+        ## Process results returned by SEM
+
+        average_purity, average_coverage, mi = self.compute_clustering_metrics()
 
         timesteps = x_train.shape[0]
         logger.info(f'Total # of Steps={timesteps}')
@@ -385,6 +405,7 @@ class SEMContext:
         switch_old = (self.sem_model.results.boundaries == 1).sum()
         switch_new = (self.sem_model.results.boundaries == 2).sum()
         switch_current = (self.sem_model.results.boundaries == 3).sum()
+        n_boundaries = (self.sem_model.results.boundaries != 0).sum()
         boundary_to_trigger = (switch_old + switch_new + switch_current) / trigger
         logger.info(f'Ratio of boundary to trigger: {boundary_to_trigger:.2f}')
         logger.info(f'Total # of OLD switches: {switch_old}')
@@ -395,13 +416,25 @@ class SEMContext:
         else:
             entropy = stats.entropy(self.sem_model.results.c_eval) / np.log((self.sem_model.results.c_eval > 0).sum())
 
+        # replacing flurries of boundaries as a single boundary
+        boundaries_no_flurry = remove_flurries(self.sem_model.results.boundaries.astype(bool).astype(int), k=3)
+        n_boundaries_adjusted = np.sum(boundaries_no_flurry)
+        pred_boundaries_adjusted = get_binned_prediction(boundaries_no_flurry, second_interval=self.second_interval,
+                                                         sample_per_second=self.sample_per_second)
+        removed = n_boundaries - n_boundaries_adjusted
+        boundaries_random_removed = remove_random_boundaries(self.sem_model.results.boundaries.astype(bool).astype(int), removed)
+        pred_boundaries_random_adjusted = get_binned_prediction(boundaries_random_removed, second_interval=self.second_interval,
+                                                                sample_per_second=self.sample_per_second)
+
         pred_boundaries = get_binned_prediction(self.sem_model.results.boundaries, second_interval=self.second_interval,
                                                 sample_per_second=self.sample_per_second)
-        # switching between video, not a real boundary
-        pred_boundaries[0] = 0
         # Padding prediction boundaries, could be changed to have higher resolution but not necessary
-        pred_boundaries = np.hstack([[0] * round(self.first_frame / self.fps / self.second_interval), pred_boundaries]).astype(
-            int)
+        pred_boundaries = np.hstack([[0] * round(self.first_frame / self.fps / self.second_interval),
+                                     pred_boundaries]).astype(int)
+        pred_boundaries_adjusted = np.hstack([[0] * round(self.first_frame / self.fps / self.second_interval),
+                                              pred_boundaries_adjusted]).astype(int)
+        pred_boundaries_random_adjusted = np.hstack([[0] * round(self.first_frame / self.fps / self.second_interval),
+                                                     pred_boundaries_random_adjusted]).astype(int)
         logger.info(f'Total # of 1s binned pred_boundaries: {sum(pred_boundaries)}')
         logger.info(f'Total # of event models: {len(self.sem_model.event_models) - 1}')
         threshold = 600
@@ -410,50 +443,60 @@ class SEMContext:
 
         mean_pe = self.sem_model.results.pe.mean()
         std_pe = self.sem_model.results.pe.std()
+        # correlation of pe and uncertainty 1D arrays
+        pe_unc_corr = np.corrcoef(self.sem_model.results.pe, self.sem_model.results.uncertainty)[0, 1]
+        logger.info(f"Correlation of PE and Uncertainty: {pe_unc_corr:.2f}")
         # logging average scores for this run, these scores are used to plot scatter matrix across training
         path = os.path.join(self.configs.sem_results_path, 'stats_with_ratio.csv')
         with open(path, 'a') as f:
             writer = csv.writer(f)
             grain = 'coarse'
-            bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries,
-                                                                                  grain=f'{grain}')
+            bicorr, percentile_to_humans, pearson_r, seg_video, distance_to_null, t_stat_biserial = self.calculate_correlation(
+                pred_boundaries=pred_boundaries, grain=f'{grain}')
             plot_diagnostic_readouts(seg_video.gt_freqs, self.sem_model.results,
                                      frame_interval=self.second_interval * self.sample_per_second,
                                      offset=self.first_frame / self.fps / self.second_interval,
                                      title=self.title + f'_diagnostic_{grain}_{self.current_epoch}',
-                                     bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
+                                     bicorr=bicorr, percentile=percentile_to_humans, pearson_r=pearson_r)
+            bicorr_adjusted, _, _, _, _, t_stat_biserial_adjusted = self.calculate_correlation(
+                pred_boundaries=pred_boundaries_adjusted, grain=f'{grain}')
+            bicorr_random_adjusted, _, _, _, _, _ = self.calculate_correlation(
+                pred_boundaries=pred_boundaries_random_adjusted, grain=f'{grain}')
 
             path = os.path.join(self.configs.sem_results_path, self.title + f'_gtfreqs_{grain}.pkl')
             with open(path, 'wb') as f:
                 pkl.dump(seg_video.gt_freqs, f)
             # len adds 1, and the buffer model adds 1 => len() - 2
-            writer.writerow([self.run, 'coarse', bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
-                             self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
-                             std_pe, pearson_r, self.is_train,
-                             switch_old, switch_new, switch_current, entropy,
-                             average_purity, average_coverage,
-                             self.sem_model.results.triggers.sum(), timesteps])
+            writer.writerow(
+                [self.run, grain, bicorr, percentile_to_humans, len(self.sem_model.event_models) - 2, active_event_models,
+                 self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
+                 std_pe, pearson_r, self.is_train,
+                 switch_old, switch_new, switch_current, entropy,
+                 average_purity, average_coverage,
+                 self.sem_model.results.triggers.sum(), timesteps,
+                 distance_to_null, pe_unc_corr, t_stat_biserial, mi,
+                 n_boundaries_adjusted, t_stat_biserial_adjusted, bicorr_adjusted, bicorr_random_adjusted])
+
             grain = 'fine'
-            bicorr, percentile, pearson_r, seg_video = self.calculate_correlation(pred_boundaries=pred_boundaries,
-                                                                                  grain=f'{grain}')
-            plot_diagnostic_readouts(seg_video.gt_freqs, self.sem_model.results,
-                                     frame_interval=self.second_interval * self.sample_per_second,
-                                     offset=self.first_frame / self.fps / self.second_interval,
-                                     title=self.title + f'_diagnostic_{grain}_{self.current_epoch}',
-                                     bicorr=bicorr, percentile=percentile, pearson_r=pearson_r)
+            bicorr, percentile_to_humans, pearson_r, seg_video, distance_to_null, t_stat_biserial = self.calculate_correlation(
+                pred_boundaries=pred_boundaries, grain=f'{grain}')
+            bicorr_adjusted, _, _, _, _, t_stat_biserial_adjusted = self.calculate_correlation(
+                pred_boundaries=pred_boundaries_adjusted, grain=f'{grain}')
+            bicorr_random_adjusted, _, _, _, _, _ = self.calculate_correlation(
+                pred_boundaries=pred_boundaries_random_adjusted, grain=f'{grain}')
             path = os.path.join(self.configs.sem_results_path, self.title + f'_gtfreqs_{grain}.pkl')
             with open(path, 'wb') as f:
                 pkl.dump(seg_video.gt_freqs, f)
-            writer.writerow([self.run, 'fine', bicorr, percentile, len(self.sem_model.event_models) - 2, active_event_models,
-                             self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
-                             std_pe, pearson_r, self.is_train,
-                             switch_old, switch_new, switch_current, entropy,
-                             average_purity, average_coverage,
-                             self.sem_model.results.triggers.sum(), timesteps])
+            writer.writerow(
+                [self.run, grain, bicorr, percentile_to_humans, len(self.sem_model.event_models) - 2, active_event_models,
+                 self.current_epoch, (self.sem_model.results.boundaries != 0).sum(), sem_init_kwargs, tag, mean_pe,
+                 std_pe, pearson_r, self.is_train,
+                 switch_old, switch_new, switch_current, entropy,
+                 average_purity, average_coverage,
+                 self.sem_model.results.triggers.sum(), timesteps,
+                 distance_to_null, pe_unc_corr, t_stat_biserial, mi,
+                 n_boundaries_adjusted, t_stat_biserial_adjusted, bicorr_adjusted, bicorr_random_adjusted])
 
-        plot_pe(self.sem_model.results, frame_interval=self.second_interval * self.sample_per_second,
-                offset=self.first_frame / self.fps / self.second_interval,
-                title=self.title + f'_PE_fine_{self.current_epoch}')
 
         # logging SEM's diagnostic scores, these scores are used to inspect individual runs.
         self.sem_model.results.first_frame = self.first_frame
@@ -474,16 +517,28 @@ if __name__ == "__main__":
     args = parse_config()
     logger.info(f'Config: {args}')
 
+    csv_headers = ['run', 'grain', 'bicorr', 'percentile_to_human', 'n_event_models', 'active_event_models', 'epoch',
+                   'n_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train',
+                   'switch_old', 'switch_new', 'switch_current', 'entropy',
+                   'purity', 'coverage', 'n_triggers', 'n_timesteps',
+                   'distance_to_null', 'pe_unc_corr', 't_stat_biserial', 'mi',
+                   'n_boundaries_adjusted', 't_stat_biserial_adjusted', 'bicorr_adjusted', 'bicorr_random_adjusted']
     path = os.path.join(args.sem_results_path, 'stats_with_ratio.csv')
     if not os.path.exists(path):
-        csv_headers = ['run', 'grain', 'bicorr', 'percentile', 'n_event_models', 'active_event_models', 'epoch',
-                       'n_boundaries', 'sem_params', 'tag', 'mean_pe', 'std_pe', 'pearson_r', 'is_train',
-                       'switch_old', 'switch_new', 'switch_current', 'entropy',
-                       'purity', 'coverage', 'n_triggers', 'n_timesteps']
         path = os.path.join(args.sem_results_path, 'stats_with_ratio.csv')
         with open(path, 'w') as f:
             writer = csv.writer(f)
             writer.writerow(csv_headers)
+    else:
+        # check if the intended header and the header in the existed file are the same
+        df_metrics = pd.read_csv(path)
+        diff = list(set(csv_headers).difference(set(df_metrics)))
+        if len(diff) > 0:
+            logger.info(f'set(csv_headers).difference(set(df_metrics))={diff},'
+                        f'Adding these new columns and 0s values to the csv file.')
+            for col in diff:
+                df_metrics[col] = 0
+            df_metrics.to_csv(path, index=False)
     if not os.path.exists(f'{args.sem_results_path}purity.csv'):
         csv_headers = ['sem_event', 'sem_length', 'annotated_max_overlap', 'max_purity', 'epoch', 'run', 'tag', 'is_train']
         path = os.path.join(args.sem_results_path, 'purity.csv')

@@ -206,7 +206,7 @@ val_runs = [x.strip() for x in val_runs]
 varmah_identifiers = []
 dropout_rates = [0.5]
 recurrent_dropout_rates = [0.5]
-epochs = np.arange(1, 61, 10)
+epochs = np.arange(1, 102, 10)
 for epoch in epochs:
     for dropout_rate in dropout_rates:
         for recurrent_dropout_rate in recurrent_dropout_rates:
@@ -219,6 +219,7 @@ varmah_factory = VarMahalanobisFactory(varmah_identifiers)
 
 # for each identifier, compute variance and mahalanobis distance, concat into a dataframe
 df = varmah_factory.get_df_from_identifiers(varmah_identifiers[::-1])
+df.to_csv(f"{uncertainty_output_dir}/var_mahalanobis.csv", index=False)
 # plot violin plot for Mahalabobis distance for each epoch, color by is_val, plotly
 fig = px.violin(df[df.epoch >= 1], y="mahalanobis", x="epoch",
                 color="is_val",
