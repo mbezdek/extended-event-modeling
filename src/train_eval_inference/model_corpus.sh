@@ -2,7 +2,7 @@
 
 #SBATCH --cpus-per-task 8
 #SBATCH --mem-per-cpu 12G
-#SBATCH --time 60:00:00
+#SBATCH --time 72:00:00
 #SBATCH --ntasks 1
 #SBATCH --nodes 1
 #SBATCH --output=logs/%j.%x.out
