@@ -1,0 +1,3 @@
+Note that after better preprocessing skeleton videos, there were 16 out of 148 videos were filtered.
+So we ended up with 132 clean videos (clean_skel_sep_09.txt). However, for current SEMs in the preprint,
+training and validation are still done on 128 videos (train_sep_09.txt and valid_sep_09.txt).
