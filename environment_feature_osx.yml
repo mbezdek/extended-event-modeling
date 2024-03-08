@@ -1,10 +1,9 @@
-name: sem-viz-jupyter
+name: process-feature
 channels:
   - defaults
   - conda-forge
 dependencies:
-  - tensorflow=2.4.1
-  - numpy=1.19.5
+  - numpy
   - joblib
   - scipy
   - scikit-learn=0.23.2
@@ -19,11 +18,11 @@ dependencies:
   - cython
   - coloredlogs
   - colorlog
+  - gensim=3.8.0
   - opencv
   - statsmodels
   - ipython
   - jupyter
   - plotly
   - pip
-  - pip:
-      - ray[default]==1.5.1
+  

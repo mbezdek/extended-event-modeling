@@ -1,34 +1,25 @@
 # extended-event-modeling
 
-This repository manages code for:
+This repository manages code to:
 
-- Object tracking
-- Feature generation (e.g. hand-object distance, velocity of joints, etc.)
-- Training and validating SEM
-- Diagnostic scripts
+- Generate object locations for all frames from semi-labels (1 frame is labeled every 10s)
+- Compute features (for each frame) useful for modeling (e.g. hand-object distance, velocity of joints, etc.)
+- Training and validating SEM (skip the previous two steps and jump here if you use your own features or use preprocessed features from the OSF repository)
+- Scripts to generate statistics and figures from SEMs' outputs
+- Model diagnostic scripts
 
-Submitted manuscript: https://psyarxiv.com/pt6hx/ \
+Submitted modeling manuscript: https://psyarxiv.com/pt6hx/ \
 OSF repository: https://osf.io/39qwz/
 
-## Installation
-
-### Install anaconda
-
-Follow instructions to install conda: https://www.anaconda.com/products/individual
-
-### Install packages
-
+## Generate object locations for all frames from semi-labels
+You can skip this step if you use preprocessed features from the OSF repository.
+### Installation
+#### Packages requirements
 Install environment to run tracking algorithm \
 (a CUDA-enabled device is required to perform object tracking) \
 ```conda env create -f environment_tracking.yml```
 
-Install environment to run SEM in Windows/Linux: \
-```conda env create -f environment_sem_wd_or_linux.yml``` \
-or Mac OSX+: ```conda env create -f environment_sem_osx.yml``` \
-
-Installation of SEM was tested on a Mac M1 computer, OS version 12.6, and took about 10 minutes.
-
-### Install pysot for tracking
+#### Install tracking model (pysot)
 
 ```cd ..```\
 ```git clone https://github.com/STVIR/pysot``` \
@@ -43,33 +34,25 @@ After installing MVS 2017, open Cross Tools Command Prompt VS 2017 and run: \
 ```cd /path/to/pysot``` \
 ```python setup.py build_ext --inplace```
 
-### Install SEM from github repository
+### Perform automated object tracking on unlabeled video frames, using labeled frames
 
-```git clone git@github.com:NguyenThanhTan/SEM2.git  ``` \
-Export the Path to SEM \
-```export PYTHONPATH="${PYTHONPATH}:/Users/{USERNAME}/Documents/SEM2"```
+This script tracks object locations on video frames between the subset of video frames that were manually labeled: \
+```python src/tracking/tracking_to_correct_label.py -c configs/config_tracking_to_correct_label.ini --run $run --track_tag $tag 2>&1 | tee "logs/$run$tag.log"```
 
-### For GPU running (local machine has a GPU card or running on cloud)
+Running the tracking algorithm takes about 10 hours for a single activity run. It's recommended to use parallel computing to run the tracking algorithm on multiple runs at the same time.
 
-```conda install -c anaconda tensorflow-gpu=2``` \
-```conda install -c pytorch cuda92```
+## Compute features useful for modeling
+You can skip this step if you use your own features or want to use preprocessed features from the OSF repository.
 
-### Install interactive extensions for Jupyter notebook/lab (optional)
+### Packages requirements
+Install environment in Windows/Linux: \
+```conda env create -f environment_feature_wd_or_linux.yml``` \
+or Mac OSX+: ```conda env create -f environment_feature_osx.yml``` \
+Installation was tested on a Mac M1 computer, OS version 12.6, and took about 10 minutes.
 
-Recommended for experiments and visualization \
-```jupyter labextension install @jupyter-widgets/jupyterlab-manager``` \
-```jupyter nbextension enable --py widgetsnbextension```
+### Data preparation
 
-### Install ffmpeg (optional)
-
-Download this release: https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.7z \
-Unzip file using: https://www.7-zip.org/ \
-Remember after you install ffmpeg, add that path to PATH,
-example: https://www.architectryan.com/2018/03/17/add-to-the-path-on-windows-10/
-
-## Data preparation
-
-Tracking annotations are in ```output/tracking/```. These annotations are necessary to compute object appearance/disappearance
+Tracking annotations (object locations) are in ```output/tracking/``` after running the step in the previous section. These annotations are necessary to compute object appearance/disappearance
 features, and object-hand features.
 
 Skeleton annotations are in ```data/clean_skeleton_data/```. These annotations are necessary to compute motion features.
@@ -79,13 +62,6 @@ Videos are in ```data/small_videos/```. These videos are necessary to compute op
 Depth information (to calculate object-hand distance) is in `output/depth/`
 
 Make sure to download these from `https://osf.io/39qwz/` to run the following steps
-
-### Perform automated object tracking on unlabeled video frames, using labeled frames
-
-This script tracks object locations on video frames between the subset of video frames that were manually labeled: \
-```python src/tracking/tracking_to_correct_label.py -c configs/config_tracking_to_correct_label.ini --run $run --track_tag $tag 2>&1 | tee "logs/$run$tag.log"```
-
-Running the tracking algorithm takes about 10 hours for a single activity run.
 
 ### Compute individual features
 
@@ -110,7 +86,7 @@ Instead of running 4 commands above, you can run (if using slurm):
 ```sbatch src/individual_features/compute_indv_features.sh```
 
 Check {feature_name}_complete*.txt (e.g. objhand_complete_sep_09.txt) to see which videos (runs) were successfully computed. Check
-{feature_name}_error*.txt (e.g. objhand_error_sep_09.txt) for errors.
+{feature_name}_error*.txt (e.g. objhand_error_sep_09.txt) for potential errors.
 
 ### Preprocess features and create input to SEM
 
@@ -142,6 +118,21 @@ Run the script below to compute one PCA matrix for each feature, and a PCA matri
 `python src/preprocess_features/diff_two_list.py {preprocessed_list} {filtered_skel_list} output/clean_skel_sep_09.txt`
 
 Output PCA matrices will be saved in ```output/*_{feature_name}_pca.pkl```
+
+## Training and validating SEM
+If you use your own features, or preprocessed features from the OSF repository, you can skip the previous steps and just start here. Please make sure to download preprocessed features from `https://osf.io/39qwz/` for all 149 videos. There are preprocessed features for 4 videos in this repository, which are used for demonstration purposes.
+
+### Packages requirements
+Install environment in Windows/Linux: \
+```conda env create -f environment_sem_wd_or_linux.yml``` \
+or Mac OSX+: ```conda env create -f environment_sem_osx.yml``` \
+Installation was tested on a Mac M1 chip, OS version 12.6, and took about 10 minutes. For M2 chip, change ray[default] to 1.8.0 in environment_sem_osx.yml.
+
+### Install SEM from github repository
+
+```git clone git@github.com:NguyenThanhTan/SEM2.git  ``` \
+Export the Path to SEM \
+```export PYTHONPATH="${PYTHONPATH}:/Users/{USERNAME}/Documents/SEM2"```
 
 ## Run SEM
 
