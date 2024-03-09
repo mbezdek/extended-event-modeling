@@ -3,11 +3,11 @@ channels:
   - defaults
   - conda-forge
 dependencies:
-  - tensorflow=2.4.1
-  - numpy=1.19.5
+  - tensorflow
+  - numpy
   - joblib
   - scipy
-  - scikit-learn=0.23.2
+  - scikit-learn
   - pandas
   - matplotlib
   - colorcet
@@ -26,4 +26,5 @@ dependencies:
   - plotly
   - pip
   - pip:
-      - ray[default]==1.5.1
+      - protobuf
+      - ray[default]

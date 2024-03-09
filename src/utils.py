@@ -61,6 +61,7 @@ def parse_config():
     parser.add_argument("--lr")
     parser.add_argument("--trigger")
     parser.add_argument("--threshold")
+    parser.add_argument("--equal_sigma")
     args = parser.parse_args(remaining_argv)
 
     return args

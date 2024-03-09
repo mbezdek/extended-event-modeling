@@ -137,7 +137,7 @@ Export the Path to SEM \
 ## Run SEM
 
 The script below will load preprocessed features, apply PCA transformation, and train SEM.\
-```python src/training/run_sem_pretrain.py -c configs/config_run_sem.ini```
+```python src/train_eval_inference/run_sem_pretrain.py -c configs/config_run_sem.ini```
 
 The file configs/config_run_sem.ini can be modified to perform SEM on a single run rather than a set of runs (e.g., for demo purposes). \
 Simply change the `train` and `valid` parameters, such as:

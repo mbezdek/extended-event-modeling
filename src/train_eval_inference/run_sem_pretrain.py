@@ -13,11 +13,23 @@ import scipy.stats as stats
 
 import ray
 
-# this setting seems to limit # active threads for each ray actor method.
-ray.init(num_cpus=12)
+# this n_cpus setting seems to limit # active threads for each ray actor method.
+# add env_vars to the ray.init to set PYTHONPATH for the remote actors
+print(f"PYTHONPATH={os.environ.get('PYTHONPATH', '')}")
+# you might encounter ModuleNotFoundError: No module named 'sem', the runtime_env is to catch this error (assuming you already exported SEM2 to PYTHONPATH)
+# however, in ray 1.7.0 and ray 1.8.0, the runtime_env is not working, and you will encounter this message and then Ray will hang:
+# (raylet) [2024-03-08 19:34:02,614 E 482138 482138] agent_manager.cc:134: Not all required Ray dependencies for the
+# runtime_env feature were found. To install the required dependencies, please run `pip install 'ray[default]'`
+if float(ray.__version__[:3]) > 1.8:
+    ray.init(num_cpus=12,
+         runtime_env={"env_vars": {"PYTHONPATH": os.environ.get('PYTHONPATH', '')}}
+         )
+else:
+    ray.init(num_cpus=12)
 
 sys.path.append('../pysot')
 sys.path.append('../SEM2')
+sys.path.append('.')
 from scipy.stats import percentileofscore
 from sem.event_models import GRUEvent
 from sem.sem import SEM
@@ -288,6 +300,8 @@ class SEMContext:
                     pkl.dump(self.df_object.__dict__, f)
 
             logger.info(f'Done SEM {self.run} at {self.current_epoch} epoch. is_train={self.is_train}!!!\n')
+            if not os.path.exists(f'logs'):
+                os.makedirs(f'logs')
             with open(f'logs/sem_complete_{self.sem_tag}.txt', 'a') as f:
                 f.write(self.run + f'_{self.sem_tag}' + '\n')
         except Exception as e:
@@ -523,6 +537,8 @@ if __name__ == "__main__":
                    'purity', 'coverage', 'n_triggers', 'n_timesteps',
                    'distance_to_null', 'pe_unc_corr', 't_stat_biserial', 'mi',
                    'n_boundaries_adjusted', 't_stat_biserial_adjusted', 'bicorr_adjusted', 'bicorr_random_adjusted']
+    if not os.path.exists(f'{args.sem_results_path}'):
+        os.makedirs(f'{args.sem_results_path}')
     path = os.path.join(args.sem_results_path, 'stats_with_ratio.csv')
     if not os.path.exists(path):
         path = os.path.join(args.sem_results_path, 'stats_with_ratio.csv')
@@ -558,7 +574,7 @@ if __name__ == "__main__":
     # Define model architecture, hyper parameters and optimizer
     f_class = GRUEvent
     # f_class = LSTMEvent
-    optimizer_kwargs = dict(lr=float(args.lr), beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0, amsgrad=False)
+    optimizer_kwargs = dict(learning_rate=float(args.lr), beta_1=0.9, beta_2=0.999, epsilon=1e-08, amsgrad=False)
     # these are the parameters for the event model itself.
     f_opts = dict(var_df0=10., var_scale0=0.06, l2_regularization=0.0, dropout=0.5,
                   n_epochs=1, t=4, batch_update=True, n_hidden=int(args.n_hidden), variance_window=None,
@@ -569,7 +585,9 @@ if __name__ == "__main__":
     kappa = float(args.kappa)
     threshold = float(args.threshold)  # threshold to trigger event selection based on PE or uncertainty
     sem_init_kwargs = {'lmda': lmda, 'alfa': alfa, 'kappa': kappa, 'f_opts': f_opts, 'f_class': f_class,
-                       'threshold': threshold, 'trigger': args.trigger}
+                       'threshold': threshold, 'trigger': args.trigger,
+                       'equal_sigma': args.equal_sigma,
+                       }
     logger.info(f'SEM parameters: {sem_init_kwargs}')
     # set default hyper-parameters for each run, can be overridden later
     run_kwargs = {'progress_bar': False}
