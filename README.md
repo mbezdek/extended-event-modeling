@@ -126,7 +126,7 @@ If you use your own features, or preprocessed features from the OSF repository, 
 Install environment in Windows/Linux: \
 ```conda env create -f environment_sem_wd_or_linux.yml``` \
 or Mac OSX+: ```conda env create -f environment_sem_osx.yml``` \
-Installation was tested on a Mac M1 chip, OS version 12.6, and took about 10 minutes. For M2 chip, change ray[default] to 1.8.0 in environment_sem_osx.yml.
+Installation was tested on a Mac M2 chip.
 
 ### Install SEM from github repository
 
