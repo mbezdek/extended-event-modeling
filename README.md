@@ -171,18 +171,18 @@ All scripts to generate statistics and figures are in `generate_statistics_and_f
 
 This panel will visualize SEM's metrics (prediction error, mutual information, biserial, #events, etc.) across tags, useful for
 model comparison: \
-```panel serve matrix_viz.ipynb```
+```panel serve notebooks/matrix_viz.ipynb```
 
 This panel will zoom-in deeper, visualizing SEM's states (posteriors, segmentation, PCA features, etc.) across epoch for each
 video: \
-`panel serve output_tabs_viz.ipynb`
+`panel serve notebooks/output_tabs_viz.ipynb`
 
 This panel will compare SEM's event schemas and human action categories:\
-`panel serve sankey.ipynb`
+`panel serve notebooks/sankey.ipynb`
 
 To visualize input and output projected into original feature space, run:\
-`python draw_video.py {run} {tag} {epoch}` \
+`python src/visualization/draw_video.py {run} {tag} {epoch}` \
 or add a list of (run tag epoch) in `runs_to_draw.txt` and run: \
-`python draw_multiple_videos.py`
+`python src/visualization/draw_multiple_videos.py`
 
 
