@@ -163,6 +163,8 @@ in `output/run_sem/{tag}/*_diagnostic_{epoch}.pkl`. This information will be use
 SEM's input and output vectors will be saved in `output/run_sem/{tag}/*_inputdf_{epoch}.pkl`. This information is useful for
 visualization and diagnose.
 
+Tag is defined in configs/config_run_sem.ini
+
 ## Recreate statistics and figures
 
 All scripts to generate statistics and figures are in `generate_statistics_and_figure.ipynb`
@@ -172,13 +174,15 @@ All scripts to generate statistics and figures are in `generate_statistics_and_f
 This panel will visualize SEM's metrics (prediction error, mutual information, biserial, #events, etc.) across tags, useful for
 model comparison: \
 ```panel serve notebooks/matrix_viz.ipynb```
-
+ 
 This panel will zoom-in deeper, visualizing SEM's states (posteriors, segmentation, PCA features, etc.) across epoch for each
 video: \
-`panel serve notebooks/output_tabs_viz.ipynb`
+`panel serve notebooks/output_tabs_viz.ipynb`\
+Please change default_tag in this notebook to one of the tags you have in output/run_sem/{tag}
 
 This panel will compare SEM's event schemas and human action categories:\
-`panel serve notebooks/sankey.ipynb`
+`panel serve notebooks/sankey.ipynb`\
+Please change default_tag in this notebook to one of the tags you have in output/run_sem/{tag}
 
 To visualize input and output projected into original feature space, run:\
 `python src/visualization/draw_video.py {run} {tag} {epoch}` \
