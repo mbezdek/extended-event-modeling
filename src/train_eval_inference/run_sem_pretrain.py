@@ -25,7 +25,13 @@ if float(ray.__version__[:3]) > 1.8:
          runtime_env={"env_vars": {"PYTHONPATH": os.environ.get('PYTHONPATH', '')}}
          )
 else:
-    ray.init(num_cpus=12)
+    # Replace the direct ray.init() call with a more robust initialization
+    try:
+        ray.init(num_cpus=12, ignore_reinit_error=True)
+    except TypeError as e:
+        print(f"Error initializing Ray: {e}")
+        print("Attempting to initialize Ray without specifying CPUs...")
+        ray.init(ignore_reinit_error=True)
 
 sys.path.append('../pysot')
 sys.path.append('../SEM2')
@@ -249,7 +255,8 @@ class SEMContext:
                     x_train_pca = pca_transformer.transform(x_train)
                     x_train_inverted = pca_transformer.invert_transform(x_train_pca)
                 else:
-                    pca = pkl.load(open(f'output/{self.configs.feature_tag}_{self.configs.pca_tag}_pca.pkl', 'rb'))
+                    # pca = pkl.load(open(f'output/{self.configs.feature_tag}_{self.configs.pca_tag}_pca.pkl', 'rb'))
+                    pca = PCATransformer.load_pca_version_agnostic(f'output/pca_estimator_from_all_runs/{self.configs.feature_tag}_{self.configs.pca_tag}_pca')
                     assert x_train.shape[1] == pca.n_features_, f'MISMATCH: pca.n_features_ = {pca.n_features_} ' \
                                                                 f'vs. input features={x_train.shape[1]}!!!'
                     x_train_pca = pca.transform(x_train)
