@@ -126,14 +126,17 @@ If you use your own features, or preprocessed features from the OSF repository, 
 Install environment in Linux: \
 ```conda env create -f environment_sem_linux_frozen.yml``` \
 or Mac OSX+: ```conda env create -f environment_sem_osx_frozen.yml``` \
-or Windows: ```conda env create -f environment_sem_wd_or_linux.yml``` \
+or Windows: ```conda env create -f environment_sem_windows_frozen.yml``` \
 Installation was tested on a Mac M2 chip.
 
 ### Install SEM from github repository
 
 ```git clone git@github.com:NguyenThanhTan/SEM2.git  ``` \
-Export the Path to SEM \
+Export the Path to SEM (Unix/Linux/MacOS) \
 ```export PYTHONPATH="${PYTHONPATH}:/Users/{USERNAME}/Documents/SEM2"```
+
+Export the Path to SEM (Windows) \
+```set PYTHONPATH=%PYTHONPATH%;"C:\Users\{USERNAME}\Documents\SEM2"```
 
 ## Run SEM
 
