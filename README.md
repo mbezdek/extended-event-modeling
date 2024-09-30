@@ -123,9 +123,10 @@ Output PCA matrices will be saved in ```output/*_{feature_name}_pca.pkl```
 If you use your own features, or preprocessed features from the OSF repository, you can skip the previous steps and just start here. Please make sure to download preprocessed features from `https://osf.io/39qwz/` for all 149 videos. There are preprocessed features for 4 videos in this repository, which are used for demonstration purposes.
 
 ### Packages requirements
-Install environment in Windows/Linux: \
-```conda env create -f environment_sem_wd_or_linux.yml``` \
-or Mac OSX+: ```conda env create -f environment_sem_osx.yml``` \
+Install environment in Linux: \
+```conda env create -f environment_sem_linux_frozen.yml``` \
+or Mac OSX+: ```conda env create -f environment_sem_osx_frozen.yml``` \
+or Windows: ```conda env create -f environment_sem_wd_or_linux.yml``` \
 Installation was tested on a Mac M2 chip.
 
 ### Install SEM from github repository
