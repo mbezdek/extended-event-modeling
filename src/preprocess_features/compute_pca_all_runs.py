@@ -3,7 +3,7 @@ import pandas as pd
 import pickle as pkl
 from joblib import Parallel, delayed
 from sklearn.decomposition import PCA
-# from src.utils import parse_config, logger, DictObj
+from src.utils import parse_config, logger, DictObj
 
 
 class PCAComputer:
